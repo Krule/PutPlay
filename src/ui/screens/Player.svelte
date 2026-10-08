@@ -27,6 +27,21 @@
 
   let videoEl: HTMLVideoElement;
   let engine: MediaEngine | null = null;
+
+  // --- simulator diagnostic: is the video layer actually painting? ---
+  let diagVisible = false;
+  let diagText = "";
+  let diagStyle = "";
+  let diagTimer: number | null = null;
+  let glRenderer = "";
+  try {
+    const c = document.createElement("canvas");
+    const gl = c.getContext("webgl");
+    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+    glRenderer = String((gl && ((ext && gl.getParameter(ext.UNMASK_RENDERER)) || gl.getParameter(gl.RENDERER))) || "no-webgl");
+  } catch {
+    glRenderer = "?";
+  }
   let a: any = get(auth);
   $: subtitleLanguages = a?.subtitleLanguages || [];
 
@@ -205,8 +220,21 @@
 
   let unsub: (() => void) | null = null;
 
+  const kick = () => {
+    const v = videoEl as HTMLVideoElement | undefined;
+    if (!v) return;
+    if (!v.paused && v.readyState >= 2) {
+      // force a repaint of the layer: nudge currentTime a hair and re-play
+      try { v.currentTime = v.currentTime; } catch {}
+      v.play().catch(() => undefined);
+    }
+  };
+  const onVis = () => { if (!document.hidden) kick(); };
+
   onMount(() => {
     document.body.classList.add("player-mode");
+    window.addEventListener("focus", kick);
+    document.addEventListener("visibilitychange", onVis);
     unsub = auth.subscribe((v) => (a = v));
     a = get(auth);
 
@@ -241,6 +269,44 @@
     });
 
     ensureSubtitles();
+
+    // Sample the painted video frame every ~1.5s so a black-but-playing video
+    // is visible from the DIAG badge instead of a silent dark screen.
+    if (videoEl) {
+      const cv = document.createElement("canvas");
+      cv.width = 32;
+      cv.height = 18;
+      const cx = cv.getContext("2d", { willReadFrequently: true });
+      const sample = () => {
+        const v = videoEl;
+        if (!cx) return;
+        if (!v.videoWidth) {
+          diagVisible = false;
+          return;
+        }
+        let luma = 0;
+        try {
+          cx.drawImage(v, 0, 0, 32, 18);
+          const d = cx.getImageData(0, 0, 32, 18).data;
+          let sum = 0;
+          for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
+          luma = sum / (32 * 18);
+        } catch {
+          luma = -1; // canvas tainted (shouldn't happen in-app) — can't sample
+        }
+        const pic = luma < 0 ? "(n/a)" : "PIC " + Math.round(luma);
+        diagText =
+          "DIAG " + v.videoWidth + "x" + v.videoHeight +
+          " ready=" + v.readyState +
+          " " + (v.paused ? "PAUSED" : "PLAYING") +
+          " " + pic +
+          (luma < 8 ? "  ⚠ NO PICTURE" : "") +
+          "  | " + glRenderer;
+        diagVisible = true;
+      };
+      sample();
+      diagTimer = window.setInterval(sample, 1500);
+    }
   });
 
   function resume() {
@@ -257,6 +323,9 @@
 
   onDestroy(() => {
     document.body.classList.remove("player-mode");
+    window.removeEventListener("focus", kick);
+    document.removeEventListener("visibilitychange", onVis);
+    if (diagTimer) clearInterval(diagTimer);
     unsub?.();
     if (hideTimer) clearTimeout(hideTimer);
     engine?.destroy();
@@ -325,6 +394,10 @@
     }}
     on:keydown={onScrubKey}
   ></video>
+
+  {#if diagVisible}
+    <div class="diag" style={diagStyle}>{diagText}</div>
+  {/if}
 
   <!-- ================= bottom control bar ================= -->
   <div class="controls" class:visible={showControls || paused || !!error || overlays.audio || overlays.subs || overlays.source} class:dim={paused ? "" : "dim"}>
@@ -501,6 +574,20 @@
     height: 100%;
     display: block;
     background: #000;
+  }
+  .diag {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    z-index: 30;
+    padding: 6px 14px;
+    border-radius: var(--r-sm);
+    background: rgba(0, 0, 0, 0.72);
+    color: #b6f0b6;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 15px;
+    letter-spacing: 0.03em;
+    pointer-events: none;
   }
   .controls {
     position: absolute;
