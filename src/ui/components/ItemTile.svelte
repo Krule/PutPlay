@@ -1,13 +1,17 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
 
   export let file: PutFile;
   export let index = 0;
-  export let onOpen: (f: PutFile) => void;
-  export let onMenu: (f: PutFile) => void;
+  // optional direct handlers (keyboard / programmatic). The tile ALSO dispatches
+  // Svelte "open"/"menu" events with detail.file — parents can use on:open.
+  export let onOpen: ((f: PutFile) => void) | null = null;
+  export let onMenu: ((f: PutFile) => void) | null = null;
+
+  const dispatch = createEventDispatcher();
 
   const remote = getRemote();
   let el: HTMLElement;
@@ -26,6 +30,15 @@
     else el.removeAttribute("data-state");
   }
 
+  function emitOpen() {
+    if (onOpen) onOpen(file);
+    dispatch("open", { file });
+  }
+  function emitMenu() {
+    if (onMenu) onMenu(file);
+    dispatch("menu", { file });
+  }
+
   onMount(() => {
     if (el) {
       remote.register(el);
@@ -33,9 +46,9 @@
         // clicking the "..." dot opens the menu
         if (dotEl && dotEl.contains(e.target as Node)) {
           e.stopPropagation();
-          onMenu(file);
+          emitMenu();
         } else {
-          onOpen(file);
+          emitOpen();
         }
       });
     }
@@ -66,7 +79,7 @@
     {/if}
   </div>
   <div class="name">{file.name}</div>
-  <button class="dots" bind:this={dotEl} data-focus="" aria-label="Menu" on:click={(e) => e.stopPropagation()}>
+  <button class="dots" bind:this={dotEl} data-focus="" aria-label="Menu" on:click={(e) => { e.stopPropagation(); emitMenu(); }}>
     ⋯
   </button>
 </div>

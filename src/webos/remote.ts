@@ -220,7 +220,13 @@ export class Remote {
 
   activate(el: HTMLElement, fromClick: boolean): void {
     this.setActive(el, !fromClick);
-    this.handlers.onOK?.();
+    if (fromClick) {
+      // A real mouse click is already flowing to the element's own action listener
+      // (the tile/crumb/menu-item dispatches its event there). Don't re-click or it
+      // double-fires. We only update focus/active state here.
+      return;
+    }
+    // OK key (or programmatic): synthesize a click so the element's own listener runs.
     el.click();
   }
 

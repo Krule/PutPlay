@@ -315,7 +315,17 @@
     <div class="grid-wrap">
       <div class="grid" bind:this={gridEl}>
         {#each files as f, i (f.id)}
-          <ItemTile file={f} index={i} onOpen={onTileOpen} onMenu={onTileMenu} />
+          <ItemTile file={f} index={i}
+            on:open={(e) => {
+              const f = e.detail.file;
+              library.update((st) => ({ ...st, selected: f }));
+              onOpenFile(f);
+            }}
+            on:menu={(e) => {
+              const f = e.detail.file;
+              library.update((st) => ({ ...st, selected: f }));
+              onMenu(f);
+            }} />
         {/each}
       </div>
       {#if hasMore}

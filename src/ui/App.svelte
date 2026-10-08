@@ -59,8 +59,8 @@
     };
   });
 
-  function onOpen({ file }: { file: PutFile }) {
-    playingFile = file;
+  function onOpen(e: CustomEvent<{ file: PutFile }>) {
+    playingFile = e.detail.file;
     screen = "player";
   }
 </script>
