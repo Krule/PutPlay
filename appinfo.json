@@ -1,0 +1,15 @@
+{
+  "id": "io.put.lg",
+  "version": "1.0.0",
+  "vendor": "Personal Dev",
+  "type": "web",
+  "main": "index.html",
+  "title": "PutIo",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "width": 1920,
+  "height": 1080,
+  "requiredPermissions": [
+      "internet"
+  ]
+}

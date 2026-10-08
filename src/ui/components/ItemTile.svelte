@@ -1,0 +1,193 @@
+<script lang="ts">
+  import { onMount, onDestroy } from "svelte";
+  import { getRemote } from "../../webos/remote";
+  import { fmtBytes } from "../../putio/api";
+  import { putioIsFolder, type PutFile } from "../../putio/types";
+
+  export let file: PutFile;
+  export let index = 0;
+  export let onOpen: (f: PutFile) => void;
+  export let onMenu: (f: PutFile) => void;
+
+  const remote = getRemote();
+  let el: HTMLElement;
+  let dotEl: HTMLElement;
+  let active = false;
+  let visited = false;
+  let imgFailed = false;
+
+  const isFolder = putioIsFolder(file);
+  const isVideo = !isFolder && file.content_type ? file.content_type.startsWith("video/") : false;
+  const isArchive = !isFolder && file.content_type ? file.content_type.startsWith("application/") && !isVideo : false;
+
+  $: if (el) {
+    if (active) el.dataset.state = "active";
+    else if (visited) el.dataset.state = "visited";
+    else el.removeAttribute("data-state");
+  }
+
+  onMount(() => {
+    if (el) {
+      remote.register(el);
+      el.addEventListener("click", (e) => {
+        // clicking the "..." dot opens the menu
+        if (dotEl && dotEl.contains(e.target as Node)) {
+          e.stopPropagation();
+          onMenu(file);
+        } else {
+          onOpen(file);
+        }
+      });
+    }
+  });
+  onDestroy(() => el && remote.unregister(el));
+</script>
+
+<div class="tile" bind:this={el} data-focus data-state="">
+  <div class="thumb" class:folder={isFolder} class:video={isVideo} class:archive={isArchive}>
+    {#if file.screenshot && !imgFailed}
+      <img src={file.screenshot} alt="" loading="lazy" onerror={() => (imgFailed = true)} />
+    {:else if isFolder}
+      <span class="glyph">📁</span>
+    {:else if isArchive}
+      <span class="glyph">🗜️</span>
+    {:else if isVideo}
+      <span class="glyph">🎬</span>
+    {:else}
+      <span class="glyph">📄</span>
+    {/if}
+    {#if isVideo && file.is_mp4_available}
+      <span class="chip mp4" title="put.io MP4 ready">MP4</span>
+    {:else if isVideo && !file.is_mp4_available && file.need_convert}
+      <span class="chip conv" title="Converting">⚙</span>
+    {/if}
+    {#if isVideo && file.size > 0}
+      <span class="chip size">{fmtBytes(file.size)}</span>
+    {/if}
+  </div>
+  <div class="name">{file.name}</div>
+  <button class="dots" bind:this={dotEl} data-focus="" aria-label="Menu" on:click={(e) => e.stopPropagation()}>
+    ⋯
+  </button>
+</div>
+
+<style>
+  .tile {
+    position: relative;
+    width: 236px;
+    border-radius: var(--r-md);
+    background: transparent;
+    border: 3px solid transparent;
+    transition: transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease), opacity var(--t-med) var(--ease);
+    display: flex;
+    flex-direction: column;
+  }
+  .tile[data-state="active"] {
+    transform: scale(1.06);
+    border-color: var(--accent);
+    box-shadow: var(--elev-md);
+    z-index: 5;
+  }
+  .tile[data-state="visited"] {
+    border-color: rgba(77, 163, 255, 0.25);
+  }
+  .tile[data-state="disabled"] {
+    opacity: 0.35;
+  }
+  .thumb {
+    width: 236px;
+    height: 133px;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: linear-gradient(160deg, var(--surface-2), var(--surface));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb .glyph {
+    font-size: 52px;
+    opacity: 0.85;
+  }
+  .thumb.video {
+    background: linear-gradient(160deg, #1c2634, #141a23);
+  }
+  .thumb.folder {
+    background: linear-gradient(160deg, #202a3a, #181f2a);
+  }
+  .thumb.archive {
+    background: linear-gradient(160deg, #26221c, #1b1917);
+  }
+  .chip {
+    position: absolute;
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.05em;
+  }
+  .chip.mp4 {
+    top: 8px;
+    left: 8px;
+    background: rgba(63, 208, 143, 0.9);
+    color: #06130d;
+  }
+  .chip.conv {
+    top: 8px;
+    left: 8px;
+    background: rgba(245, 184, 79, 0.9);
+    color: #1a1204;
+  }
+  .chip.size {
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #dfe6ee;
+  }
+  .name {
+    margin-top: 10px;
+    padding: 0 4px;
+    font-size: var(--fs-body);
+    line-height: 1.25;
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 2.5em;
+  }
+  .tile[data-state="active"] .name {
+    color: var(--text);
+  }
+  .dots {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--line-strong);
+    font-size: 20px;
+    line-height: 1;
+    color: var(--text-2);
+    z-index: 6;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), background var(--t-fast);
+  }
+  .tile[data-state="active"] .dots {
+    opacity: 1;
+  }
+  .dots[data-state="active"] {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+  }
+</style>
