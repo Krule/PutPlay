@@ -14,20 +14,36 @@
 
   /* text */
   --text: #f2f5f9;
-  --text-2: #a8b3c2;
+  --text-2: #d8e0eb;
   --text-3: #ccd5df;
 
   /* accent */
   --accent: #4da3ff;
-  --accent-2: #7dbdff;
+  --accent-2: #b3e2ff;
+  --accent-hover: #c6e8ff;
   --accent-press: #3584d6;
   --accent-dim: rgba(77, 163, 255, 0.16);
   --on-accent: #08111c;
 
   /* status */
   --ok: #3fd08f;
+  --on-ok: #06130d;
   --warn: #f5b84f;
-  --danger: #ff9b93;
+  --on-warn: #1a1204;
+  --danger: #ffbfb8;
+
+  /* literal neutrals (allowed as tokens, not inline) */
+  --white: #ffffff;
+  --black: #000000;
+
+  /* thumbnail gradients (tinted by the midnight mood) */
+  --thumb-video-1: #1c2634;
+  --thumb-video-2: #141a23;
+  --thumb-folder-1: #202a3a;
+  --thumb-folder-2: #181f2a;
+  --thumb-archive-1: #26221c;
+  --thumb-archive-2: #1b1917;
+  --chip-ink: #dfe6ee;
 
   /* type */
   --fs-display: 52px;
@@ -171,15 +187,18 @@ button {
 .color-legend .dot {
   width: 14px; height: 14px; border-radius: 50%;
 }
-.color-legend .dot.c1 { background: #4da3ff; }
-.color-legend .dot.c2 { background: #3fd08f; }
-.color-legend .dot.c3 { background: #f5b84f; }
+.color-legend .dot.c1 { background: var(--accent); }
+.color-legend .dot.c2 { background: var(--ok); }
+.color-legend .dot.c3 { background: var(--warn); }
 .color-legend .dot.c4 { background: var(--danger); }
 
 /* ---------- overlay panels (menus, info) ---------- */
 .scrim {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: rgba(8, 10, 14, 0.62);
   z-index: 100;
   display: flex;
@@ -243,12 +262,18 @@ button {
   font-weight: 600;
   background: var(--surface-2);
 }
-.btn.primary { background: var(--accent); color: var(--on-accent); }
-.btn.primary[data-state="active"] { background: var(--accent-2); }
+.btn.primary { background: var(--accent-2); color: var(--on-accent); }
+.btn.primary[data-state="active"] { background: var(--accent-hover); }
 .btn.ghost { background: transparent; border-color: var(--line-strong); }
 .btn.danger { background: rgba(240, 96, 90, 0.14); color: var(--danger); }
 
-/* keyboard / mouse parity for focusable controls */
+/* keyboard / mouse parity for focusable controls.
+   :focus is the webOS 6 (Chrome 79) path — the remote calls el.focus();
+   :focus-visible (Chrome 86+) is kept for desktop parity. */
+[data-focus]:focus,
+button:focus,
+a:focus,
+input:focus,
 [data-focus]:focus-visible,
 button:focus-visible,
 a:focus-visible,

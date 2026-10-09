@@ -9,7 +9,10 @@
   "largeIcon": "largeIcon.png",
   "width": 1920,
   "height": 1080,
+  "sim": true,
+  "disableBackHistoryAPI": true,
   "requiredPermissions": [
-      "internet"
+    "internet",
+    "fullscreen"
   ]
 }

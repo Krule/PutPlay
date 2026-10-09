@@ -130,13 +130,13 @@
     opacity: 0.85;
   }
   .thumb.video {
-    background: linear-gradient(160deg, #1c2634, #141a23);
+    background: linear-gradient(160deg, var(--thumb-video-1), var(--thumb-video-2));
   }
   .thumb.folder {
-    background: linear-gradient(160deg, #202a3a, #181f2a);
+    background: linear-gradient(160deg, var(--thumb-folder-1), var(--thumb-folder-2));
   }
   .thumb.archive {
-    background: linear-gradient(160deg, #26221c, #1b1917);
+    background: linear-gradient(160deg, var(--thumb-archive-1), var(--thumb-archive-2));
   }
   .chip {
     position: absolute;
@@ -150,19 +150,19 @@
     top: 8px;
     left: 8px;
     background: rgba(63, 208, 143, 0.9);
-    color: #06130d;
+    color: var(--on-ok);
   }
   .chip.conv {
     top: 8px;
     left: 8px;
     background: rgba(245, 184, 79, 0.9);
-    color: #1a1204;
+    color: var(--on-warn);
   }
   .chip.size {
     bottom: 8px;
     right: 8px;
     background: rgba(0, 0, 0, 0.55);
-    color: #dfe6ee;
+    color: var(--chip-ink);
   }
   .name {
     margin-top: 10px;

@@ -33,10 +33,11 @@ const KEYMAP: Record<number, string> = {
   461: "back", // webOS Back (0x1CD)
   27: "back", // Escape (desktop preview)
   8: "back", // Backspace fallback on some sims
-  403: "blue",
+  // webOS standard color keys: 403 red, 404 green, 405 yellow, 406 blue
+  403: "red",
   404: "green",
-  405: "red",
-  406: "yellow",
+  405: "yellow",
+  406: "blue",
   415: "play",
   19: "play", // Pause key also fires play/pause toggle
   413: "stop",

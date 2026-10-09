@@ -94,7 +94,10 @@
   }
   .scrim {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: rgba(8, 10, 14, 0.6);
     z-index: 120;
     display: flex;

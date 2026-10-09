@@ -6,16 +6,18 @@
   "scripts": {
     "build": "node build/esbuild.mjs",
     "watch": "node build/esbuild.mjs --watch",
-    "package": "npm run build && ares-package . -e node_modules -e src -e build -e package.json -e package-lock.json -e tsconfig.json -e .DS_Store -e .git -e *.ipk",
-    "deploy:tv": "scp io.put.lg_1.0.0_all.ipk root@192.168.0.50:/tmp/ && luna-send-pub -i 'luna://com.webos.appInstallService/dev/install' '{\"id\":\"io.put.lg\",\"ipkUrl\":\"/tmp/io.put.lg_1.0.0_all.ipk\",\"subscribe\":true}'"
+    "package": "npm run build && node build/package.mjs",
+    "deploy:tv": "node build/deploy.mjs",
+    "test": "node --test test/subs.test.mjs"
   },
   "dependencies": {
-    "hls.js": "1.0.11"
+    "hls.js": "1.0.11",
+    "webostvjs": "^1.2.13"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.25.12",
     "svelte": "^4.2.20",
     "svelte-preprocess": "^6.0.5",
-    "typescript": "^5.6.0"
+    "typescript": "^5.9.3"
   }
 }

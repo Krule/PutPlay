@@ -9,8 +9,9 @@
     type SourceKind,
     type AudioTrackInfo,
   } from "../../putio/media";
+  import type { SubtitleTrackInfo } from "../../putio/media";
   import { fmtTime, fmtBytes } from "../../putio/api";
-  import { loadSubtitle, type LoadedSubtitle } from "../../putio/subs";
+  import { loadSubtitle, cueAt, type LoadedSubtitle, type SubtitleCue } from "../../putio/subs";
   import type { SubtitleInfo } from "../../putio/types";
 
   export let file: {
@@ -28,20 +29,6 @@
   let videoEl: HTMLVideoElement;
   let engine: MediaEngine | null = null;
 
-  // --- simulator diagnostic: is the video layer actually painting? ---
-  let diagVisible = false;
-  let diagText = "";
-  let diagStyle = "";
-  let diagTimer: number | null = null;
-  let glRenderer = "";
-  try {
-    const c = document.createElement("canvas");
-    const gl = c.getContext("webgl");
-    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
-    glRenderer = String((gl && ((ext && gl.getParameter(ext.UNMASK_RENDERER)) || gl.getParameter(gl.RENDERER))) || "no-webgl");
-  } catch {
-    glRenderer = "?";
-  }
   let a: any = get(auth);
   $: subtitleLanguages = a?.subtitleLanguages || [];
 
@@ -54,6 +41,7 @@
   let error: string | null = null;
   let audioTracks: AudioTrackInfo[] = [];
   let audioTrack = 0;
+  let hlsSubTracks: SubtitleTrackInfo[] = [];
   let live = false;
 
   let overlays: { audio: boolean; subs: boolean; source: boolean } = {
@@ -65,7 +53,10 @@
   let hideTimer: number | null = null;
 
   let subtitles: LoadedSubtitle[] = [];
-  let activeSub = -1; // -1 = off, 0.. = index into subtitles
+  let activeSub = -1; // -1 = off, 0.. = index into put.io subtitles (progressive overlay)
+  let hlsSub = -1; // -1 = off, index into hls textTracks (MKV-embedded renditions)
+  let subCues: SubtitleCue[] = [];
+  let subText = "";
 
   let sourceOptions = [
     { kind: "original" as SourceKind, label: "Original", available: true, hint: "" },
@@ -74,6 +65,7 @@
   ];
 
   let resumePrompt: { from: number } | null = null;
+  let confirmLeave = false;
 
   // ---------------- engine wiring ----------------
 
@@ -90,12 +82,19 @@
         if (p.error !== undefined) error = p.error;
         if (p.audioTracks !== undefined) audioTracks = p.audioTracks;
         if (p.audioTrack !== undefined) audioTrack = p.audioTrack;
+        if (p.subtitleTracks !== undefined) hlsSubTracks = p.subtitleTracks;
         if (p.live !== undefined) live = p.live;
       },
       onSourceChange: (s) => {
         source = s;
         overlays.source = true;
         showControls = true;
+        // a source swap drops the previous source's tracks — reset subtitle selection
+        activeSub = -1;
+        hlsSub = -1;
+        subCues = [];
+        subText = "";
+        if (s !== "hls") ensureSubtitles();
       },
       onEnded: () => {
         showControls = true;
@@ -118,14 +117,34 @@
       overlays.source = false;
       return;
     }
+    if (confirmLeave) {
+      confirmLeave = false;
+      engine?.saveResume();
+      dispatch("back");
+      return;
+    }
+    confirmLeave = true;
+    wake();
+  }
+
+  function stayInPlayback() {
+    confirmLeave = false;
+    engine?.play().catch(() => undefined);
+    wake();
+  }
+
+  /** Explicit "Yes" from the leave-confirmation dialog — always leaves. */
+  function leavePlayback() {
+    confirmLeave = false;
+    engine?.saveResume();
     dispatch("back");
   }
 
   function onColor(c: "blue" | "green" | "red" | "yellow") {
-    if (c === "blue") overlays.source = !overlays.source;
-    if (c === "green") overlays.audio = !overlays.audio;
-    if (c === "red") overlays.subs = !overlays.subs;
-    if (c === "yellow") engine?.togglePlayPause();
+    if (c === "blue") engine?.togglePlayPause();
+    if (c === "green") overlays.source = !overlays.source;
+    if (c === "yellow") overlays.audio = !overlays.audio;
+    if (c === "red") { overlays.subs = !overlays.subs; }
     wake();
   }
 
@@ -168,7 +187,7 @@
       const { getSubtitles } = await import("../../putio/api");
       const res = await getSubtitles(au, file.id, subtitleLanguages);
       for (const sub of res.subtitles || []) {
-        const blobURL = await loadSubtitle(sub.url, sub.format);
+        const src = await loadSubtitle(sub.url, sub.format);
         subtitles.push({
           id: sub.key,
           language: sub.language,
@@ -176,8 +195,14 @@
           name: sub.name,
           url: sub.url,
           format: sub.format,
-          blobURL: blobURL || undefined,
+          blobURL: src?.blobURL,
+          cues: src?.cues || [],
         });
+      }
+      // default to the first track with renderable cues, if the user hasn't chosen
+      if (activeSub === -1) {
+        const i = subtitles.findIndex((s) => s.cues && s.cues.length);
+        if (i >= 0) selectSubTrack(i);
       }
     } catch (e: any) {
       platform.toast("Couldn't load subtitles");
@@ -185,23 +210,77 @@
     subsLoading = false;
   }
 
-  function toggleSub(i: number) {
-    const v = videoEl as any;
-    const tracks = v.textTracks;
-    if (tracks) {
-      for (let i = 0; i < tracks.length; i++) {
+  function selectSubTrack(i: number) {
+    if (source === "hls") {
+      // MKV-embedded WebVTT renditions live on the video element's textTracks;
+      // hls.js renders them natively (that's why HLS subs already worked).
+      selectHlsSub(i);
+      activeSub = -1;
+      subCues = [];
+      subText = "";
+      return;
+    }
+    activeSub = i;
+    hlsSub = -1;
+    subCues = subtitles[i] ? subtitles[i].cues || [] : [];
+    updateSubText();
+  }
+
+  function selectHlsSub(i: number) {
+    const t = (engine?.video as any);
+    const tt = t && t.textTracks;
+    if (tt) {
+      for (let k = 0; k < tt.length; k++) {
         try {
-          tracks[i].mode = i === activeSub ? "showing" : "disabled";
+          tt[k].mode = k === i ? "showing" : "disabled";
         } catch {}
       }
     }
+    hlsSub = i;
   }
 
+  // turn whichever subtitle family is currently shown off
+  function disableActiveSubs() {
+    if (source === "hls") selectHlsSub(-1);
+    else {
+      activeSub = -1;
+      subCues = [];
+      subText = "";
+    }
+  }
+
+  function updateSubText() {
+    if (activeSub === -1 || !subCues.length) {
+      subText = "";
+      return;
+    }
+    const c = cueAt(subCues, currentTime);
+    subText = c ? c.text : "";
+  }
+
+  // keep the overlay in sync with playback (currentTime updates via timeupdate)
+  $: updateSubText();
+
   function onSubPick(i: number) {
-    activeSub = activeSub === i ? -1 : i;
-    toggleSub(activeSub);
-    if (activeSub === -1) platform.toast("Subtitles off");
-    else if (subtitles[activeSub]) platform.toast(`Subtitles: ${subtitles[activeSub].language}`);
+    if (source === "hls") {
+      if (i < 0 || hlsSub === i) {
+        selectHlsSub(-1);
+        platform.toast("Subtitles off");
+      } else {
+        selectHlsSub(i);
+        platform.toast(`Subtitles: ${hlsSubTracks[i]?.label || "track " + i}`);
+      }
+      return;
+    }
+    if (i < 0 || activeSub === i) {
+      activeSub = -1;
+      subCues = [];
+      subText = "";
+      platform.toast("Subtitles off");
+    } else {
+      selectSubTrack(i);
+      if (subtitles[i]) platform.toast(`Subtitles: ${subtitles[i].language}`);
+    }
   }
 
   function onAudioPick(i: number) {
@@ -270,43 +349,6 @@
 
     ensureSubtitles();
 
-    // Sample the painted video frame every ~1.5s so a black-but-playing video
-    // is visible from the DIAG badge instead of a silent dark screen.
-    if (videoEl) {
-      const cv = document.createElement("canvas");
-      cv.width = 32;
-      cv.height = 18;
-      const cx = cv.getContext("2d", { willReadFrequently: true });
-      const sample = () => {
-        const v = videoEl;
-        if (!cx) return;
-        if (!v.videoWidth) {
-          diagVisible = false;
-          return;
-        }
-        let luma = 0;
-        try {
-          cx.drawImage(v, 0, 0, 32, 18);
-          const d = cx.getImageData(0, 0, 32, 18).data;
-          let sum = 0;
-          for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
-          luma = sum / (32 * 18);
-        } catch {
-          luma = -1; // canvas tainted (shouldn't happen in-app) — can't sample
-        }
-        const pic = luma < 0 ? "(n/a)" : "PIC " + Math.round(luma);
-        diagText =
-          "DIAG " + v.videoWidth + "x" + v.videoHeight +
-          " ready=" + v.readyState +
-          " " + (v.paused ? "PAUSED" : "PLAYING") +
-          " " + pic +
-          (luma < 8 ? "  ⚠ NO PICTURE" : "") +
-          "  | " + glRenderer;
-        diagVisible = true;
-      };
-      sample();
-      diagTimer = window.setInterval(sample, 1500);
-    }
   });
 
   function resume() {
@@ -325,7 +367,6 @@
     document.body.classList.remove("player-mode");
     window.removeEventListener("focus", kick);
     document.removeEventListener("visibilitychange", onVis);
-    if (diagTimer) clearInterval(diagTimer);
     unsub?.();
     if (hideTimer) clearTimeout(hideTimer);
     engine?.destroy();
@@ -347,20 +388,13 @@
   function rebuildTracks() {
     const v = videoEl;
     if (!engine || !v) return;
+    // Progressive (original/mp4): the webview's <track src> is unreliable, so
+    // subtitles render via the DOM overlay (subCues) instead. For HLS, hls.js
+    // muxes WebVTT renditions through MSE and they surface on v.textTracks —
+    // selectSubTrack drives their mode.
     const existing = v.querySelectorAll("track");
     existing.forEach((t) => t.remove());
-    subtitles.forEach((sub, i) => {
-      if (!sub.blobURL) return;
-      const tr = document.createElement("track");
-      tr.kind = "subtitles";
-      tr.label = sub.language;
-      tr.srclang = sub.languageCode;
-      tr.src = sub.blobURL;
-      try {
-        tr.mode = i === activeSub ? "showing" : "disabled";
-      } catch {}
-      v.appendChild(tr);
-    });
+    if (source === "hls") return;
   }
   $: rebuildTracks();
 
@@ -395,8 +429,9 @@
     on:keydown={onScrubKey}
   ></video>
 
-  {#if diagVisible}
-    <div class="diag" style={diagStyle}>{diagText}</div>
+
+  {#if activeSub >= 0 && source !== "hls" && subText}
+    <div class="subs" class:show={!!subText}>{subText}</div>
   {/if}
 
   <!-- ================= bottom control bar ================= -->
@@ -438,7 +473,10 @@
         Audio <span class="sub">{audioTracks.length ? audioTracks[audioTrack]?.label || audioTracks[0]?.label : "—"}</span>
       </button>
       <button class="cbtn text" data-focus on:click={() => { overlays.subs = !overlays.subs; ensureSubtitles(); }} class:sel={overlays.subs}>
-        Subtitles <span class="sub">{activeSub === -1 ? "off" : subtitles[activeSub]?.language || "off"}</span>
+        Subtitles <span class="sub">{source === "hls" ? (hlsSub === -1 ? "off" : hlsSubTracks[hlsSub]?.label || "on") : (activeSub === -1 ? "off" : subtitles[activeSub]?.language || "off")}</span>
+      </button>
+      <button class="cbtn text" data-focus on:click={() => { if (videoEl) platform.toggleFullscreen(videoEl); }}>
+        Fullscreen
       </button>
     </div>
   </div>
@@ -516,24 +554,41 @@
     <div class="center-panel">
       <div class="panel pick-panel">
         <p class="pick-title">Subtitles</p>
-        <button class="pick-row" class:sel={activeSub === -1} data-focus on:click={() => onSubPick(-1)}>
-          <span class="pick-label">Off</span>
-          <span class="pick-hint" class:ok={activeSub === -1}>{activeSub === -1 ? "on" : ""}</span>
-        </button>
-        {#if subsLoading}
-          <div class="pad" style="display:flex;align-items:center;gap:12px">
-            <div class="spinner small"></div>
-            <span class="muted">Searching subtitles in {subtitleLanguages.join(", ")}…</span>
-          </div>
-        {:else if subtitles.length === 0}
-          <p class="muted pad">No subtitles found for this title.</p>
-        {:else}
-          {#each subtitles as sub, i (sub.id)}
-            <button class="pick-row" class:sel={activeSub === i} data-focus on:click={() => onSubPick(i)}>
-              <span class="pick-label">{sub.language}</span>
-              <span class="pick-hint" class:ok={activeSub === i}>{activeSub === i ? "on" : ""}</span>
+        {#if source === "hls"}
+          <button class="pick-row" class:sel={hlsSub === -1} data-focus on:click={() => onSubPick(-1)}>
+            <span class="pick-label">Off</span>
+            <span class="pick-hint" class:ok={hlsSub === -1}>{hlsSub === -1 ? "on" : ""}</span>
+          </button>
+          {#each hlsSubTracks as t, i (t.id)}
+            <button class="pick-row" class:sel={hlsSub === i} data-focus on:click={() => onSubPick(i)}>
+              <span class="pick-label">{t.label}</span>
+              <span class="pick-hint" class:ok={hlsSub === i}>{hlsSub === i ? "on" : ""}</span>
             </button>
           {/each}
+          {#if hlsSubTracks.length === 0}
+            <p class="muted pad">No subtitle tracks in this stream.</p>
+          {/if}
+        {:else}
+          <button class="pick-row" class:sel={activeSub === -1} data-focus on:click={() => onSubPick(-1)}>
+            <span class="pick-label">Off</span>
+            <span class="pick-hint" class:ok={activeSub === -1}>{activeSub === -1 ? "on" : ""}</span>
+          </button>
+          {#if subsLoading}
+            <div class="pad" style="display:flex;align-items:center;gap:12px">
+              <div class="spinner small"></div>
+              <span class="muted">Searching subtitles in {subtitleLanguages.join(", ")}…</span>
+            </div>
+          {:else if subtitles.length === 0}
+            <p class="muted pad">No subtitles found for this title.</p>
+            <p class="muted small pad">Try the <button class="link" on:click={() => onSourcePick("hls")}>HLS</button> source — it often exposes more tracks.</p>
+          {:else}
+            {#each subtitles as sub, i (sub.id)}
+              <button class="pick-row" class:sel={activeSub === i} data-focus on:click={() => onSubPick(i)}>
+                <span class="pick-label">{sub.language}</span>
+                <span class="pick-hint" class:ok={activeSub === i}>{activeSub === i ? "on" : ""}</span>
+              </button>
+            {/each}
+          {/if}
         {/if}
       </div>
     </div>
@@ -552,42 +607,66 @@
         </div>
       </div>
     </div>
+  {:else if confirmLeave}
+    <div class="center-panel">
+      <div class="panel pick-panel resume-panel">
+        <p class="pick-title">Leave playback?</p>
+        <p class="muted pad" style="text-align:center">
+          Your position is saved — you'll resume where you left off.
+        </p>
+        <div class="row center">
+          <button class="btn primary" data-focus on:click={leavePlayback}>Yes, back to library</button>
+          <button class="btn ghost" data-focus on:click={stayInPlayback}>No, keep playing</button>
+        </div>
+      </div>
+    </div>
   {/if}
 
-  <!-- color legend -->
+  <!-- color legend: physical keys on the remote -->
   <div class="color-legend legend-player" class:visible={showControls}>
-    <div class="cl"><span class="dot c1"></span>Source</div>
-    <div class="cl"><span class="dot c2"></span>Audio</div>
-    <div class="cl"><span class="dot c3"></span>Subs</div>
-    <div class="cl"><span class="dot c4"></span>Play</div>
+    <div class="cl"><span class="dot c4"></span>Subs</div>
+    <div class="cl"><span class="dot c2"></span>Source</div>
+    <div class="cl"><span class="dot c3"></span>Audio</div>
+    <div class="cl"><span class="dot c1"></span>Play</div>
   </div>
 </div>
 
 <style>
   .player {
     position: absolute;
-    inset: 0;
-    background: #000;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background: var(--black);
   }
   .video {
     width: 100%;
     height: 100%;
     display: block;
-    background: #000;
+    background: var(--black);
   }
-  .diag {
+  .subs {
     position: absolute;
-    top: 16px;
-    left: 16px;
-    z-index: 30;
-    padding: 6px 14px;
-    border-radius: var(--r-sm);
-    background: rgba(0, 0, 0, 0.72);
-    color: #b6f0b6;
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 15px;
-    letter-spacing: 0.03em;
+    left: 50%;
+    bottom: 190px;
+    transform: translateX(-50%);
+    z-index: 15;
+    max-width: 78%;
+    padding: 6px 18px;
+    font-size: 30px;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--text);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.6);
+    white-space: pre-wrap;
     pointer-events: none;
+  }
+  .subs.show {
+    opacity: 1;
+  }
+  .subs:not(.show) {
+    opacity: 0;
   }
   .controls {
     position: absolute;
@@ -701,7 +780,10 @@
   }
   .center-panel {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;

@@ -17,6 +17,12 @@ export interface AudioTrackInfo {
   lang?: string;
 }
 
+export interface SubtitleTrackInfo {
+  id: number;
+  label: string;
+  lang?: string;
+}
+
 export interface MediaState {
   source: SourceKind;
   duration: number;
@@ -27,6 +33,8 @@ export interface MediaState {
   error: string | null;
   audioTracks: AudioTrackInfo[];
   audioTrack: number;
+  /** HLS only: WebVTT renditions surfaced on the video's textTracks (MKV embedded subs). */
+  subtitleTracks: SubtitleTrackInfo[];
   live: boolean;
 }
 
@@ -43,12 +51,15 @@ export class MediaEngine {
   private auth: Auth;
   private hls: HlsLike | null = null;
   private unsub: (() => void)[] = [];
+  private cleaning = false;
   private resumeTimer: number | null = null;
   private lastSaved = 0;
   private onState: (s: Partial<MediaState>) => void;
   private onSourceChange: (s: SourceKind) => void;
   private onEnded: () => void;
   private lastErrorAt = 0;
+  private pendingSeek: number | null = null;
+  private resumeApplied = false;
 
   constructor(
     video: HTMLVideoElement,
@@ -104,6 +115,8 @@ export class MediaEngine {
     this.onState({ error: null, buffering: true });
     const v = this.v();
     const t = startAt ?? (v.currentTime || 0);
+    // remember where we were so the swap doesn't reset to the start
+    this.pendingSeek = t || undefined;
     if (kind === "mp4") v.src = mp4StreamURL(this.auth, this.file.id);
     else if (kind === "original") v.src = streamURL(this.auth, this.file.id);
     else if (kind === "hls") this.attachHls(t);
@@ -290,8 +303,11 @@ export class MediaEngine {
 
   private syncNativeTracks(): void {
     const at = (this.v() as any).audioTracks;
+    // progressive sources expose no reliable embedded subtitle tracks — the
+    // Player renders put.io subs via its DOM overlay, so report none here.
+    const subTracks: SubtitleTrackInfo[] = [];
     if (!at || at.length === 0) {
-      this.onState({ audioTracks: [], audioTrack: 0 });
+      this.onState({ audioTracks: [], audioTrack: 0, subtitleTracks: subTracks });
       return;
     }
     const tracks: AudioTrackInfo[] = [];
@@ -310,7 +326,7 @@ export class MediaEngine {
         break;
       }
     }
-    this.onState({ audioTracks: tracks, audioTrack: idx });
+    this.onState({ audioTracks: tracks, audioTrack: idx, subtitleTracks: subTracks });
   }
 
   private syncHlsTracks(): void {
@@ -323,7 +339,18 @@ export class MediaEngine {
         lang: t.lang,
       })
     );
-    this.onState({ audioTracks: tracks, audioTrack: hls.audioTrack ?? 0 });
+    // MKV-embedded / external WebVTT renditions surfaced on the video element
+    const tt = (this.v() as any).textTracks;
+    const subTracks: SubtitleTrackInfo[] = [];
+    if (tt) {
+      for (let i = 0; i < tt.length; i++) {
+        const t: any = tt[i];
+        if (t && (t.kind === "subtitles" || t.kind === "captions")) {
+          subTracks.push({ id: i, label: t.label || (t.language ? t.language.toUpperCase() : null) || `Subs ${i + 1}`, lang: t.language });
+        }
+      }
+    }
+    this.onState({ audioTracks: tracks, audioTrack: hls.audioTrack ?? 0, subtitleTracks: subTracks });
   }
 
   setAudioTrack(index: number): void {
@@ -368,11 +395,23 @@ export class MediaEngine {
       duration: v.duration || 0,
       live: v.seeking === false && v.duration === Infinity,
     };
+    // source switched: restore the position (a seek before the new metadata
+    // existed is silently dropped, so we wait for this event)
+    if (this.pendingSeek != null) {
+      const t = this.pendingSeek;
+      this.pendingSeek = null;
+      if (t > 2) {
+        try { v.currentTime = t; } catch { /* range error — start over */ }
+      }
+    }
     this.onState(s);
     this.syncTracks();
-    this.applyResume().then((from) => {
-      if (from) platformToast(`Resumed from ${Math.floor(from / 60)}:${String(from % 60).padStart(2, "0")}`);
-    });
+    if (!this.resumeApplied) {
+      this.resumeApplied = true;
+      this.applyResume().then((from) => {
+        if (from) platformToast(`Resumed from ${Math.floor(from / 60)}:${String(from % 60).padStart(2, "0")}`);
+      });
+    }
   };
   private onWait = () => this.onState({ buffering: true });
   private onPlaying = () => this.onState({ buffering: false, error: null });
@@ -412,6 +451,8 @@ export class MediaEngine {
     }
   }
   private unbindEvents(): void {
+    if (this.cleaning) return; // re-entrancy guard: unbindEvents is its own unsub
+    this.cleaning = true;
     for (const [t, n, f] of this.boundEvents) t.removeEventListener(n, f);
     this.boundEvents = [];
     this.unbindTrackEvents();
@@ -423,7 +464,17 @@ export class MediaEngine {
     } catch {
       /* ignore */
     }
-    for (const u of this.unsub) u();
+    // snapshot: teardownHls() appends to unsub mid-iteration; a live for..of
+    // would re-enter unbindEvents via the closure the constructor pushed.
+    const list = this.unsub.slice();
+    this.unsub = [];
+    for (const u of list) {
+      try {
+        u();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   destroy(): void {

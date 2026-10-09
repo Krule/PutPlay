@@ -137,6 +137,7 @@
     if (s.breadcrumbs.length > 1) {
       backOneLevel(au);
     } else {
+      dispatch("root");
     }
   }
 

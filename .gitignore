@@ -2,6 +2,6 @@ node_modules/
 js/
 *.ipk
 .DS_Store
-seed.html
-index.html.bak
 *.log
+.pkg-staging/
+build/deploy.mjs

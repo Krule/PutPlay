@@ -258,7 +258,7 @@
   .qr-frame {
     padding: 12px;
     border-radius: var(--r-lg);
-    background: #fff;
+    background: var(--white);
   }
   .qr-frame img {
     display: block;
