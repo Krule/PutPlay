@@ -69,9 +69,65 @@ export function cueAt(cues: SubtitleCue[], t: number): SubtitleCue | null {
   return null;
 }
 
-/** ASS/SSA → no renderable cues (styling isn't convertible); we show none. */
-export function assToCues(_ass: string): SubtitleCue[] {
-  return [];
+/**
+ * ASS/SSA → cues. MKV-embedded softsubs (put.io `source: "mkv"`) are usually
+ * ASS/SSA, so without this the original-source path had no renderable cues.
+ *
+ * We read only the `[Events]` section, learn the column layout from its
+ * `Format:` line (falling back to the standard 10-column order when absent,
+ * e.g. classic SSA), and treat everything from the `Text` column onward as
+ * the cue body — that is what keeps commas inside the text intact. Override
+ * blocks `{\…}` are stripped and `\N`/`\n`/`\h` become newline/space.
+ */
+export function assToCues(ass: string): SubtitleCue[] {
+  const text = (ass || "").replace(/^\ufeff/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const events = text.match(/\[Events\][\s\S]*?(?=\n\[[^\]]+\]|$)/i);
+  if (!events) return [];
+  const section = events[0];
+
+  // Column layout from the section's own Format: line; standard order otherwise.
+  let startIdx = 1;
+  let endIdx = 2;
+  let textStart = 9; // Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+  const fmt = section.match(/^\s*Format:\s*(.+)$/im);
+  if (fmt) {
+    const cols = fmt[1].split(",").map((c) => c.trim().toLowerCase());
+    const si = cols.indexOf("start");
+    const ei = cols.indexOf("end");
+    const ti = cols.indexOf("text");
+    if (si !== -1) startIdx = si;
+    if (ei !== -1) endIdx = ei;
+    if (ti !== -1) textStart = ti;
+  }
+
+  const cues: SubtitleCue[] = [];
+  for (const line of section.split("\n")) {
+    const m = line.match(/^\s*Dialogue:\s*(.*)$/i);
+    if (!m) continue;
+    const parts = m[1].split(",");
+    if (parts.length <= textStart) continue;
+    const start = parseTime(parts[startIdx]);
+    const end = parseTime(parts[endIdx]);
+    if (start < 0 || end <= start) continue;
+    const clean = cleanAssText(parts.slice(textStart).join(","));
+    if (!clean) continue;
+    cues.push({ start, end, text: clean });
+  }
+  cues.sort((a, b) => a.start - b.start);
+  return cues;
+}
+
+/** Strip ASS override blocks + text escapes into plain renderable text. */
+function cleanAssText(raw: string): string {
+  let t = raw;
+  t = t.replace(/\{[^{}]*\}/g, ""); // override blocks: {\\pos(…)}, {\\fad(…)} — before escapes
+  t = t.replace(/\\N/gi, "\n"); // \\N / \\n → newline
+  t = t.replace(/\\H/gi, " "); // \\h → space
+  t = t.replace(/\\/g, ""); // stray backslashes → drop
+  const lines = t
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim());
+  return lines.filter((l) => l.length > 0).join("\n").trim();
 }
 
 /** Format content (srt/vtt/ass/…) + text → cues, using the right parser. */
@@ -101,12 +157,35 @@ export interface LoadedSubtitle {
 }
 
 /**
+ * Rank subtitle sources for presentation: tracks embedded in the MKV
+ * container come first (they belong to the video), then folder uploads,
+ * then OpenSubtitles suggestions. Stable within a group.
+ */
+export function orderSubtitleSources<T extends { source?: string | null }>(
+  subs: T[]
+): T[] {
+  const rank = (s: T): number => {
+    const src = (s.source || "").toLowerCase();
+    if (src === "mkv") return 0;
+    if (src === "folder") return 1;
+    if (src === "opensubtitles") return 2;
+    return 3;
+  };
+  return subs
+    .map((s, i) => [s, i] as const)
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1])
+    .map((p) => p[0]);
+}
+
+/**
  * BUG 4: put.io returns OpenSubtitles *suggestions* for files that have no
  * real subtitles. Suggestion sources are labelled in the UI so the user can
- * tell them apart from subs that actually belong to the video.
+ * tell them apart from subs that actually belong to the video. MKV-embedded
+ * tracks get the opposite label — they ARE the video's own subtitles.
  */
 export function subtitleSourceLabel(source: string | null | undefined): string | null {
   if (!source) return null;
+  if (/mkv/i.test(source)) return "Embedded";
   if (/opensubtitles/i.test(source)) return "OpenSubtitles";
   return null;
 }

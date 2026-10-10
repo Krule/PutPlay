@@ -15,6 +15,7 @@
     loadSubtitle,
     cueAt,
     subtitleSourceLabel,
+    orderSubtitleSources,
     pickSubtitleDefault,
     type LoadedSubtitle,
     type SubtitleCue,
@@ -217,7 +218,9 @@
     try {
       const { getSubtitles } = await import("../../putio/api");
       const res = await getSubtitles(au, file.id, subtitleLanguages);
-      for (const sub of res.subtitles || []) {
+      // MKV-embedded tracks first — they belong to the video; OpenSubtitles
+      // suggestions last. Auto-select below scans in this order.
+      for (const sub of orderSubtitleSources(res.subtitles || [])) {
         const src = await loadSubtitle(sub.url, sub.format);
         subtitles.push({
           id: sub.key,
@@ -259,7 +262,6 @@
     activeSub = i;
     hlsSub = -1;
     subCues = subtitles[i] ? subtitles[i].cues || [] : [];
-    updateSubText();
   }
 
   function selectHlsSub(i: number) {
@@ -285,17 +287,17 @@
     }
   }
 
-  function updateSubText() {
-    if (activeSub === -1 || !subCues.length) {
-      subText = "";
-      return;
+  // The overlay text follows the active cue. This MUST be a reactive statement
+  // (not a bare function call): Svelte 4 only tracks values the statement
+  // itself reads, so `updateSubText()` as a statement never re-ran when
+  // currentTime changed and the overlay never synced.
+  $: {
+    if (activeSub === -1 || !subCues.length) subText = "";
+    else {
+      const c = cueAt(subCues, currentTime);
+      subText = c ? c.text : "";
     }
-    const c = cueAt(subCues, currentTime);
-    subText = c ? c.text : "";
   }
-
-  // keep the overlay in sync with playback (currentTime updates via timeupdate)
-  $: updateSubText();
 
   function onSubPick(i: number) {
     if (source === "hls") {
@@ -311,7 +313,6 @@
     if (i < 0 || activeSub === i) {
       activeSub = -1;
       subCues = [];
-      subText = "";
       platform.toast("Subtitles off");
     } else {
       selectSubTrack(i);
@@ -785,7 +786,7 @@
             </div>
           {:else if subtitles.length === 0}
             <p class="muted pad">No subtitle tracks found for this title.</p>
-            <p class="muted small pad">The OpenSubtitles service has no matches in your subtitle languages. Try the <button class="link" on:click={() => onSourcePick("hls")}>HLS</button> source — MKV files often have embedded tracks.</p>
+            <p class="muted small pad">No matches in your subtitle languages. Change the preferred subtitle language in Settings.</p>
           {:else}
             {#each subtitles as sub, i (sub.id)}
               <button class="pick-row" class:sel={activeSub === i} data-focus on:click={() => onSubPick(i)}>
@@ -850,6 +851,17 @@
     height: 100%;
     display: block;
     background: var(--black);
+  }
+  /* Native textTracks (HLS source): the browser's default cue rendering is
+     an opaque black box. Override it to a transparent, shadowed caption in
+     the app font. Chrome 79 (webOS 6) supports ::cue. :global() keeps the
+     rule un-scoped — Svelte's attribute-scoping can't apply to ::cue. */
+  :global(video::cue) {
+    background: transparent;
+    color: var(--text);
+    font-family: "Segoe UI", "Noto Sans", Roboto, Arial, sans-serif;
+    font-size: 30px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.6);
   }
   .subs {
     position: absolute;
@@ -962,9 +974,6 @@
     display: flex;
     align-items: center;
   }
-  .cbtn > :not(:first-child) {
-    margin-left: 12px;
-  }
   .cbtn .ico {
     font-size: 22px;
   }
@@ -987,6 +996,8 @@
     background: var(--accent-dim-solid);
   }
   .cbtn .sub {
+    margin-left: 12px; /* NOT ".cbtn > :not(:first-child)": the label is a text node,
+                          so the span IS the first *element* child */
     color: var(--accent-2);
     font-size: var(--fs-small);
     max-width: 220px;

@@ -1,0 +1,7 @@
+1
+00:00:30,000 --> 00:00:33,000
+OpenSubtitles suggestion line
+
+2
+00:00:40,000 --> 00:00:43,000
+Another suggestion cue

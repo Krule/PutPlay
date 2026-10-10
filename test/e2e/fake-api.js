@@ -80,7 +80,24 @@
           "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
       });
     else if (p.indexOf("/subtitles") !== -1)
-      body = JSON.stringify({ status: "ok", default: null, subtitles: [] });
+      // NOTE: deliberately returned in API "wrong" order (suggestion first) —
+      // the app must sort MKV-embedded first.
+      body = JSON.stringify({
+        status: "ok",
+        default: null,
+        subtitles: [
+          {
+            key: "os-eng", language: "English", language_code: "eng",
+            name: "suggested.srt", format: "srt", source: "opensubtitles",
+            url: location.origin + "/test/e2e/subs-os.srt"
+          },
+          {
+            key: "mk-eng", language: "English", language_code: "eng",
+            name: "embedded.ass", format: "ass", source: "mkv",
+            url: location.origin + "/test/e2e/subs-emb.ass"
+          }
+        ]
+      });
     else if (p.indexOf("/start-from") !== -1)
       body = JSON.stringify({ status: "ok", start_from: 0 });
     else if (p.indexOf("/stream") !== -1)
