@@ -208,15 +208,15 @@ export async function pollOOBCode(code: string): Promise<OOBPollResponse> {
 
 export function fmtBytes(n: number | null | undefined): string {
   if (n == null || isNaN(n)) return "";
-  const units = ["B", "MB", "GB", "TB"];
+  const units = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
   let v = n;
-  while (v >= 1024 * 1024 && i < units.length - 1) {
-    v /= 1024 * 1024;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
     i++;
   }
-  if (i === 0) return `${v} B`;
-  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  const num = i === 0 ? String(v) : v.toFixed(1).replace(/\.0$/, "");
+  return `${num} ${units[i]}`;
 }
 
 export function fmtTime(sec: number | null | undefined): string {

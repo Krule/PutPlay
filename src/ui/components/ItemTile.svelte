@@ -7,15 +7,13 @@
   export let file: PutFile;
   export let index = 0;
   // optional direct handlers (keyboard / programmatic). The tile ALSO dispatches
-  // Svelte "open"/"menu" events with detail.file — parents can use on:open.
+  // a Svelte "open" event with detail.file — parents can use on:open.
   export let onOpen: ((f: PutFile) => void) | null = null;
-  export let onMenu: ((f: PutFile) => void) | null = null;
 
   const dispatch = createEventDispatcher();
 
   const remote = getRemote();
   let el: HTMLElement;
-  let dotEl: HTMLElement;
   let active = false;
   let visited = false;
   let imgFailed = false;
@@ -34,23 +32,11 @@
     if (onOpen) onOpen(file);
     dispatch("open", { file });
   }
-  function emitMenu() {
-    if (onMenu) onMenu(file);
-    dispatch("menu", { file });
-  }
 
   onMount(() => {
     if (el) {
       remote.register(el);
-      el.addEventListener("click", (e) => {
-        // clicking the "..." dot opens the menu
-        if (dotEl && dotEl.contains(e.target as Node)) {
-          e.stopPropagation();
-          emitMenu();
-        } else {
-          emitOpen();
-        }
-      });
+      el.addEventListener("click", () => emitOpen());
     }
   });
   onDestroy(() => el && remote.unregister(el));
@@ -79,9 +65,6 @@
     {/if}
   </div>
   <div class="name">{file.name}</div>
-  <button class="dots" bind:this={dotEl} data-focus="" aria-label="Menu" on:click={(e) => { e.stopPropagation(); emitMenu(); }}>
-    ⋯
-  </button>
 </div>
 
 <style>
@@ -149,13 +132,13 @@
   .chip.mp4 {
     top: 8px;
     left: 8px;
-    background: rgba(63, 208, 143, 0.9);
+    background: var(--chip-ok-bg);
     color: var(--on-ok);
   }
   .chip.conv {
     top: 8px;
     left: 8px;
-    background: rgba(245, 184, 79, 0.9);
+    background: var(--chip-warn-bg);
     color: var(--on-warn);
   }
   .chip.size {
@@ -178,29 +161,5 @@
   }
   .tile[data-state="active"] .name {
     color: var(--text);
-  }
-  .dots {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid var(--line-strong);
-    font-size: 20px;
-    line-height: 1;
-    color: var(--text-2);
-    z-index: 6;
-    opacity: 0;
-    transition: opacity var(--t-fast) var(--ease), background var(--t-fast);
-  }
-  .tile[data-state="active"] .dots {
-    opacity: 1;
-  }
-  .dots[data-state="active"] {
-    background: var(--accent);
-    color: var(--on-accent);
-    border-color: var(--accent);
   }
 </style>

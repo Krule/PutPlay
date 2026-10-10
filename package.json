@@ -8,7 +8,7 @@
     "watch": "node build/esbuild.mjs --watch",
     "package": "npm run build && node build/package.mjs",
     "deploy:tv": "node build/deploy.mjs",
-    "test": "node --test test/subs.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "hls.js": "1.0.11",

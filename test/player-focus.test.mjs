@@ -1,0 +1,114 @@
+// Source gate: Player + Settings controls must be handed to the remote
+// engine, and the engine must be safe for re-registered/detached DOM.
+//
+// The bug this guards: both screens put `data-focus` in their markup but
+// never called remote.register() — the engine's candidate scan only sees
+// explicitly registered elements, so on the common 5-way remote the D-pad
+// found zero targets (dead arrows), focusFirst() was a no-op, and OK's
+// clickActive() had nothing to click. Pointer clicks still worked, which is
+// why it only bites on the 5-way remote.
+//
+// Run: npm test
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const read = (p) => readFileSync(join(here, "..", p), "utf8");
+
+const player = read("src/ui/screens/Player.svelte");
+const settings = read("src/ui/screens/Settings.svelte");
+const engine = read("src/webos/remote.ts");
+
+test("Player registers its control row with the remote engine", () => {
+  assert.ok(
+    /registerAll\(\s*controlsEl/.test(player),
+    "the .controls row (cbtns) must be registered via remote.registerAll(controlsEl)"
+  );
+});
+
+test("Player registers every overlay/modal surface it can show", () => {
+  for (const panel of ["sourcePanelEl", "audioPanelEl", "subsPanelEl", "resumePanelEl", "leavePanelEl", "errPanelEl"]) {
+    assert.ok(
+      new RegExp(`registerAll\\(\\s*${panel}`).test(player),
+      `${panel} must be registered via remote.registerAll — pick-rows/panel buttons are dead on the 5-way remote otherwise`
+    );
+  }
+});
+
+test("Player routes OK through the tested playerOkAction decision", () => {
+  assert.ok(
+    /playerOkAction\(/.test(player),
+    "OK must go through playerOkAction(!!activeEl) — the pure, unit-tested contract"
+  );
+});
+
+test("Player overlays focus their default pick-row via pickerDefaultIndex", () => {
+  assert.ok(
+    /pickerDefaultIndex\(/.test(player),
+    "overlay open must move D-pad focus to pickerDefaultIndex(rows) — the selected row"
+  );
+});
+
+test("Settings registers its controls (chips, inputs, buttons) with the engine", () => {
+  assert.ok(
+    /registerAll\(\s*settingsEl/.test(settings),
+    "Settings chips/inputs/buttons must be registered via remote.registerAll — they were data-focus markup only"
+  );
+});
+
+test("engine: register() is idempotent (no duplicate click listeners on re-register)", () => {
+  // focusEl() calls register() on already-registered elements; without a
+  // guard every focusEl leaks another click listener.
+  assert.ok(
+    /if\s*\(\s*(!\s*)?this\.registered\.has\(el\)/.test(engine) ||
+      /const\s+fresh\s*=\s*!\s*this\.registered\.has\(el\)/.test(engine),
+    "register() must check this.registered.has(el) before attaching its click listener"
+  );
+});
+
+test("engine: candidates() prunes detached elements (lazy GC)", () => {
+  // {#if}/{#each} surfaces recreate their DOM on every open; without a prune
+  // the registered set grows one dead copy of each overlay per open, forever.
+  const candidatesBody = engine.slice(engine.indexOf("private candidates("));
+  assert.ok(
+    candidatesBody.length > 0 && /isConnected/.test(candidatesBody.slice(0, 400)),
+    "candidates() must drop registered elements whose isConnected is false"
+  );
+});
+
+test("engine: registerAll() scans a surface's [data-focus] children once per node", () => {
+  assert.ok(
+    /registerAll\(/.test(engine),
+    "the engine must expose registerAll(root) — idempotent per-node registration for Svelte surfaces"
+  );
+  assert.ok(
+    /__reg/.test(engine),
+    "registerAll must mark nodes (__reg) so re-scans after async content arrival don't double-register"
+  );
+});
+
+test("engine: clickActive() never clicks a detached (stale) element", () => {
+  // OK with a stale active (its surface was just swapped) used to synthesize
+  // a click on the dead node — firing a stale handler (e.g. re-opening an old
+  // library tile). A stale active must blur, not click.
+  const clickActiveBody = engine.slice(engine.indexOf("clickActive("));
+  assert.ok(
+    clickActiveBody.length > 0 && /isConnected/.test(clickActiveBody.slice(0, 300)),
+    "clickActive() must check isConnected before activating"
+  );
+});
+
+test("Settings.svelte compiles (Svelte 4: no bare return inside $: blocks)", async () => {
+  const { compile, preprocess } = await import("svelte/compiler");
+  const sveltePreprocess = (await import("svelte-preprocess")).default;
+  const file = join(here, "..", "src", "ui", "screens", "Settings.svelte");
+  const source = readFileSync(file, "utf8");
+  const processed = await preprocess(source, sveltePreprocess(), { filename: file });
+  assert.doesNotThrow(
+    () => compile(processed.code, { generate: "dom", filename: file, css: "injected" }),
+    "Settings.svelte must compile — a parse error there (e.g. `return` in a $: block) is invisible to every other gate"
+  );
+});

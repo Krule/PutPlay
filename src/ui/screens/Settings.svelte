@@ -2,8 +2,12 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { auth, signOut } from "../../store/auth";
+  import { config, saveConfig, type ConfigState } from "../../store/config";
   import { requestLibrary } from "../../store/nav";
+  import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
+
+  const remote = getRemote();
 
   let a: any;
   $: email = a?.accountEmail || "";
@@ -11,79 +15,196 @@
   $: disk = a?.disk;
   $: subs = a?.subtitleLanguages || [];
 
-  onMount(() => {
-    a = get(auth);
-    const unsub = auth.subscribe((v) => (a = v));
-    const onKey = (e: KeyboardEvent) => {
-      const code = (e as any).keyCode as number;
-      if (code === 461 || code === 27 || e.key === "Escape") onBack();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      unsub();
-      window.removeEventListener("keydown", onKey, true);
-    };
-  });
+  // config page state
+  let c: ConfigState = get(config);
+  $: cfgSource = c?.source ?? "original";
+  $: cfgAudio = c?.audioLang ?? "";
+  $: cfgSub = c?.subtitleLang ?? "";
+  $: cfgScale = c?.subScale ?? 1;
 
-  function onBack() {
-    requestLibrary();
+  const SOURCE_OPTIONS: { kind: ConfigState["source"]; label: string }[] = [
+    { kind: "original", label: "Original" },
+    { kind: "mp4", label: "put.io MP4" },
+    { kind: "hls", label: "HLS" },
+  ];
+  const SCALE_OPTIONS: { v: number; label: string }[] = [
+    { v: 0.8, label: "Small" },
+    { v: 1, label: "Default" },
+    { v: 1.35, label: "Large" },
+    { v: 1.8, label: "XL" },
+  ];
+
+  let confirmSignOut = false;
+
+  // ---------------- 5-way remote focus wiring ----------------
+  // Chips, inputs and buttons carry data-focus in the markup, but the engine
+  // only sees registered elements — without this the D-pad found zero
+  // candidates on this screen (dead arrows, dead OK) while pointer clicks
+  // worked. The root scan is idempotent per node, and re-runs when the
+  // Sign-out → confirm swap recreates the button row.
+  let settingsEl: HTMLDivElement;
+  let signOutBtn: HTMLButtonElement;
+  let confirmRowEl: HTMLDivElement;
+  let confirmWasOpen = false;
+
+  // base controls (chips, inputs, etc.): registered once — the bind ref
+  // invalidates after the initial render commits, so the DOM is complete
+  $: if (settingsEl) remote.registerAll(settingsEl);
+  // the confirm row is committed to the DOM AFTER the reactive phase (Svelte
+  // evaluates $: before template updates), so drive it from the bind ref:
+  // register both buttons and focus the PRIMARY action — TV idiom: the remote
+  // has no cancel key, Back is the cancel (see onBack)
+  $: {
+    if (confirmRowEl) {
+      confirmWasOpen = true;
+      remote.registerAll(confirmRowEl);
+      const primary = confirmRowEl.querySelector<HTMLElement>(".btn.primary");
+      if (primary) remote.focusEl(primary);
+    }
   }
-
-  async function onSignOut() {
-    if (confirm("Sign out? Your token will be removed from this TV.")) {
-      await signOut();
+  // the Sign-out button is (re)created each time the confirm toggles — its
+  // bind ref re-invalidates every time, post-commit: register the fresh node,
+  // and when the confirm just closed, restore focus to it (the focused
+  // confirm button is detached by then)
+  $: {
+    if (signOutBtn) {
+      remote.register(signOutBtn);
+      if (confirmWasOpen) {
+        confirmWasOpen = false;
+        const a = remote.activeEl;
+        if (!a || !a.isConnected) remote.focusEl(signOutBtn);
+      }
     }
   }
 
-  let signOutBtn: HTMLButtonElement;
+  // BUG 5: Settings owns Back through the same channel as every other screen
+  // and clears it on unmount, so the stale Library handlers can't leak in.
+  function onBack() {
+    if (confirmSignOut) {
+      confirmSignOut = false;
+      return;
+    }
+    persist();
+    remote.blur();
+    requestLibrary();
+  }
+
+  function persist() {
+    // fold any edited value back into the store and persist it
+    if (c) {
+      config.set({
+        source: cfgSource,
+        audioLang: cfgAudio,
+        subtitleLang: cfgSub,
+        subScale: cfgScale,
+      });
+    }
+    saveConfig().catch(() => undefined);
+  }
+
+  function onSignOut() {
+    if (!confirmSignOut) {
+      confirmSignOut = true;
+      return;
+    }
+    confirmSignOut = false;
+    signOut();
+  }
+
+  onMount(() => {
+    a = get(auth);
+    c = get(config);
+    const unsubAuth = auth.subscribe((v) => (a = v));
+    const unsubCfg = config.subscribe((v) => (c = v));
+    remote.setHandlers({ onBack, onOK: () => remote.clickActive() });
+    requestAnimationFrame(() => remote.focusFirst());
+    return () => {
+      unsubAuth();
+      unsubCfg();
+      persist();
+      remote.clearHandlers();
+    };
+  });
 </script>
 
-<div class="settings">
+<div class="settings" bind:this={settingsEl}>
   <header class="head">
     <h1 class="title">Account</h1>
+    <p class="sub">put.io TV app</p>
   </header>
 
-  <div class="body">
-    <div class="card">
-      <div class="avatar-row">
-        <div class="avatar">{(name || "?").slice(0, 2).toUpperCase()}</div>
-        <div>
-          <p class="name">{name || "put.io account"}</p>
-          {#if email}<p class="email">{email}</p>{/if}
+  <div class="cols">
+    <div class="col">
+      <div class="card">
+        <div class="avatar-row">
+          <div class="avatar">{(name || "?").slice(0, 2).toUpperCase()}</div>
+          <div>
+            <p class="name">{name || "put.io account"}</p>
+            {#if email}<p class="email">{email}</p>{/if}
+          </div>
+        </div>
+        {#if disk}
+          <div class="disk">
+            <div class="disk-row"><span>Storage</span><span>{fmtBytes(disk.used)} / {fmtBytes(disk.size)}</span></div>
+            <div class="disk-bar"><div class="disk-bar-fill" style="width: {Math.min(100, Math.round((disk.used / disk.size) * 100))}%"></div></div>
+            <p class="free">{fmtBytes(disk.avail)} free</p>
+          </div>
+        {/if}
+      </div>
+
+      <div class="card">
+        <p class="card-title">Playback</p>
+        <p class="opt-label">Default video source</p>
+        <div class="opt-row">
+          {#each SOURCE_OPTIONS as o (o.kind)}
+            <button class="chip" class:sel={cfgSource === o.kind} data-focus on:click={() => (cfgSource = o.kind)}>{o.label}</button>
+          {/each}
         </div>
       </div>
-      {#if disk}
-        <div class="disk">
-          <div class="disk-row"><span>Storage</span><span>{fmtBytes(disk.used)} / {fmtBytes(disk.size)}</span></div>
-          <div class="disk-bar"><div class="disk-bar-fill" style="width: {Math.min(100, Math.round((disk.used / disk.size) * 100))}%"></div></div>
-          <p class="free">{fmtBytes(disk.avail)} free</p>
-        </div>
-      {/if}
-    </div>
 
-    <div class="card">
-      <p class="card-title">Subtitle languages</p>
-      <p class="desc">
-        {#if subs.length}
-          Searched automatically when playing: <span class="acc">{subs.join(", ")}</span>
+      <div class="card danger-zone">
+        <p class="card-title">Session</p>
+        {#if confirmSignOut}
+          <div class="opt-row" bind:this={confirmRowEl}>
+            <button class="btn primary" data-focus on:click={onSignOut}>Yes, sign out</button>
+            <button class="btn ghost" data-focus on:click={() => (confirmSignOut = false)}>Cancel</button>
+          </div>
+          <p class="note">Your token will be removed from this TV.</p>
         {:else}
-          None set.
+          <button class="btn danger" data-focus bind:this={signOutBtn} on:click={onSignOut}>Sign out</button>
         {/if}
-      </p>
-      <p class="note">
-        Change these at <span class="acc">app.put.io → Settings → Show Subtitles</span>. The TV searches OpenSubtitles in
-        the languages you pick there.
-      </p>
+      </div>
     </div>
 
-    <div class="card danger-zone">
-      <p class="card-title">Session</p>
-      <button class="btn danger" bind:this={signOutBtn} data-focus on:click={onSignOut}>Sign out</button>
+    <div class="col">
+      <div class="card">
+        <p class="card-title">Preferred audio language</p>
+        <input class="text-input" bind:value={cfgAudio} placeholder="e.g. eng, deu, fra — blank = first track" spellcheck="false" data-focus />
+        <p class="note">When a file has several audio tracks, the app picks the first one in this language.</p>
+      </div>
+
+      <div class="card">
+        <p class="card-title">Preferred subtitle language</p>
+        <input class="text-input" bind:value={cfgSub} placeholder="e.g. eng, deu — blank = none auto-selected" spellcheck="false" data-focus />
+        <p class="note">Only subtitles in this language turn on automatically. OpenSubtitles suggestions are labelled so you can tell them apart.</p>
+        {#if subs.length}
+          <p class="note">put.io web-app languages: <span class="acc">{subs.join(", ")}</span> — these still drive the subtitle search.</p>
+        {/if}
+      </div>
+
+      <div class="card">
+        <p class="card-title">Subtitle size</p>
+        <div class="opt-row">
+          {#each SCALE_OPTIONS as o (o.v)}
+            <button class="chip" class:sel={cfgScale === o.v} data-focus on:click={() => (cfgScale = o.v)}>{o.label}</button>
+          {/each}
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="foot-hint">
-    <span class="kbd">BACK</span> return to library
+    <span class="kbd">BACK</span> return to library · changes save automatically
   </div>
 </div>
 
@@ -95,39 +216,62 @@
     flex-direction: column;
     padding: 48px 80px;
   }
+  .head {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 30px;
+  }
+  .head > :not(:first-child) {
+    margin-left: 18px;
+  }
   .title {
     font-size: var(--fs-h1);
     font-weight: 700;
-    margin-bottom: 36px;
   }
-  .body {
+  .sub {
+    color: var(--text-3);
+    font-size: var(--fs-h3);
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    flex: 1;
+    min-height: 0;
+  }
+  .col {
     display: flex;
     flex-direction: column;
-    gap: 28px;
-    max-width: 1100px;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .col > :not(:first-child) {
+    margin-top: 28px;
   }
   .card {
     background: var(--bg-raised);
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
-    padding: 32px 36px;
+    padding: 28px 32px;
   }
   .card-title {
     font-size: var(--fs-h3);
     font-weight: 700;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
   }
   .avatar-row {
     display: flex;
     align-items: center;
-    gap: 24px;
-    margin-bottom: 28px;
+    margin-bottom: 24px;
+  }
+  .avatar-row > :not(:first-child) {
+    margin-left: 24px;
   }
   .avatar {
     width: 84px;
     height: 84px;
     border-radius: 50%;
-    background: var(--accent-dim);
+    background: var(--accent-dim-solid);
     color: var(--accent-2);
     display: flex;
     align-items: center;
@@ -165,24 +309,62 @@
     color: var(--text-2);
     font-size: var(--fs-small);
   }
-  .desc {
+  .opt-label {
     color: var(--text-2);
-    line-height: 1.6;
+    font-size: var(--fs-body);
+    margin-bottom: 12px;
+  }
+  .opt-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: -7px;
+  }
+  .opt-row > * {
+    margin: 7px;
+  }
+  .chip {
+    padding: 12px 22px;
+    border-radius: 999px;
+    border: 2px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: var(--fs-body);
+    cursor: pointer;
+  }
+  .chip.sel {
+    border-color: var(--accent);
+    background: var(--accent-dim-solid);
+    color: var(--accent-2);
+    font-weight: 700;
+  }
+  .text-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 18px;
+    font-size: var(--fs-body);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    border: 2px solid var(--line-strong);
+    color: var(--text);
+    outline: none;
+  }
+  .text-input:focus {
+    border-color: var(--accent);
   }
   .note {
-    margin-top: 14px;
+    margin-top: 12px;
     color: var(--text-3);
     font-size: var(--fs-small);
-    line-height: 1.6;
+    line-height: 1.55;
   }
   .acc {
     color: var(--accent-2);
   }
   .danger-zone .btn {
-    margin-top: 8px;
+    margin-top: 4px;
   }
   .foot-hint {
-    margin-top: auto;
+    margin-top: 24px;
     color: var(--text-3);
   }
 </style>

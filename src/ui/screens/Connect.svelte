@@ -1,14 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { get } from "svelte/store";
-  import { startOOB, usePastedToken, LINK_URL } from "../../store/auth";
+  import { startOOB, cancelOOB, LINK_URL } from "../../store/auth";
   import type { AuthState, AuthStore } from "../../store/auth";
+  import { getRemote } from "../../webos/remote";
+  import { platform } from "../../webos/platform";
+  import { connectBackAction, doublePress } from "../../putio/connect";
 
   export let state: AuthStore;
-
-  let s: AuthState;
-  let pasteValue = "";
-  let mode: "choice" | "paste" = "choice";
 
   let oobCode: string;
   let oobQr: string | null;
@@ -18,137 +17,98 @@
   $: sync();
   function sync() {
     const v = get(state);
-    s = v;
     oobCode = v.oobCode;
     oobQr = v.oobQr;
     oobError = v.oobError;
     status = v.status;
+    // on the choices screen the sign-in button exists — give the remote a
+    // starting point (it is the first registered candidate, so it is the
+    // initial focus)
+    if (status === "unauthed") {
+      requestAnimationFrame(() => remote.focusFirst());
+    }
   }
 
   let oobBtn: HTMLButtonElement;
-  let pasteBtn: HTMLButtonElement;
-  let tokenInput: HTMLInputElement;
+  let newCodeBtn: HTMLButtonElement;
 
-  function onKey(e: KeyboardEvent) {
-    if (status !== "unauthed") return;
-    const code = (e as any).keyCode as number;
-    if (mode === "paste" && tokenInput && document.activeElement === tokenInput) {
-      if (code === 13 || e.key === "Enter") {
-        e.preventDefault();
-        submitPaste();
-      }
+  const remote = getRemote();
+
+  // the double-press exit guard is a plain object — kept out of reactive state
+  const exitGuard = { lastRootBackAt: 0 };
+
+  // BUG 6: the Connect screen owns Back through the same channel as every
+  // other screen. pending → cancel the device-code flow and show the sign-in
+  // screen again; choices → double-press exit (same guard as the library root).
+  function onBack() {
+    const action = connectBackAction(status);
+    if (action === "ignore") return;
+    if (action === "choices") {
+      cancelOOB();
+      platform.toast("Back to sign-in options", 1600);
+      requestAnimationFrame(() => remote.focusFirst());
       return;
     }
-    if (code === 39 || code === 37 || e.key === "ArrowLeft" || e.key === "ArrowRight") {
-      if (oobBtn && pasteBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        const active = document.activeElement;
-        for (const b of [oobBtn, pasteBtn]) if (b) b.dataset.state = b === active ? "active" : "";
-        const target = active === oobBtn ? pasteBtn : oobBtn;
-        if (target) {
-          target.focus();
-          target.dataset.state = "active";
-        }
-      }
-    }
-    if (code === 13 || e.key === "Enter") {
-      if (mode === "choice") startOOB();
+    // "root": unauthed choices screen
+    const now = Date.now();
+    if (doublePress(exitGuard, now) === "exit") {
+      platform.back();
+    } else {
+      platform.toast("Press Back again to exit", 1800);
     }
   }
 
-  function submitPaste() {
-    if (tokenInput) usePastedToken(tokenInput.value);
+  // register the (re)created buttons with the remote engine; removed DOM
+  // nodes drop out of the candidate scan on their own
+  $: {
+    for (const b of [oobBtn, newCodeBtn]) {
+      if (b && !b.dataset.__reg) {
+        b.dataset.__reg = "1";
+        remote.register(b);
+      }
+    }
   }
 
   onMount(() => {
     sync();
     const unsub = state.subscribe(sync);
-    window.addEventListener("keydown", onKey, true);
+    remote.setHandlers({ onBack, onOK: () => remote.clickActive() });
     return () => {
       unsub();
-      window.removeEventListener("keydown", onKey, true);
+      remote.clearHandlers(); // no stale handlers may leak into the next screen
     };
   });
 </script>
 
-<div class="connect fade-up">
+<div class="connect fade-up" class:full={status === "pending" || status === "loading"}>
   <div class="brand">
     <img src="icon.png" alt="put.io" class="logo" />
     <div class="brand-text">
-      <h1>put.io</h1>
+      <h1>put.io<span class="dot">.</span></h1>
       <p class="tag">your library, on the big screen</p>
+      <div class="stamp" aria-hidden="true">put.io</div>
     </div>
   </div>
 
   {#if status === "loading"}
-    <div class="center-col">
+    <div class="form-col center">
       <div class="spinner"></div>
       <p class="muted">Checking for a saved session…</p>
     </div>
   {:else if status === "unauthed"}
-    <div class="center-col">
-      {#if mode === "choice"}
-        <h2 class="h2">Connect your put.io</h2>
-        <p class="muted">Choose how you'd like to sign in.</p>
-        <div class="row">
-          <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
-            Sign in with code
-          </button>
-          <button
-            class="btn ghost big"
-            bind:this={pasteBtn}
-            data-focus
-            on:click={() => {
-              mode = "paste";
-              tokenInput?.focus();
-            }}
-          >
-            Paste a token
-          </button>
-        </div>
-        <p class="hint">
-          New here? Create an account at
-          <a
-            href="#"
-            on:click={(e) => {
-              e.preventDefault();
-              window.open("https://app.put.io", "_blank");
-            }}
-            >app.put.io</a
-          >
-        </p>
-      {:else}
-        <h2 class="h2">Paste your put.io token</h2>
-        <p class="muted">From app.put.io → click your name → your personal token</p>
-        <input
-          bind:this={tokenInput}
-          bind:value={pasteValue}
-          class="token-input"
-          placeholder="Paste token here and press OK"
-          spellcheck="false"
-          on:keydown={(e) => {
-            if (e.key === "Enter") submitPaste();
-          }}
-        />
-        <div class="row">
-          <button class="btn primary" on:click={submitPaste}>Connect</button>
-          <button
-            class="btn ghost"
-            on:click={() => {
-              mode = "choice";
-              pasteValue = "";
-            }}
-            >Back</button
-          >
-        </div>
-      {/if}
+    <div class="form-col">
+      <h2 class="h2">Connect your put.io</h2>
+      <p class="muted">You'll approve this TV from your phone or PC.</p>
+      <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
+        Sign in with code
+      </button>
+     
       {#if oobError}
         <p class="error-text">{oobError}</p>
       {/if}
     </div>
   {:else if status === "pending"}
-    <div class="center-col">
+    <div class="form-col center">
       <h2 class="h2">Approve this TV</h2>
       {#if oobCode}
         <div class="code-box">
@@ -164,7 +124,7 @@
       {/if}
       <div class="spinner small" style="margin-top: 8px"></div>
       <p class="muted">Waiting for approval…</p>
-      <button class="btn ghost" data-focus on:click={startOOB}>Generate a new code</button>
+      <button class="btn ghost" bind:this={newCodeBtn} data-focus on:click={startOOB}>Generate a new code</button>
     </div>
   {/if}
 
@@ -175,23 +135,35 @@
   .connect {
     width: 1920px;
     height: 1080px;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 64px;
     align-items: center;
-    padding-top: 104px;
+    padding: 72px 112px 0;
     position: relative;
     overflow: hidden;
   }
+  .connect.full {
+    grid-template-columns: 1fr;
+  }
+  .connect.full .brand {
+    display: none;
+  }
   .brand {
     display: flex;
-    align-items: center;
-    gap: 26px;
-    margin-bottom: 64px;
+    flex-direction: column;
+    padding-left: 8px;
+  }
+  .brand > :not(:first-child) {
+    margin-top: 26px;
   }
   .logo {
-    width: 96px;
-    height: 96px;
+    width: 104px;
+    height: 104px;
     border-radius: var(--r-lg);
+  }
+  .brand-text {
+    position: relative;
   }
   .brand-text h1 {
     font-size: var(--fs-display);
@@ -199,17 +171,42 @@
     letter-spacing: -0.02em;
     line-height: 1;
   }
+  .brand-text h1 .dot {
+    color: var(--accent-2);
+  }
   .brand-text .tag {
-    margin-top: 10px;
+    margin-top: 12px;
     font-size: var(--fs-h3);
     color: var(--text-2);
   }
-  .center-col {
+  /* the signature: a rotated stamp, quiet but present, echoing a library card */
+  .stamp {
+    position: absolute;
+    right: -120px;
+    top: -44px;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    border: 2px solid var(--line-strong);
+    border-radius: var(--r-md);
+    padding: 10px 18px;
+    transform: rotate(-8deg);
+    opacity: 0.45;
+    user-select: none;
+  }
+  .form-col {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 26px;
+  }
+  .form-col > :not(:first-child) {
+    margin-top: 26px;
+  }
+  .form-col.center {
+    grid-column: 1;
   }
   .h2 {
     font-size: var(--fs-h2);
@@ -223,10 +220,6 @@
   }
   .linktext {
     color: var(--accent-2);
-  }
-  .row {
-    display: flex;
-    gap: 24px;
   }
   .btn.big {
     padding: 22px 48px;
@@ -265,21 +258,6 @@
     width: 220px;
     height: 220px;
   }
-  .token-input {
-    width: 760px;
-    padding: 20px 26px;
-    font-size: var(--fs-body);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    border: 2px solid var(--line-strong);
-    color: var(--text);
-    outline: none;
-    text-align: center;
-    letter-spacing: 0.04em;
-  }
-  .token-input:focus {
-    border-color: var(--accent);
-  }
   .error-text {
     color: var(--danger);
     font-size: var(--fs-body);
@@ -292,6 +270,9 @@
   .footer-note {
     position: absolute;
     bottom: 48px;
+    left: 0;
+    right: 0;
+    text-align: center;
     color: var(--text-3);
     font-size: var(--fs-small);
   }

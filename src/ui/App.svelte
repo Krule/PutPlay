@@ -3,8 +3,9 @@
   import { get } from "svelte/store";
   import { platform, isWebOSLike } from "../webos/platform";
   import { auth, loadAuth, type AuthState } from "../store/auth";
-  import { nav, requestBackLevel } from "../store/nav";
+  import { nav, requestBackLevel, routeNav } from "../store/nav";
   import { library } from "../store/library";
+  import { loadConfig } from "../store/config";
 
   const getLib = () => get(library);
   import type { PutFile } from "../putio/types";
@@ -109,17 +110,20 @@
       }
     });
 
+    // EDGE-triggered routing through the tested routeNav decision: react to
+    // counter increments (prev→next), never to the level being > 0 — the
+    // counters are monotonic, so a level check re-fires forever and reverted
+    // every Settings entry after the first round-trip (the .acct bug).
+    let navSeen = get(nav);
     const unsubNav = nav.subscribe((v) => {
-      if (v.navToSettings > 0 && screen === "library") {
-        screen = "settings";
-        platform.pushBackLevel();
-      }
-      if (v.navToLibrary > 0 && screen === "settings") {
-        screen = "library";
-      }
+      const enteredSettings = v.navToSettings !== navSeen.navToSettings && screen === "library";
+      screen = routeNav(navSeen, v, screen);
+      if (enteredSettings) platform.pushBackLevel();
+      navSeen = v;
     });
 
     const ok = await loadAuth();
+    loadConfig().catch(() => undefined);
     if (ok) screen = "library";
     else screen = "connect";
 

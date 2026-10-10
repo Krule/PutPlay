@@ -135,21 +135,10 @@ export function stopOOBPoll(): void {
   }
 }
 
-/** Paste an existing put.io token manually. */
-export async function usePastedToken(token: string): Promise<void> {
+/** Cancel a started device-code flow and return to the sign-in choices. */
+export function cancelOOB(): void {
   stopOOBPoll();
-  set({ status: "pending", oobError: null });
-  const clean = token.trim().replace(/^https?:\/\/app\.put\.io\/\//, "").split(/[?#]/)[0];
-  if (!clean) {
-    set({ status: "unauthed", oobError: "That token looks empty." });
-    return;
-  }
-  try {
-    await validateOAuth(clean);
-    await completeAuth(clean);
-  } catch (e: any) {
-    set({ status: "unauthed", oobError: e.message || "Token was rejected." });
-  }
+  set({ status: "unauthed", oobCode: null, oobQr: null, oobError: null });
 }
 
 export async function signOut(): Promise<void> {

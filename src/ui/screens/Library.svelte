@@ -7,10 +7,10 @@
   import type { SortBy } from "../../store/library";
   import { currentAuth, auth } from "../../store/auth";
   import { nav, requestSettings } from "../../store/nav";
-  import { fmtBytes, getFile } from "../../putio/api";
+  import { libraryOkAction } from "../../putio/library-ok";
+  import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
   import ItemTile from "../components/ItemTile.svelte";
-  import Menu from "../components/Menu.svelte";
 
   let s: any = get(library);
   $: files = s.files;
@@ -57,81 +57,7 @@
     }
   }
 
-  let menuFor: PutFile | null = null;
-  let menuVisible = false;
-  let menuItems: any[] = [];
-
-  async function onMenu(f: PutFile) {
-    menuFor = f;
-    const base = [
-      { id: "info", label: "Details", icon: "ℹ" },
-      { id: "link", label: "Copy download link", icon: "🔗" },
-    ];
-    if (putioIsFolder(f)) base.push({ id: "open", label: "Open folder", icon: "📂" });
-    else base.push({ id: "convert", label: f.is_mp4_available ? "MP4 ready" : "Queue MP4 conversion", icon: "⚙" });
-    menuItems = base;
-    menuVisible = true;
-  }
-
-  async function onMenuPick(it: any) {
-    const f = menuFor;
-    if (!f) return;
-    if (it.id === "__cancel") {
-      menuVisible = false;
-      return;
-    }
-    const au = currentAuth();
-    if (!au) return;
-    menuVisible = false;
-    if (it.id === "info") {
-      let extra = "";
-      try {
-        const d = await getFile(au, f.id, { mediaInfo: true });
-        const streams = d.media_info?.streams || [];
-        const v = streams.find((x) => x.codec_type === "video");
-        const auds = streams.filter((x) => x.codec_type === "audio");
-        const subs = streams.filter((x) => x.codec_type === "subtitle");
-        if (v) extra += `${v.codec_name?.toUpperCase()}${v.profile ? " " + v.profile : ""} · `;
-        extra += `${fmtBytes(f.size)}`;
-        if (d.duration) extra += ` · ${fmtTime(d.duration)}`;
-        if (auds.length) extra += `\n${auds.length} audio track${auds.length > 1 ? "s" : ""}`;
-        if (subs.length) extra += `\n${subs.length} embedded subtitle${subs.length > 1 ? "s" : ""}`;
-      } catch {}
-      platform.toast(`${f.name}\n${extra}`, 6000);
-    } else if (it.id === "link") {
-      const au2 = currentAuth()!;
-      const url = `https://app.put.io/dl/${f.id}/?token=${au2.downloadToken}`;
-      await platform.copyToClipboard(url);
-      platform.toast("Download link copied");
-    } else if (it.id === "open") {
-      openFolder(au, f);
-    } else if (it.id === "convert") {
-      try {
-        await fetch(`https://api.put.io/v2/files/${f.id}/mp4/stream`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${au.oauthToken}` },
-          redirect: "manual",
-        });
-        platform.toast("MP4 conversion requested — check back in a few minutes");
-      } catch {
-        platform.toast("Could not request conversion");
-      }
-    }
-  }
-
-  function fmtTime(sec: number): string {
-    sec = Math.floor(sec);
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s2 = sec % 60;
-    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s2).padStart(2, "0")}` : `${m}:${String(s2).padStart(2, "0")}`;
-  }
-
   function onBack() {
-    if (menuVisible) {
-      menuVisible = false;
-      return;
-    }
     const au = currentAuth();
     if (!au) return;
     if (s.breadcrumbs.length > 1) {
@@ -163,8 +89,13 @@
       onColor,
       onNavigate,
       onOK: () => {
+        // Same contract for both remotes: a spatially focused control wins
+        // (header buttons, breadcrumbs, tiles); only with nothing focused do
+        // we fall back to the last selected item.
         const f = get(library).selected;
-        if (f) onOpenFile(f);
+        const action = libraryOkAction(!!remote.activeEl, !!f);
+        if (action === "activate-focused") remote.clickActive();
+        else if (action === "open-selected" && f) onOpenFile(f);
       },
     });
   }
@@ -206,6 +137,7 @@
       unsubLib();
       unsubAuth();
       unsubNav();
+      remote.clearHandlers(); // BUG 5: no stale handlers may leak into Settings
       gridEl?.removeEventListener("scroll", onScroll);
       gridEl?.removeEventListener("scroll", syncTileStates);
     };
@@ -247,10 +179,6 @@
   function onTileOpen(f: PutFile) {
     library.update((st) => ({ ...st, selected: f }));
     onOpenFile(f);
-  }
-  function onTileMenu(f: PutFile) {
-    library.update((st) => ({ ...st, selected: f }));
-    onMenu(f);
   }
 
   $: {
@@ -316,16 +244,13 @@
     <div class="grid-wrap">
       <div class="grid" bind:this={gridEl}>
         {#each files as f, i (f.id)}
-          <ItemTile file={f} index={i}
+          <ItemTile
+            file={f}
+            index={i}
             on:open={(e) => {
               const f = e.detail.file;
               library.update((st) => ({ ...st, selected: f }));
               onOpenFile(f);
-            }}
-            on:menu={(e) => {
-              const f = e.detail.file;
-              library.update((st) => ({ ...st, selected: f }));
-              onMenu(f);
             }} />
         {/each}
       </div>
@@ -335,18 +260,6 @@
         </div>
       {/if}
     </div>
-  {/if}
-
-  <!-- color legend -->
-  <div class="color-legend">
-    <div class="cl"><span class="dot c1"></span>Play</div>
-    <div class="cl"><span class="dot c2"></span>Details</div>
-    <div class="cl"><span class="dot c3"></span>Sort</div>
-    <div class="cl"><span class="dot c4"></span>Back</div>
-  </div>
-
-  {#if menuVisible}
-    <Menu title={menuFor?.name || ""} items={menuItems} onPick={onMenuPick} />
   {/if}
 </div>
 
@@ -363,16 +276,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 24px;
     padding-bottom: 20px;
+  }
+  .head > :not(:first-child) {
+    margin-left: 24px;
   }
   .crumbs {
     display: flex;
     align-items: center;
-    gap: 10px;
     overflow: hidden;
     flex: 1;
     min-width: 0;
+  }
+  .crumbs > :not(:first-child) {
+    margin-left: 10px;
   }
   .crumb {
     font-size: var(--fs-h2);
@@ -394,15 +311,19 @@
   }
   .head-actions {
     display: flex;
-    gap: 16px;
     flex-shrink: 0;
+  }
+  .head-actions > :not(:first-child) {
+    margin-left: 16px;
   }
   .btn.sm {
     padding: 12px 24px;
     font-size: var(--fs-body);
     display: flex;
     align-items: center;
-    gap: 10px;
+  }
+  .btn.sm > :not(:first-child) {
+    margin-left: 10px;
   }
   .sort-ico {
     color: var(--accent-2);
@@ -440,7 +361,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 24px;
+  }
+  .state-col > :not(:first-child) {
+    margin-top: 24px;
   }
   .muted {
     color: var(--text-2);

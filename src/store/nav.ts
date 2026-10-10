@@ -7,9 +7,36 @@ import { writable } from "svelte/store";
 export interface NavState {
   /** library asks to go up one folder level (or to app root if at top) */
   backLevel: number; // monotonically increasing signal
+  navToSettings: number;
+  navToLibrary: number;
 }
 
-export const nav = writable<{ backLevel: number; navToSettings: number; navToLibrary: number }>({
+/** Screens the App can be showing. */
+export type AppScreen = "connect" | "library" | "player" | "settings";
+
+/**
+ * EDGE-triggered screen routing for the nav counters (a pure decision so it
+ * is unit-tested — see test/nav-route.test.mjs).
+ *
+ * Both decisions evaluate against the INCOMING `screen`, never against a
+ * value a sibling branch just assigned. This matters: the counters are
+ * monotonic (they are never reset), so level-triggered conditions
+ * (`navToSettings > 0`) re-fire on every store update, and two sequential
+ * ifs reading a mutated `screen` revert every navigation after the first
+ * Settings round-trip — the bug where the .acct button "did nothing".
+ */
+export function routeNav(
+  prev: { navToSettings: number; navToLibrary: number },
+  next: { navToSettings: number; navToLibrary: number },
+  screen: AppScreen
+): AppScreen {
+  let out = screen;
+  if (next.navToSettings !== prev.navToSettings && screen === "library") out = "settings";
+  if (next.navToLibrary !== prev.navToLibrary && screen === "settings") out = "library";
+  return out;
+}
+
+export const nav = writable<NavState>({
   backLevel: 0,
   navToSettings: 0,
   navToLibrary: 0,

@@ -94,8 +94,43 @@ export interface LoadedSubtitle {
   name: string;
   url: string;
   format: string;
+  /** Where put.io says this subtitle came from ("OpenSubtitles", "upload", …). */
+  source?: string;
   blobURL?: string; // created after conversion
   cues?: SubtitleCue[]; // parsed for the self-rendered overlay
+}
+
+/**
+ * BUG 4: put.io returns OpenSubtitles *suggestions* for files that have no
+ * real subtitles. Suggestion sources are labelled in the UI so the user can
+ * tell them apart from subs that actually belong to the video.
+ */
+export function subtitleSourceLabel(source: string | null | undefined): string | null {
+  if (!source) return null;
+  if (/opensubtitles/i.test(source)) return "OpenSubtitles";
+  return null;
+}
+
+/**
+ * Which subtitle track to select automatically: only one whose language
+ * matches the user's preference *and* which actually parsed into cues. An
+ * arbitrary OpenSubtitles match in another language is never auto-selected
+ * (that's the "bogus subtitles" bug); when nothing matches, subs start off.
+ */
+export function pickSubtitleDefault(
+  tracks: { language: string; languageCode: string; cues?: SubtitleCue[] }[],
+  preferredLangs: string[]
+): number {
+  if (!tracks.length || !preferredLangs.length) return -1;
+  const wanted = preferredLangs.map((l) => l.toLowerCase());
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
+    if (!t || !t.cues || t.cues.length === 0) continue;
+    const code = (t.languageCode || "").toLowerCase();
+    const name = (t.language || "").toLowerCase();
+    if (wanted.includes(code) || wanted.includes(name)) return i;
+  }
+  return -1;
 }
 
 export interface SubtitleSource {

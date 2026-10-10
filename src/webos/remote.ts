@@ -62,6 +62,11 @@ export class Remote {
   private handlers: RemoteHandlers;
   private registered = new Set<HTMLElement>();
 
+  /** The spatially focused element, if any — for screen-level OK routing. */
+  get activeEl(): HTMLElement | null {
+    return this.active;
+  }
+
   constructor(handlers: RemoteHandlers = {}) {
     this.handlers = handlers;
     window.addEventListener("keydown", (e) => this.onKey(e));
@@ -72,13 +77,35 @@ export class Remote {
     this.handlers = h;
   }
 
+  /**
+   * Restore the default no-op handlers. Every screen MUST call this from its
+   * unmount: the remote is a singleton and otherwise a screen's stale
+   * handlers (notably onBack) keep firing on the next screen — the root
+   * cause of "Back broken on Account / Connect".
+   */
+  clearHandlers(): void {
+    this.handlers = {};
+    this.blur();
+    // the DOM still has the unmounted screen's elements until Svelte commits;
+    // drop them from the registry so the next screen's candidates are clean
+    for (const el of this.registered) {
+      if (!el.isConnected) {
+        el.removeAttribute(FOCUSABLE_ATTR);
+        this.registered.delete(el);
+      }
+    }
+  }
+
   /* ---------- registration ---------- */
 
   register(el: HTMLElement): void {
+    // idempotent: focusEl() calls register() on already-registered elements,
+    // and re-attaching the click listener would double-fire activate()
+    const fresh = !this.registered.has(el);
     if (!el.hasAttribute(FOCUSABLE_ATTR)) el.setAttribute(FOCUSABLE_ATTR, "");
     el.tabIndex = 0;
     this.registered.add(el);
-    el.addEventListener("click", () => this.activate(el, true));
+    if (fresh) el.addEventListener("click", () => this.activate(el, true));
     if (el.getAttribute("data-focus-disabled") === "true") el.dataset.state = "disabled";
     if (this.active === el) this.setActive(el, false);
   }
@@ -109,14 +136,56 @@ export class Remote {
     }
   }
 
+  /**
+   * Idempotently register every [data-focus] descendant of a surface root.
+   * For Svelte {#if}/{#each} overlays whose DOM is recreated on each open (or
+   * grows as content loads async): scan the root whenever it exists, mark
+   * each node once (__reg) so re-scans never double-register. Returns the
+   * matching elements in DOM order (the overlay's row order).
+   */
+  registerAll(root: HTMLElement | null): HTMLElement[] {
+    if (!root) return [];
+    const out: HTMLElement[] = [];
+    root.querySelectorAll<HTMLElement>("[data-focus]").forEach((el) => {
+      if (!el.dataset.__reg) {
+        el.dataset.__reg = "1";
+        this.register(el);
+      }
+      out.push(el);
+    });
+    return out;
+  }
+
+  /* ---------- focus scope (modal trap) ---------- */
+
+  /**
+   * Restrict D-pad candidates to a root element while it is the active
+   * surface — a focus trap. Modal/overlay panels set themselves as the
+   * scope so arrows can't wander to the controls behind the scrim; pass
+   * null to restore whole-screen navigation.
+   */
+  private scope: HTMLElement | null = null;
+
+  setFocusScope(root: HTMLElement | null): void {
+    this.scope = root && root.isConnected ? root : null;
+  }
+
   /* ---------- focus movement ---------- */
 
   private candidates(): HTMLElement[] {
+    // lazy GC: {#if}/{#each} surfaces recreate their DOM; a detached element
+    // is dead focusable weight and would otherwise stay registered forever
+    // (the set is otherwise only pruned on screen unmount)
+    for (const el of Array.from(this.registered)) {
+      if (!el.isConnected) this.registered.delete(el);
+    }
+    if (this.scope && !this.scope.isConnected) this.scope = null;
     return Array.from(this.registered).filter(
       (el) =>
         el.getAttribute("data-focus-disabled") !== "true" &&
         el.offsetParent !== null &&
-        el.getBoundingClientRect().width > 0
+        el.getBoundingClientRect().width > 0 &&
+        (!this.scope || this.scope.contains(el))
     );
   }
 
@@ -138,7 +207,9 @@ export class Remote {
     const cur = this.active;
     const cands = this.candidates();
     if (cands.length === 0) return false;
-    if (!cur || cur.getAttribute("data-focus-disabled") === "true") {
+    // a stale (detached) active pointer — e.g. after an in-screen branch swap
+    // that replaced the DOM — is treated as "no focus", like a fresh screen
+    if (!cur || !cur.isConnected || cur.getAttribute("data-focus-disabled") === "true") {
       // no current focus: pick the nearest to the incoming edge
       const c = pickNearestToEdge(cands, dir);
       if (c) this.setActive(c);
@@ -200,7 +271,10 @@ export class Remote {
   /** Set initial focus to the first registered candidate. */
   focusFirst(): void {
     const cands = this.candidates();
-    if (cands.length && (!this.active || this.active.getAttribute("data-focus-disabled") === "true")) {
+    if (
+      cands.length &&
+      (!this.active || !this.active.isConnected || this.active.getAttribute("data-focus-disabled") === "true")
+    ) {
       this.setActive(cands[0], false);
     }
   }
@@ -217,6 +291,18 @@ export class Remote {
       this.active.dataset.state = "";
       this.active = null;
     }
+  }
+
+  /** Fire the currently-focused element's action (OK with no specific element bound). */
+  clickActive(): void {
+    if (!this.active) return;
+    if (!this.active.isConnected) {
+      // stale focus (its surface was just swapped) — clicking a detached node
+      // would fire a dead element's handler, e.g. re-opening an old library tile
+      this.blur();
+      return;
+    }
+    this.activate(this.active, false);
   }
 
   activate(el: HTMLElement, fromClick: boolean): void {
@@ -238,11 +324,23 @@ export class Remote {
     const action = KEYMAP[code] ?? DOM_ARROW[e.key];
     if (!action) return;
 
-    // Ignore keys that belong to <video> native handling (none on webOS webview, but be safe)
+    // Ignore keys that belong to <input>/<textarea> — but ONLY the keys that
+    // a focused input would otherwise mangle (spatial moves + OK). Back, the
+    // color keys and play must still work with a TV cursor sitting in a text
+    // field, or the user is trapped in the input and cannot leave the screen.
     const tag = (document.activeElement?.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea") return;
+    const inField = tag === "input" || tag === "textarea";
+    if (inField && (action === "ok" || action === "left" || action === "up" || action === "right" || action === "down")) return;
 
     switch (action) {
+      case "ok":
+        // The engine — not the browser — activates the focused element. Native
+        // Enter only fires on real <button>/<a>; div focusables (the library
+        // tiles) would get nothing. preventDefault stops the native activation
+        // so real buttons don't double-fire (synthetic + native click).
+        e.preventDefault();
+        this.handlers.onOK?.();
+        break;
       case "left":
       case "up":
       case "right":
@@ -250,14 +348,6 @@ export class Remote {
         e.preventDefault();
         this.handlers.onNavigate?.(action as Dir);
         this.move(action as Dir);
-        break;
-      case "ok":
-        e.preventDefault();
-        if (this.active) {
-          this.activate(this.active, false);
-        } else {
-          this.handlers.onOK?.();
-        }
         break;
       case "back":
         e.preventDefault();

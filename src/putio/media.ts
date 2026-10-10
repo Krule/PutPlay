@@ -59,7 +59,13 @@ export class MediaEngine {
   private onEnded: () => void;
   private lastErrorAt = 0;
   private pendingSeek: number | null = null;
+  /** true = the "start from beginning" pendingSeek is a user choice (not a 0 from a source switch). */
+  private startFromBeginning = false;
   private resumeApplied = false;
+  /** Once the user has made a resume choice, no auto-resume may override it. */
+  private resumeLocked = false;
+  /** The Player is showing the resume prompt — no engine-side auto-seek. */
+  private suppressAutoResume = false;
 
   constructor(
     video: HTMLVideoElement,
@@ -69,6 +75,8 @@ export class MediaEngine {
       onState?: (s: Partial<MediaState>) => void;
       onSourceChange?: (s: SourceKind) => void;
       onEnded?: () => void;
+      /** The Player is showing the resume prompt — the engine must not auto-seek to the saved position. */
+      suppressAutoResume?: boolean;
     } = {}
   ) {
     this.video = video;
@@ -77,6 +85,7 @@ export class MediaEngine {
     this.onState = opts.onState || (() => {});
     this.onSourceChange = opts.onSourceChange || (() => {});
     this.onEnded = opts.onEnded || (() => {});
+    this.suppressAutoResume = !!opts.suppressAutoResume;
 
     this.bindEvents();
     this.unsub.push(() => this.unbindEvents());
@@ -116,6 +125,7 @@ export class MediaEngine {
     const v = this.v();
     const t = startAt ?? (v.currentTime || 0);
     // remember where we were so the swap doesn't reset to the start
+    this.startFromBeginning = false;
     this.pendingSeek = t || undefined;
     if (kind === "mp4") v.src = mp4StreamURL(this.auth, this.file.id);
     else if (kind === "original") v.src = streamURL(this.auth, this.file.id);
@@ -198,9 +208,33 @@ export class MediaEngine {
     const t = v.currentTime;
     if (!t || v.duration < 120) return; // skip live / very short
     if (v.duration && t > v.duration - 30) return; // near end
+    // After the user chose "start from beginning", early positions must not
+    // be re-saved over their explicit choice.
+    if (this.resumeLocked && t < 60) return;
     const { setStartFrom } = apiRef;
     setStartFrom(this.auth, this.file.id, t).catch(() => undefined);
     this.lastSaved = t;
+  }
+
+  /**
+   * Apply the user's resume-prompt choice (BUG 1). Locks the engine against
+   * any further auto-resume and seeks to the chosen target — deferring to
+   * `loadedmetadata` when the target is 0, which the webview drops if set
+   * before metadata exists.
+   */
+  applyInitialSeek(t: number): void {
+    this.resumeLocked = true;
+    this.startFromBeginning = t === 0;
+    const v = this.v();
+    if (t > 0) {
+      try {
+        v.currentTime = t;
+      } catch {
+        /* not seekable yet — onMeta applies pendingSeek */
+      }
+    } else {
+      this.pendingSeek = 0;
+    }
   }
 
   /* ---------------- hls.js ---------------- */
@@ -385,7 +419,7 @@ export class MediaEngine {
           ? false
           : false,
     };
-    // auto-resume save
+    // auto-resume save (gated in saveResume by the resume lock)
     if (!v.paused && v.currentTime - this.lastSaved > 30) this.saveResume();
     this.onState(s);
   };
@@ -395,18 +429,23 @@ export class MediaEngine {
       duration: v.duration || 0,
       live: v.seeking === false && v.duration === Infinity,
     };
-    // source switched: restore the position (a seek before the new metadata
-    // existed is silently dropped, so we wait for this event)
+    // A seek remembered before metadata existed (a seek set before the new
+    // metadata is silently dropped) is applied here, now that it can work.
     if (this.pendingSeek != null) {
       const t = this.pendingSeek;
       this.pendingSeek = null;
-      if (t > 2) {
+      // a source switch remembers "where we were"; t==0 only means "start
+      // from beginning" when the user explicitly chose it
+      if (t > 2 || (t === 0 && this.startFromBeginning)) {
         try { v.currentTime = t; } catch { /* range error — start over */ }
       }
     }
     this.onState(s);
     this.syncTracks();
-    if (!this.resumeApplied) {
+    // Auto-resume (BUG 1): only when the Player is NOT showing the resume
+    // prompt and the user has not already chosen a starting point. The
+    // prompt-driven path uses applyInitialSeek instead.
+    if (!this.resumeApplied && !this.suppressAutoResume && !this.resumeLocked) {
       this.resumeApplied = true;
       this.applyResume().then((from) => {
         if (from) platformToast(`Resumed from ${Math.floor(from / 60)}:${String(from % 60).padStart(2, "0")}`);
