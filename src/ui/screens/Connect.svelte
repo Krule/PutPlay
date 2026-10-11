@@ -93,47 +93,55 @@
   });
 </script>
 
+<!-- Split frame (Apple-Music sign-in pattern): the brand frame is constant
+     on the left; the right side is always the mechanism — the QR + code,
+     its failure, or a loading spinner. The frame never gates the flow:
+     startOOB() auto-fires, the QR is the first thing on screen. -->
 <div class="connect fade-up">
-  {#if status === "loading"}
-    <div class="form-col center">
-      <div class="spinner"></div>
-      <p class="muted">Checking for a saved session…</p>
-    </div>
-  {:else if status === "unauthed"}
-    <div class="form-col center">
-      {#if oobError}
-        <!-- the failure renders INSIDE the approve screen's frame — the
-             sign-in gate is gone, the approve screen is THE connect screen -->
-        <h2 class="h2">Approve this TV</h2>
-        <p class="error-text">{oobError}</p>
-        <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
-          Try again
-        </button>
-      {:else}
+  <div class="brand-side">
+    <img class="brand-logo" src="icon.svg" alt="PutPlay" />
+    <p class="brand-copy">Sign in to<br />put.io</p>
+  </div>
+
+  <div class="mech-side">
+    {#if status === "loading"}
+      <div class="mech-col">
         <div class="spinner"></div>
-        <p class="muted">Starting sign-in…</p>
-      {/if}
-    </div>
-  {:else if status === "pending"}
-    <div class="form-col center">
-      <h2 class="h2">Approve this TV</h2>
-      {#if oobCode}
-        <div class="code-box">
-          <span class="code">{oobCode}</span>
+        <p class="muted">Checking for a saved session…</p>
+      </div>
+    {:else if status === "unauthed"}
+      <div class="mech-col">
+        {#if oobError}
+          <!-- the failure renders INSIDE the frame — the brand frame stays,
+               the mechanism side just hasn't succeeded yet -->
+          <p class="error-text">{oobError}</p>
+          <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
+            Try again
+          </button>
+        {:else}
+          <div class="spinner"></div>
+          <p class="muted">Starting sign-in…</p>
+        {/if}
+      </div>
+    {:else if status === "pending"}
+      <div class="mech-col">
+        {#if oobQr}
+          <div class="qr-card"><img src={oobQr} alt="QR code" /></div>
+        {/if}
+        {#if oobCode}
+          <p class="code"><span class="code-num">{oobCode}</span></p>
+          <p class="muted">or enter this code at <span class="linktext">{LINK_URL}</span></p>
+        {/if}
+        <div class="wait-row">
+          <div class="spinner small"></div>
+          <p class="muted">Waiting for approval…</p>
         </div>
-        <p class="muted">
-          On your phone or PC, open <span class="linktext">{LINK_URL}</span> and enter this code.
-        </p>
-      {/if}
-      {#if oobQr}
-        <div class="qr-frame"><img src={oobQr} alt="QR code" /></div>
-        <p class="muted">or scan it with the put.io app</p>
-      {/if}
-      <div class="spinner small" style="margin-top: 8px"></div>
-      <p class="muted">Waiting for approval…</p>
-      <button class="btn ghost" bind:this={newCodeBtn} data-focus on:click={startOOB}>Generate a new code</button>
-    </div>
-  {/if}
+        <button class="btn ghost" bind:this={newCodeBtn} data-focus on:click={startOOB}>
+          Generate a new code
+        </button>
+      </div>
+    {/if}
+  </div>
 
   <p class="footer-note">Browse & play from your library · files stay on put.io</p>
 </div>
@@ -143,32 +151,78 @@
     width: 1920px;
     height: 1080px;
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     align-items: center;
     padding: 72px 112px 0;
     position: relative;
     overflow: hidden;
   }
-  .form-col {
+
+  /* ---- left: brand frame ---- */
+  .brand-side {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
   }
-  .form-col > :not(:first-child) {
-    margin-top: 26px;
+  .brand-side > :not(:first-child) {
+    margin-top: 44px;
   }
-  .form-col.center {
-    grid-column: 1;
+  .brand-logo {
+    width: 200px;
+    height: 200px;
   }
-  .h2 {
-    font-size: var(--fs-h2);
+  .brand-copy {
+    font-size: var(--fs-display);
     font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
   }
+
+  /* ---- right: the mechanism ---- */
+  .mech-side {
+    display: flex;
+    justify-content: center;
+  }
+  .mech-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .mech-col > :not(:first-child) {
+    margin-top: 28px;
+  }
+  .qr-card {
+    background: var(--white);
+    border-radius: var(--r-lg);
+    padding: 24px;
+  }
+  .qr-card img {
+    display: block;
+    width: 320px;
+    height: 320px;
+  }
+  .code {
+    margin: 0;
+  }
+  .code-num {
+    font-size: var(--fs-display);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: var(--accent-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .wait-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* ---- shared ---- */
   .muted {
     color: var(--text-2);
     font-size: var(--fs-body);
-    max-width: 760px;
     line-height: 1.5;
   }
   .linktext {
@@ -177,30 +231,6 @@
   .btn.big {
     padding: 22px 48px;
     font-size: var(--fs-h3);
-  }
-  .code-box {
-    padding: 22px 48px;
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    border: 1px solid var(--line-strong);
-    box-shadow: var(--elev-md);
-  }
-  .code {
-    font-size: 88px;
-    font-weight: 800;
-    letter-spacing: 0.18em;
-    color: var(--accent-2);
-    font-variant-numeric: tabular-nums;
-  }
-  .qr-frame {
-    padding: 12px;
-    border-radius: var(--r-lg);
-    background: var(--white);
-  }
-  .qr-frame img {
-    display: block;
-    width: 220px;
-    height: 220px;
   }
   .error-text {
     color: var(--danger);

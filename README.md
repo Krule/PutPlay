@@ -1,6 +1,6 @@
 # PutPlay
 
-[![CI](https://github.com/Krule/PutPlay/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/Krule/PutPlay/actions/workflows/release.yml)
+[![CI](https://github.com/Krule/PutPlay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Krule/PutPlay/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Krule/PutPlay?label=latest%20release)](https://github.com/Krule/PutPlay/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Krule/PutPlay/total?label=downloads)](https://github.com/Krule/PutPlay/releases)
 
