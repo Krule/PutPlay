@@ -41,3 +41,27 @@ test("stale 'try the HLS source' hint removed (embedded subs now work on origina
   assert.ok(!/Try the <button class="link" on:click=\{\(\) => onSourcePick\("hls"\)\}>HLS<\/button>/.test(player));
   assert.ok(!/often have embedded tracks/.test(player), "stale HLS-hint copy must go");
 });
+
+test("fullscreen button removed (the player IS the full screen on a TV)", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.ok(!/data-ctl="fullscreen"/.test(player), "the fullscreen cbtn must be gone");
+  assert.ok(!/toggleFullscreen/.test(player), "no fullscreen calls remain in the Player");
+  const platform = read("src/webos/platform.ts");
+  assert.ok(!/toggleFullscreen/.test(platform), "platform.toggleFullscreen is dead code — removed");
+});
+
+test("chrome auto-hide: pointer movement wakes, playback start schedules the hide", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.ok(
+    /<div class="player"[^>]*on:mousemove=\{wake\}/.test(player),
+    "the player root must wake the UI on pointer movement (Magic Remote)"
+  );
+  assert.ok(
+    /startedPlaying/.test(player),
+    "a one-shot flag must schedule the first auto-hide when playback starts"
+  );
+  assert.ok(
+    /controlsPinned/.test(player),
+    "the pinned-state rule must be shared by the visibility class and the hide timer"
+  );
+});

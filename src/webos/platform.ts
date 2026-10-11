@@ -214,27 +214,6 @@ class Platform {
     }
   }
 
-  /**
-   * Toggle native fullscreen on an element (the <video>). Works in the browser
-   * preview; on the TV the app window is already the full screen, so this is a
-   * no-op there unless the platform exposes a different surface.
-   */
-  toggleFullscreen(el: HTMLElement): void {
-    const doc = document as any;
-    const v = el as any;
-    const fs = document.fullscreenElement || (doc as any).webkitFullscreenElement;
-    const exit = () => {
-      const e = doc.exitFullscreen || (doc as any).webkitExitFullscreen;
-      if (e) e.call(doc);
-    };
-    if (fs) {
-      exit();
-      return;
-    }
-    const req = v.requestFullscreen || (v as any).webkitRequestFullscreen;
-    if (req) req.call(v).catch(() => undefined);
-  }
-
   quit(): void {
     platformBack();
   }

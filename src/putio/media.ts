@@ -121,7 +121,7 @@ export class MediaEngine {
     this.teardownHls();
     this.source = kind;
     if (!silent) this.onSourceChange(kind);
-    this.onState({ error: null, buffering: true });
+    this.onState({ error: null, buffering: true, source: kind });
     const v = this.v();
     const t = startAt ?? (v.currentTime || 0);
     // remember where we were so the swap doesn't reset to the start
@@ -409,15 +409,13 @@ export class MediaEngine {
   private boundEvents: [EventTarget, string, EventListener][] = [];
   private onTime = (e: Event) => {
     const v = this.v();
+    const bEnd = v.buffered && v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0;
     const s: Partial<MediaState> = {
       currentTime: v.currentTime,
       duration: v.duration || 0,
       paused: v.paused,
-      buffering: v.buffered && v.buffered.length
-        ? v.currentTime < v.buffered.end(v.buffered.length - 1) - 2
-          : v.paused
-          ? false
-          : false,
+      buffered: bEnd, // buffer end (seconds) — the Player draws the buffer bar from this
+      buffering: isBuffering(v.currentTime, bEnd, v.duration),
     };
     // auto-resume save (gated in saveResume by the resume lock)
     if (!v.paused && v.currentTime - this.lastSaved > 30) this.saveResume();
@@ -524,6 +522,7 @@ export class MediaEngine {
 
 // small indirection so the class file doesn't import api twice (avoid cycle surprises)
 import * as apiRef from "./api";
+import { isBuffering } from "./progress";
 import { platform } from "../webos/platform";
 function platformToast(msg: string): void {
   platform.toast(msg);

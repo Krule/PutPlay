@@ -6,6 +6,8 @@
   import { requestLibrary } from "../../store/nav";
   import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
+  import { LANGUAGES } from "../../putio/languages";
+  import LangPicker from "../components/LangPicker.svelte";
 
   const remote = getRemote();
 
@@ -35,6 +37,28 @@
   ];
 
   let confirmSignOut = false;
+
+  // language pickers (TV remotes can't type — dropdown, not text field)
+  let langPicker: "audio" | "sub" | null = null;
+  let audioFieldEl: HTMLButtonElement;
+  let subFieldEl: HTMLButtonElement;
+
+  const langLabel = (code: string): string => LANGUAGES.find((l) => l.code === code)?.label || "";
+  const pickerOptions = (kind: "audio" | "sub") => [
+    { value: "", label: kind === "audio" ? "First track (no preference)" : "None (no auto-select)" },
+    ...LANGUAGES.map((l) => ({ value: l.code, label: l.label })),
+  ];
+  function pickLang(v: string): void {
+    if (langPicker === "audio") cfgAudio = v;
+    else if (langPicker === "sub") cfgSub = v;
+    closeLangPicker();
+  }
+  function closeLangPicker(): void {
+    const field = langPicker === "audio" ? audioFieldEl : subFieldEl;
+    langPicker = null;
+    // return the D-pad to the field that opened the picker
+    if (field) requestAnimationFrame(() => remote.focusEl(field));
+  }
 
   // ---------------- 5-way remote focus wiring ----------------
   // Chips, inputs and buttons carry data-focus in the markup, but the engine
@@ -80,6 +104,10 @@
   // BUG 5: Settings owns Back through the same channel as every other screen
   // and clears it on unmount, so the stale Library handlers can't leak in.
   function onBack() {
+    if (langPicker) {
+      closeLangPicker();
+      return;
+    }
     if (confirmSignOut) {
       confirmSignOut = false;
       return;
@@ -179,13 +207,17 @@
     <div class="col">
       <div class="card">
         <p class="card-title">Preferred audio language</p>
-        <input class="text-input" bind:value={cfgAudio} placeholder="e.g. eng, deu, fra — blank = first track" spellcheck="false" data-focus />
+        <button class="lang-field" bind:this={audioFieldEl} data-focus on:click={() => (langPicker = "audio")}>
+          {#if cfgAudio}<span class="lf-value">{langLabel(cfgAudio) || cfgAudio}</span>{:else}<span class="lf-empty">First track (no preference)</span>{/if}
+        </button>
         <p class="note">When a file has several audio tracks, the app picks the first one in this language.</p>
       </div>
 
       <div class="card">
         <p class="card-title">Preferred subtitle language</p>
-        <input class="text-input" bind:value={cfgSub} placeholder="e.g. eng, deu — blank = none auto-selected" spellcheck="false" data-focus />
+        <button class="lang-field" bind:this={subFieldEl} data-focus on:click={() => (langPicker = "sub")}>
+          {#if cfgSub}<span class="lf-value">{langLabel(cfgSub) || cfgSub}</span>{:else}<span class="lf-empty">None (no auto-select)</span>{/if}
+        </button>
         <p class="note">Only subtitles in this language turn on automatically. OpenSubtitles suggestions are labelled so you can tell them apart.</p>
         {#if subs.length}
           <p class="note">put.io web-app languages: <span class="acc">{subs.join(", ")}</span> — these still drive the subtitle search.</p>
@@ -206,6 +238,16 @@
   <div class="foot-hint">
     <span class="kbd">BACK</span> return to library · changes save automatically
   </div>
+
+  {#if langPicker}
+    <LangPicker
+      title={langPicker === "audio" ? "Preferred audio language" : "Preferred subtitle language"}
+      options={pickerOptions(langPicker)}
+      selected={langPicker === "audio" ? cfgAudio : cfgSub}
+      on:pick={(e) => pickLang(e.detail)}
+      on:close={closeLangPicker}
+    />
+  {/if}
 </div>
 
 <style>
@@ -337,7 +379,7 @@
     color: var(--accent-2);
     font-weight: 700;
   }
-  .text-input {
+  .lang-field {
     width: 100%;
     box-sizing: border-box;
     padding: 14px 18px;
@@ -346,10 +388,15 @@
     background: var(--surface);
     border: 2px solid var(--line-strong);
     color: var(--text);
-    outline: none;
+    text-align: left;
+    cursor: pointer;
   }
-  .text-input:focus {
+  .lang-field[data-state="active"] {
     border-color: var(--accent);
+    background: var(--surface-2);
+  }
+  .lang-field .lf-empty {
+    color: var(--text-3);
   }
   .note {
     margin-top: 12px;

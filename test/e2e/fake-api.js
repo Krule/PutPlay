@@ -50,7 +50,7 @@
           content_type: "video/mp4",
           parent_id: null,
           is_folder: 0,
-          is_mp4_available: false,
+          is_mp4_available: n === 1, // file 1 proves the "put.io MP4" source path in e2e
           // file 8 simulates a previously-watched title (put.io start_from >30s)
           // so the Player's "Resume?" prompt path is reachable in e2e
           start_from: n === 8 ? 45 : 0

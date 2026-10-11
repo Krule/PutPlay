@@ -15,18 +15,33 @@
   let status: AuthState["status"];
 
   $: sync();
+  let prevStatus: AuthState["status"] | null = null;
   function sync() {
     const v = get(state);
     oobCode = v.oobCode;
     oobQr = v.oobQr;
     oobError = v.oobError;
     status = v.status;
-    // on the choices screen the sign-in button exists — give the remote a
-    // starting point (it is the first registered candidate, so it is the
-    // initial focus)
+    // Auto-start: the QR code is the first thing on screen. This runs on the
+    // TRANSITION into unauthed — at mount the status is still "loading"
+    // (saved-session check). A failed start (oobError) must NOT re-trigger:
+    // the user recovers via the Try again button.
+    if (status === "unauthed" && !v.oobError && prevStatus !== "unauthed") {
+      startOOB();
+    }
+    // entering the pending state: focus the one control that exists then
+    // (Generate a new code) so OK does something useful
+    if (status === "pending" && prevStatus !== "pending") {
+      requestAnimationFrame(() => {
+        if (newCodeBtn) remote.focusEl(newCodeBtn);
+      });
+    }
+    // the unauthed screen only has a focusable element on failure
+    // (the Try again button) — focusFirst is a no-op when there is none
     if (status === "unauthed") {
       requestAnimationFrame(() => remote.focusFirst());
     }
+    prevStatus = status;
   }
 
   let oobBtn: HTMLButtonElement;
@@ -71,6 +86,10 @@
 
   onMount(() => {
     sync();
+    // Auto-start: skip the sign-in gate button — the QR code + device code
+    // are the first thing on screen. The failure path (oobError) keeps a
+    // "Try again" button for recovery.
+    if (get(state).status === "unauthed") startOOB();
     const unsub = state.subscribe(sync);
     remote.setHandlers({ onBack, onOK: () => remote.clickActive() });
     return () => {
@@ -96,15 +115,17 @@
       <p class="muted">Checking for a saved session…</p>
     </div>
   {:else if status === "unauthed"}
-    <div class="form-col">
-      <h2 class="h2">Connect your put.io</h2>
-      <p class="muted">You'll approve this TV from your phone or PC.</p>
-      <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
-        Sign in with code
-      </button>
-     
+    <div class="form-col center">
       {#if oobError}
+        <h2 class="h2">Connect your put.io</h2>
+        <p class="muted">You'll approve this TV from your phone or PC.</p>
         <p class="error-text">{oobError}</p>
+        <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
+          Try again
+        </button>
+      {:else}
+        <div class="spinner"></div>
+        <p class="muted">Starting sign-in…</p>
       {/if}
     </div>
   {:else if status === "pending"}

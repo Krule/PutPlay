@@ -22,6 +22,7 @@
   } from "../../putio/subs";
   import type { SubtitleInfo } from "../../putio/types";
   import { shouldShowResumePrompt, initialSeekTarget } from "../../putio/resume";
+  import { controlsPinned } from "../../putio/player-controls";
   import { clickIsOutsideClickTarget } from "../../putio/overlay";
   import { progressPct } from "../../putio/progress";
   import { playerOkAction } from "../../putio/player-ok";
@@ -58,6 +59,7 @@
   let currentTime = 0;
   let paused = true;
   let buffering = false;
+  let bufferEnd = 0; // seconds — how far ahead of the file start data is buffered
   let error: string | null = null;
   let audioTracks: AudioTrackInfo[] = [];
   let audioTrack = 0;
@@ -71,6 +73,7 @@
   };
   let showControls = true;
   let hideTimer: number | null = null;
+  let startedPlaying = false;
 
   let subtitles: LoadedSubtitle[] = [];
   let activeSub = -1; // -1 = off, 0.. = index into put.io subtitles (progressive overlay)
@@ -103,6 +106,7 @@
         if (p.currentTime !== undefined) currentTime = p.currentTime;
         if (p.paused !== undefined) paused = p.paused;
         if (p.buffering !== undefined) buffering = p.buffering;
+        if (p.buffered !== undefined) bufferEnd = p.buffered;
         if (p.error !== undefined) error = p.error;
         if (p.audioTracks !== undefined) {
           audioTracks = p.audioTracks;
@@ -200,10 +204,18 @@
     showControls = true;
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (!paused && !error && !overlays.audio && !overlays.subs && !overlays.source) {
+      if (!controlsPinned({ paused, error: !!error, panelOpen: overlays.audio || overlays.subs || overlays.source })) {
         showControls = false;
       }
     }, 4000);
+  }
+
+  // Aggressive auto-hide: once playback actually starts (metadata loaded,
+  // not paused/buffering), schedule the first hide. One-shot — afterwards
+  // only pointer movement / D-pad / control actions (all → wake()) matter.
+  $: if (engine && duration > 0 && !paused && !buffering && !startedPlaying) {
+    startedPlaying = true;
+    wake();
   }
 
   // ---------------- subtitles ----------------
@@ -453,7 +465,6 @@
   $: rebuildTracks();
 
   $: subList = subtitles.map((s) => s.language).join(", ");
-  const bufEnd = 0; // not computed; we show a simple buffered bar via engine state later if needed
 
 
   // FEATURE: subtitle overlay scale from the config (1 = default 30px)
@@ -469,6 +480,10 @@
   // currentTime/duration pair changes. (Binding a bare function call here
   // would freeze the bar at its mount-time value.)
   $: barPct = progressPct(currentTime, duration);
+  // Buffer bar: how far ahead data is buffered (0 for live — progressPct
+  // already returns 0 for an ∞ duration). Plain reactive value: Svelte
+  // style bindings only track identifiers, never bare calls.
+  $: bufferPct = progressPct(bufferEnd, duration);
 
   let barEl: HTMLDivElement;
   // modal panels (BUG 2: side-click dismiss needs the panel rect)
@@ -621,7 +636,7 @@
   }
 </script>
 
-<div class="player">
+<div class="player" on:mousemove={wake}>
   <video
     bind:this={videoEl}
     class="video"
@@ -641,7 +656,7 @@
   {/if}
 
   <!-- ================= bottom control bar ================= -->
-  <div class="controls" bind:this={controlsEl} class:visible={showControls || paused || !!error || overlays.audio || overlays.subs || overlays.source} class:dim={paused ? "" : "dim"}>
+  <div class="controls" bind:this={controlsEl} class:visible={showControls || controlsPinned({ paused, error: !!error, panelOpen: overlays.audio || overlays.subs || overlays.source })} class:dim={paused ? "" : "dim"}>
     <div class="title-line">
       <h1 class="title">{file.name}</h1>
       {#if live}<span class="badge accent">LIVE</span>{/if}
@@ -653,6 +668,7 @@
       <span class="time">{fmtTime(currentTime)}</span>
       <div class="bar" bind:this={barEl} on:click={onBarClick}>
         <div class="bar-track">
+          <div class="bar-buffer" style="width: {bufferPct}%"></div>
           <div class="bar-fill" style="width: {barPct}%"></div>
         </div>
       </div>
@@ -680,9 +696,6 @@
       </button>
       <button class="cbtn text" data-focus data-ctl="subs" on:click={() => { overlays.subs = !overlays.subs; ensureSubtitles(); }} class:sel={overlays.subs}>
         Subtitles <span class="sub">{source === "hls" ? (hlsSub === -1 ? "off" : hlsSubTracks[hlsSub]?.label || "on") : (activeSub === -1 ? "off" : subtitles[activeSub]?.language || "off")}</span>
-      </button>
-      <button class="cbtn text" data-focus data-ctl="fullscreen" on:click={() => { if (videoEl) platform.toggleFullscreen(videoEl); }}>
-        Fullscreen
       </button>
     </div>
   </div>
@@ -942,6 +955,7 @@
     cursor: pointer;
   }
   .bar-track {
+    position: relative;
     width: 100%;
     height: 10px;
     border-radius: 5px;
@@ -949,7 +963,18 @@
     border: 1px solid rgba(255, 255, 255, 0.4);
     overflow: hidden;
   }
+  .bar-buffer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.5);
+    transition: width 200ms linear;
+  }
   .bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
     height: 100%;
     background: var(--accent);
     border-radius: 5px;
