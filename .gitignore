@@ -5,3 +5,5 @@ js/
 *.log
 .pkg-staging/
 build/deploy.mjs
+preview
+putplay*.svg

@@ -1,0 +1,58 @@
+name: Release
+
+# On tag vX.Y.Z: build, test, package io.put.lg_X.Y.Z_all.ipk, and publish a
+# GitHub release named vX.Y.Z with the ipk attached.
+#
+# The tag is the single source of truth for the version — the workflow writes
+# it into package.json (ipk file name) and appinfo.json (webOS app identity)
+# before building, so the ipk, the installed app, and the release can never
+# disagree. On failure no release is created: fix and push a new tag.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ares (webOS packaging)
+        run: npm install -g @webos-tools/cli
+
+      - name: Apply release version from tag
+        id: ver
+        run: |
+          node build/release-version.mjs "$GITHUB_REF_NAME"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Package ipk
+        run: node build/package.mjs
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: io.put.lg_${{ steps.ver.outputs.version }}_all.ipk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
