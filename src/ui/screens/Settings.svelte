@@ -158,7 +158,7 @@
 <div class="settings" bind:this={settingsEl}>
   <header class="head">
     <h1 class="title">Account</h1>
-    <p class="sub">put.io webOS TV app</p>
+    <p class="sub">PutPlay — put.io for webOS</p>
   </header>
 
   <div class="cols">

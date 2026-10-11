@@ -199,7 +199,7 @@ export async function getSubtitles(
 
 export const PUTIO_WEB_APP_URL = "https://app.put.io";
 
-export async function requestOOBCode(clientName = "put.io TV App"): Promise<OOBCodeResponse> {
+export async function requestOOBCode(clientName = "PutPlay"): Promise<OOBCodeResponse> {
   const d = await api<any>(
     `/oauth2/oob/code?app_id=1&client_name=${encodeURIComponent(clientName)}`,
     { raw: true }
