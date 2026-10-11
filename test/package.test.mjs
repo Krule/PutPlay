@@ -19,10 +19,12 @@ function sha(bufOrPath) {
   return createHash("sha1").update(typeof bufOrPath === "string" ? readFileSync(bufOrPath) : bufOrPath).digest("hex");
 }
 
-/** Extract a member from an ipk (ar + data.tar.gz) and return its bytes. */
+/** Extract a member from an ipk (ar + data.tar.gz) and return its bytes.
+ *  -xO is BSD-tar only (GNU tar treats -O as the output-device flag);
+ *  --to-stdout is the portable spelling both accept during extraction. */
 function ipkMember(ipk, member) {
   const data = execSync(`ar p "${ipk}" data.tar.gz`, { maxBuffer: 64 * 1024 * 1024 });
-  const tar = execSync("tar -xO " + JSON.stringify(member), { input: data, maxBuffer: 64 * 1024 * 1024 });
+  const tar = execSync("tar -x --to-stdout " + JSON.stringify(member), { input: data, maxBuffer: 64 * 1024 * 1024 });
   return tar;
 }
 
