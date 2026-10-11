@@ -8,9 +8,10 @@
     MediaEngine,
     type SourceKind,
     type AudioTrackInfo,
+    type MediaState,
   } from "../../putio/media";
   import type { SubtitleTrackInfo } from "../../putio/media";
-  import { fmtTime, fmtBytes } from "../../putio/api";
+  import { fmtTime } from "../../putio/api";
   import {
     loadSubtitle,
     cueAt,
@@ -20,7 +21,6 @@
     type LoadedSubtitle,
     type SubtitleCue,
   } from "../../putio/subs";
-  import type { SubtitleInfo } from "../../putio/types";
   import { shouldShowResumePrompt, initialSeekTarget } from "../../putio/resume";
   import { controlsPinned } from "../../putio/player-controls";
   import { clickIsOutsideClickTarget } from "../../putio/overlay";
@@ -89,35 +89,39 @@
 
   let resumePrompt: { from: number } | null = null;
   let confirmLeave = false;
-  let resumePending = false; // prompt shown: engine must not auto-apply
 
   // ---------------- engine wiring ----------------
+
+  /** Engine state patch → screen state, one field at a time (undefined = unchanged). */
+  function applyEngineState(p: Partial<MediaState>): void {
+    if (p.source !== undefined) source = p.source;
+    if (p.duration !== undefined && p.duration !== Infinity) duration = p.duration;
+    if (p.currentTime !== undefined) currentTime = p.currentTime;
+    if (p.paused !== undefined) paused = p.paused;
+    if (p.buffering !== undefined) buffering = p.buffering;
+    if (p.buffered !== undefined) bufferEnd = p.buffered;
+    if (p.error !== undefined) error = p.error;
+    if (p.audioTracks !== undefined) {
+      audioTracks = p.audioTracks;
+      // FEATURE: honor the preferred audio language on (re)load
+      const i = pickAudioTrack(audioTracks, preferredAudioLang);
+      if (i >= 0 && i < audioTracks.length) engine?.setAudioTrack(i);
+    }
+    if (p.audioTrack !== undefined) audioTrack = p.audioTrack;
+    if (p.subtitleTracks !== undefined) hlsSubTracks = p.subtitleTracks;
+    if (p.live !== undefined) live = p.live;
+  }
 
   function initEngine() {
     const au = currentAuth();
     if (!au || !videoEl) return;
     cfg = get(config);
     // does the user's preferred source have the file in a state to use?
-    const prefSource = cfg?.source === "mp4" ? (file.is_mp4_available ? "mp4" : "original") : cfg?.source || "original";
+    // ("put.io MP4" preference falls back to original when not converted)
+    const cfgSource = cfg?.source || "original";
+    const prefSource = cfgSource === "mp4" && !file.is_mp4_available ? "original" : cfgSource;
     engine = new MediaEngine(videoEl, file as any, au, {
-      onState: (p) => {
-        if (p.source !== undefined) source = p.source;
-        if (p.duration !== undefined && p.duration !== Infinity) duration = p.duration;
-        if (p.currentTime !== undefined) currentTime = p.currentTime;
-        if (p.paused !== undefined) paused = p.paused;
-        if (p.buffering !== undefined) buffering = p.buffering;
-        if (p.buffered !== undefined) bufferEnd = p.buffered;
-        if (p.error !== undefined) error = p.error;
-        if (p.audioTracks !== undefined) {
-          audioTracks = p.audioTracks;
-          // FEATURE: honor the preferred audio language on (re)load
-          const i = pickAudioTrack(audioTracks, preferredAudioLang);
-          if (i >= 0 && i < audioTracks.length) engine?.setAudioTrack(i);
-        }
-        if (p.audioTrack !== undefined) audioTrack = p.audioTrack;
-        if (p.subtitleTracks !== undefined) hlsSubTracks = p.subtitleTracks;
-        if (p.live !== undefined) live = p.live;
-      },
+      onState: applyEngineState,
       onSourceChange: (s) => {
         source = s;
         overlays.source = true;
@@ -134,7 +138,7 @@
         platform.toast("Finished — press Back to return to your library");
       },
       // BUG 1: if we'll show the resume prompt, the engine must NOT auto-seek
-      suppressAutoResume: file.start_from > 30,
+      suppressAutoResume: shouldShowResumePrompt(file.start_from),
     });
 
     sourceOptions = engine.sourceOptions().map((o) => ({ ...o }));
@@ -200,13 +204,19 @@
     dispatch("back");
   }
 
+  // Controls stay up while the user is looking at something (paused, error,
+  // or a panel open); otherwise they hide 4s after the last activity.
+  $: pinned = controlsPinned({
+    paused,
+    error: !!error,
+    panelOpen: overlays.audio || overlays.subs || overlays.source,
+  });
+
   function wake() {
     showControls = true;
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (!controlsPinned({ paused, error: !!error, panelOpen: overlays.audio || overlays.subs || overlays.source })) {
-        showControls = false;
-      }
+      if (!pinned) showControls = false;
     }, 4000);
   }
 
@@ -374,9 +384,8 @@
     // resume from put.io? (BUG 1: the prompt is ours — the engine was built
     // with suppressAutoResume so it can't race the user's choice; the choice
     // lands through applyInitialSeek, which defers 0-seeks to metadata)
-    if (file.start_from && file.start_from > 30) {
+    if (shouldShowResumePrompt(file.start_from)) {
       resumePrompt = { from: file.start_from };
-      resumePending = true;
     }
 
     remote.setHandlers({
@@ -391,8 +400,8 @@
         // Same contract as the Library: a spatially focused control wins
         // (cbtns, pick-rows, panel buttons); only with nothing focused does
         // OK do the screen default — toggle play/pause.
-        const a = remote.activeEl;
-        const action = playerOkAction(!!a && a.isConnected);
+        const active = remote.activeEl;
+        const action = playerOkAction(!!active && active.isConnected);
         if (action === "activate-focused") {
           remote.clickActive();
         } else {
@@ -418,12 +427,10 @@
       engine.play();
     }
     resumePrompt = null;
-    resumePending = false;
   }
   function skipResume() {
     if (engine) engine.applyInitialSeek(0); // the engine waits for metadata itself
     resumePrompt = null;
-    resumePending = false;
     engine?.play();
   }
 
@@ -450,22 +457,6 @@
       wake();
     }
   }
-
-  function rebuildTracks() {
-    const v = videoEl;
-    if (!engine || !v) return;
-    // Progressive (original/mp4): the webview's <track src> is unreliable, so
-    // subtitles render via the DOM overlay (subCues) instead. For HLS, hls.js
-    // muxes WebVTT renditions through MSE and they surface on v.textTracks —
-    // selectSubTrack drives their mode.
-    const existing = v.querySelectorAll("track");
-    existing.forEach((t) => t.remove());
-    if (source === "hls") return;
-  }
-  $: rebuildTracks();
-
-  $: subList = subtitles.map((s) => s.language).join(", ");
-
 
   // FEATURE: subtitle overlay scale from the config (1 = default 30px)
   $: subFontSize = Math.round(30 * (subScale || 1));
@@ -543,12 +534,6 @@
     if (!target || (a && a.isConnected)) return;
     remote.focusEl(target);
   }
-  /** Focus the natural row of a freshly opened pick panel (selected first). */
-  function focusDefaultRow(root: HTMLElement | undefined, rows: HTMLElement[]): void {
-    if (!root || !rows.length || focusInPanel(root)) return;
-    const idx = pickerDefaultIndex(rows.map((r) => rowFocusState(r)));
-    if (idx >= 0) remote.focusEl(rows[idx]);
-  }
 
   // Each panel's bind:this ref is the post-commit signal: it is set when the
   // panel is created and cleared (undefined) when it is removed — both AFTER
@@ -563,34 +548,63 @@
     }
   }
 
-  const wasOpen = { source: false, audio: false, subs: false, resume: false, leave: false, err: false };
+  const wasOpen: Record<"source" | "audio" | "subs" | "resume" | "leave" | "err", boolean> = {
+    source: false,
+    audio: false,
+    subs: false,
+    resume: false,
+    leave: false,
+    err: false,
+  };
 
-  // pick overlays: focus the selected row so OK re-confirms and arrows explore;
-  // when the panel closes, restore focus to the overlay's cbtn
-  $: {
-    if (sourcePanelEl) {
-      focusDefaultRow(sourcePanelEl, remote.registerAll(sourcePanelEl));
-    } else if (wasOpen.source) {
-      restoreIfStale(ctlEl("source"));
+  /**
+   * Shared focus lifecycle for every panel. The bind:this ref is the
+   * post-commit signal (set on create, cleared on remove — both AFTER the DOM
+   * swap, which is when restoreIfStale can see the old buttons as detached):
+   * open → register the panel's rows and focus the natural target; close →
+   * restore focus to the control that opened it.
+   *   "row"   pick panels: the currently-selected row (pickerDefaultIndex)
+   *   "first" modals: the first button
+   *   "safe"  the leave guard: the non-primary button (Back is already the
+   *           leave path; OK should confirm the safe default)
+   */
+  function panelFocus(
+    el: HTMLDivElement | undefined,
+    key: "source" | "audio" | "subs" | "resume" | "leave" | "err",
+    restoreCtl: string,
+    mode: "row" | "first" | "safe"
+  ): void {
+    if (!el) {
+      if (wasOpen[key]) {
+        restoreIfStale(ctlEl(restoreCtl));
+        wasOpen[key] = false;
+      }
+      return;
     }
-    wasOpen.source = !!sourcePanelEl;
-  }
-  $: {
-    if (audioPanelEl) {
-      focusDefaultRow(audioPanelEl, remote.registerAll(audioPanelEl));
-    } else if (wasOpen.audio) {
-      restoreIfStale(ctlEl("audio"));
+    const rows = remote.registerAll(el);
+    if (!focusInPanel(el)) {
+      const idx =
+        mode === "row"
+          ? pickerDefaultIndex(rows.map((r) => rowFocusState(r)))
+          : mode === "safe"
+          ? rows.length > 1
+            ? 1
+            : 0
+          : 0;
+      if (idx >= 0 && rows[idx]) remote.focusEl(rows[idx]);
     }
-    wasOpen.audio = !!audioPanelEl;
+    wasOpen[key] = true;
   }
-  $: {
-    if (subsPanelEl) {
-      focusDefaultRow(subsPanelEl, remote.registerAll(subsPanelEl));
-    } else if (wasOpen.subs) {
-      restoreIfStale(ctlEl("subs"));
-    }
-    wasOpen.subs = !!subsPanelEl;
-  }
+
+  $: panelFocus(sourcePanelEl, "source", "source", "row");
+  $: panelFocus(audioPanelEl, "audio", "audio", "row");
+  $: panelFocus(subsPanelEl, "subs", "subs", "row");
+  // modals: focus the natural action — Resume (primary), "No, keep playing"
+  // (the safe default of the double-Back guard — Back is already the leave
+  // path), Retry; closing any of them restores focus to play
+  $: panelFocus(resumePanelEl, "resume", "play", "first");
+  $: panelFocus(leavePanelEl, "leave", "play", "safe");
+  $: panelFocus(errPanelEl, "err", "play", "first");
   // track lists can change or arrive while a panel is open — the new rows are
   // committed to the DOM after this flush's reactive phase, so re-scan on the
   // next frame (registerAll is idempotent; the engine GCs the old rows)
@@ -603,37 +617,6 @@
   $: remote.setFocusScope(
     leavePanelEl || resumePanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
   );
-
-  // modals: focus the natural action — Resume (primary), "No, keep playing"
-  // (the safe default of the double-Back guard — Back is already the leave
-  // path), Retry; closing any of them restores focus to play
-  $: {
-    if (resumePanelEl) {
-      const btns = remote.registerAll(resumePanelEl);
-      if (btns.length && !focusInPanel(resumePanelEl)) remote.focusEl(btns[0]);
-    } else if (wasOpen.resume) {
-      restoreIfStale(ctlEl("play"));
-    }
-    wasOpen.resume = !!resumePanelEl;
-  }
-  $: {
-    if (leavePanelEl) {
-      const btns = remote.registerAll(leavePanelEl);
-      if (btns.length && !focusInPanel(leavePanelEl)) remote.focusEl(btns[btns.length > 1 ? 1 : 0]);
-    } else if (wasOpen.leave) {
-      restoreIfStale(ctlEl("play"));
-    }
-    wasOpen.leave = !!leavePanelEl;
-  }
-  $: {
-    if (errPanelEl) {
-      const btns = remote.registerAll(errPanelEl);
-      if (btns.length && !focusInPanel(errPanelEl)) remote.focusEl(btns[0]);
-    } else if (wasOpen.err) {
-      restoreIfStale(ctlEl("play"));
-    }
-    wasOpen.err = !!errPanelEl;
-  }
 </script>
 
 <div class="player" on:mousemove={wake}>
@@ -656,7 +639,7 @@
   {/if}
 
   <!-- ================= bottom control bar ================= -->
-  <div class="controls" bind:this={controlsEl} class:visible={showControls || controlsPinned({ paused, error: !!error, panelOpen: overlays.audio || overlays.subs || overlays.source })} class:dim={paused ? "" : "dim"}>
+  <div class="controls" bind:this={controlsEl} class:visible={showControls || pinned} class:dim={paused ? "" : "dim"}>
     <div class="title-line">
       <h1 class="title">{file.name}</h1>
       {#if live}<span class="badge accent">LIVE</span>{/if}

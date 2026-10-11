@@ -29,13 +29,17 @@ test("Player registers its control row with the remote engine", () => {
   );
 });
 
-test("Player registers every overlay/modal surface it can show", () => {
+test("Player routes every overlay/modal surface through the shared panelFocus lifecycle", () => {
   for (const panel of ["sourcePanelEl", "audioPanelEl", "subsPanelEl", "resumePanelEl", "leavePanelEl", "errPanelEl"]) {
     assert.ok(
-      new RegExp(`registerAll\\(\\s*${panel}`).test(player),
-      `${panel} must be registered via remote.registerAll — pick-rows/panel buttons are dead on the 5-way remote otherwise`
+      new RegExp(`panelFocus\\(\\s*${panel}`).test(player),
+      `${panel} must go through panelFocus() (registerAll + default focus + close-restore) — pick-rows/panel buttons are dead on the 5-way remote otherwise`
     );
   }
+  assert.ok(
+    /function panelFocus\(/.test(player) && /remote\.registerAll\(el\)/.test(player),
+    "panelFocus() must register the panel's rows with the remote engine"
+  );
 });
 
 test("Player routes OK through the tested playerOkAction decision", () => {

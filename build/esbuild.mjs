@@ -6,7 +6,7 @@
 import * as esbuild from "esbuild";
 import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";import { join, extname, resolve, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";import { join, extname, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -89,7 +89,9 @@ function build() {
     })
       .then(() => {
       const kb = (statSync(outFile).size / 1024).toFixed(1);
-      console.log(`✓ built js/bundle.js (${kb} kB) + js/theme.css`);
+      const cssFile = outFile.replace(/\.js$/, ".css");
+      const cssKb = existsSync(cssFile) ? ` + ${cssFile.slice(cssFile.lastIndexOf("/") + 1)} (${(statSync(cssFile).size / 1024).toFixed(0)} kB)` : "";
+      console.log(`✓ built js/bundle.js (${kb} kB)${cssKb}`);
     })
     .catch((e) => {
       console.error(e);

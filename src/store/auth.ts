@@ -1,4 +1,4 @@
-import { writable, get, derived } from "svelte/store";
+import { writable, get } from "svelte/store";
 import type { Writable } from "svelte/store";
 
 export type AuthStore = Writable<AuthState>;

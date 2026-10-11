@@ -20,9 +20,13 @@ for (const f of ["appinfo.json", "index.html", "icon.png", "largeIcon.png"]) {
 }
 cpSync(join(root, "js"), join(staging, "js"), { recursive: true });
 
-// ares-package writes <id>_<version>_all.ipk into the output dir (-o)
+// ares-package writes <id>_<version>_all.ipk into the output dir (-o).
+// --no-minify: @webos-tools/cli's ares-package runs terser over every .js by
+// default — a redundant second minify pass over our already-minified esbuild
+// bundle (it also made the ipk contents differ from the build output, which
+// made "did the deploy ship what I built?" hard to answer).
 const outName = `${id}_${pkg.version}_all.ipk`;
-execSync(`ares-package -o "${root}" "${staging}"`, {
+execSync(`ares-package --no-minify -o "${root}" "${staging}"`, {
   stdio: "inherit",
   cwd: root,
 });

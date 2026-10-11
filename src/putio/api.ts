@@ -1,4 +1,11 @@
-import type { FilesListResponse, PutAccountInfo, PutFile, SubtitlesResponse } from "./types";
+import type {
+  FilesListResponse,
+  PutAccountInfo,
+  PutFile,
+  SubtitlesResponse,
+  OOBCodeResponse,
+  OOBPollResponse,
+} from "./types";
 
 const API = "https://api.put.io/v2";
 
@@ -75,7 +82,8 @@ export function validateOAuth(token: string): Promise<any> {
 
 export interface ListParams {
   parentId?: number | null;
-  limit?: number;
+  /** Max items per page (put.io `per_page`, default 50). */
+  perPage?: number;
   orderBy?: "name" | "size" | "date_added" | "date_modified";
   order?: "asc" | "desc";
   contentType?: "application/x-directory" | string;

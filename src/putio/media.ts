@@ -253,7 +253,7 @@ export class MediaEngine {
       });
       this.hls = hls as HlsLike;
       hls.loadSource(url);
-      hls.attachMedia(v);
+      hls.attachMedia(v as HTMLMediaElement);
       (hls as any).on(Hls.Events.MANIFEST_PARSED, () => {
         v.play().catch(() => undefined);
         this.syncHlsTracks();
@@ -407,7 +407,7 @@ export class MediaEngine {
   /* ---------------- video events ---------------- */
 
   private boundEvents: [EventTarget, string, EventListener][] = [];
-  private onTime = (e: Event) => {
+  private onTime = () => {
     const v = this.v();
     const bEnd = v.buffered && v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0;
     const s: Partial<MediaState> = {
@@ -470,7 +470,6 @@ export class MediaEngine {
   private onEndedFn = () => {
     this.onEnded();
   };
-  private onVolume = () => {};
 
   private bindEvents(): void {
     const v = this.video as any;

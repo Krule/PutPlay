@@ -246,15 +246,6 @@
     padding: 22px 48px;
     font-size: var(--fs-h3);
   }
-  .hint {
-    color: var(--text-3);
-    font-size: var(--fs-small);
-    margin-top: 12px;
-  }
-  .hint a {
-    color: var(--accent-2);
-    text-decoration: none;
-  }
   .code-box {
     padding: 22px 48px;
     border-radius: var(--r-lg);

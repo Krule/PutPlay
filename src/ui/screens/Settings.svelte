@@ -178,6 +178,9 @@
             <p class="free">{fmtBytes(disk.avail)} free</p>
           </div>
         {/if}
+        {#if subs.length}
+          <p class="note">put.io web-app languages: <span class="acc">{subs.join(", ")}</span> — these still drive the subtitle search.</p>
+        {/if}
       </div>
 
       <div class="card">
@@ -218,10 +221,7 @@
         <button class="lang-field" bind:this={subFieldEl} data-focus on:click={() => (langPicker = "sub")}>
           {#if cfgSub}<span class="lf-value">{langLabel(cfgSub) || cfgSub}</span>{:else}<span class="lf-empty">None (no auto-select)</span>{/if}
         </button>
-        <p class="note">Only subtitles in this language turn on automatically. OpenSubtitles suggestions are labelled so you can tell them apart.</p>
-        {#if subs.length}
-          <p class="note">put.io web-app languages: <span class="acc">{subs.join(", ")}</span> — these still drive the subtitle search.</p>
-        {/if}
+        <p class="note">Only subtitles in this language turn on automatically. OpenSubtitles finds are labelled.</p>
       </div>
 
       <div class="card">

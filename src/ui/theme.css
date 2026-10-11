@@ -69,6 +69,9 @@
   --elev-md: 0 8px 28px rgba(0, 0, 0, 0.45);
   --elev-lg: 0 18px 60px rgba(0, 0, 0, 0.6);
 
+  /* focus indicator — soft ring + glow (a hard solid outline reads "crisp") */
+  --focus-shadow: 0 0 0 6px rgba(77, 163, 255, 0.22), 0 0 24px rgba(77, 163, 255, 0.5);
+
   /* motion */
   --t-fast: 120ms;
   --t-med: 200ms;
@@ -117,10 +120,6 @@ button {
   border-color: rgba(77, 163, 255, 0.28);
 }
 [data-focus][data-state="disabled"] { opacity: 0.35; }
-
-/* dim siblings of an active control for depth */
-.focus-dimmed [data-focus]:not([data-state="active"]) { opacity: 0.62; }
-.focus-dimmed [data-focus][data-state="active"] { opacity: 1; }
 
 /* ---------- shared bits ---------- */
 .badge {
@@ -213,47 +212,7 @@ button {
   box-shadow: var(--elev-lg);
 }
 
-/* ---------- menu (context / ⋯) ---------- */
-.menu {
-  width: 420px;
-  padding: 12px;
-}
-.menu .menu-title {
-  font-size: var(--fs-h3);
-  font-weight: 700;
-  padding: 14px 18px 10px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.menu .menu-item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 16px 18px;
-  border-radius: var(--r-md);
-  font-size: var(--fs-body);
-  text-align: left;
-  color: var(--text);
-}
-.menu .menu-item .mi-icon { width: 28px; text-align: center; font-size: 22px; }
-.menu .menu-item.danger { color: var(--danger); }
-.menu .menu-sep { height: 1px; background: var(--line); margin: 8px 4px; }
 
-/* ---------- modal ---------- */
-.modal {
-  width: 720px;
-  max-height: 820px;
-  padding: 32px 36px;
-  display: flex;
-  flex-direction: column;
-}
-.modal h2 { font-size: var(--fs-h2); margin-bottom: 8px; }
-.modal .modal-sub { color: var(--text-2); margin-bottom: 24px; }
-.modal .modal-actions { display: flex; margin-top: 28px; justify-content: flex-end; }
-.modal .modal-actions > :not(:first-child) { margin-left: 16px; }
 
 /* buttons */
 .btn {
@@ -270,21 +229,32 @@ button {
 
 /* keyboard / mouse parity for focusable controls.
    :focus is the webOS 6 (Chrome 79) path — the remote calls el.focus();
-   :focus-visible (Chrome 86+) is kept for desktop parity. */
+   :focus-visible (Chrome 86+) is kept for desktop parity.
+
+   These MUST stay two separate rules: an unknown pseudo-class anywhere in a
+   selector list invalidates the WHOLE list, so mixing them would kill the
+   :focus outline on Chrome 79. @supports selector() (Chrome 48) keeps the
+   desktop-only rule inert on the TV. */
 [data-focus]:focus,
 button:focus,
 a:focus,
-input:focus,
-[data-focus]:focus-visible,
-button:focus-visible,
-a:focus-visible,
-input:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: var(--focus-shadow);
+}
+@supports selector(:focus-visible) {
+  [data-focus]:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    box-shadow: var(--focus-shadow);
+  }
 }
 button:disabled,
-[data-focus][data-state="disabled"],
-.menu-item:disabled {
+[data-focus][data-state="disabled"] {
   opacity: 0.4;
   pointer-events: none;
 }
@@ -294,10 +264,8 @@ button:disabled,
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .fade-up { animation: fade-up var(--t-slow) var(--ease) both; }
-.fade-in { animation: fade-in var(--t-med) var(--ease) both; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
