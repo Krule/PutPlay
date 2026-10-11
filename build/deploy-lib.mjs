@@ -30,3 +30,16 @@ export function isInstallSuccess(out) {
 export function installLogCheck(id) {
   return `grep -a NL_APP_INSTALLED /var/log/messages | grep -a "${id}" | tail -1`;
 }
+
+/** One-time migration: uninstall a previous build that shipped under an old app id. */
+export function devUninstallRemote(id) {
+  return (
+    `luna-send-pub -i -w 2000 'luna://com.webos.appInstallService/dev/uninstall' ` +
+    `'${JSON.stringify({ id })}'`
+  );
+}
+
+/** Removals are logged the same way: NL_APP_REMOVED with the app id. */
+export function removeLogCheck(id) {
+  return `grep -a NL_APP_REMOVED /var/log/messages | grep -a "${id}" | tail -1`;
+}

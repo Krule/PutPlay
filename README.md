@@ -53,11 +53,11 @@ cd PutPlay
 npm ci
 npm test        # 200+ tests, including the webOS 6 baseline gate
 npm run build   # js/bundle.js + js/bundle.css
-npm run package # io.put.lg_<version>_all.ipk in the repo root
+npm run package # ba.ovo.putplay_<version>_all.ipk in the repo root
 ```
 
 Releases are tag-driven: push `v1.2.3` and CI builds, tests, packages
-`io.put.lg_1.2.3_all.ipk`, and publishes a release named `v1.2.3` with the
+`ba.ovo.putplay_1.2.3_all.ipk`, and publishes a release named `v1.2.3` with the
 `.ipk` attached. The tag is the version — it's written into `package.json`
 and `appinfo.json` at build time, so the file, the app, and the release can
 never disagree.

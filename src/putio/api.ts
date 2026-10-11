@@ -199,9 +199,12 @@ export async function getSubtitles(
 
 export const PUTIO_WEB_APP_URL = "https://app.put.io";
 
+/** PutPlay's registered put.io app id — the consent screen shows our registered name/icon. */
+export const PUTIO_CLIENT_ID = 9857;
+
 export async function requestOOBCode(clientName = "PutPlay"): Promise<OOBCodeResponse> {
   const d = await api<any>(
-    `/oauth2/oob/code?app_id=1&client_name=${encodeURIComponent(clientName)}`,
+    `/oauth2/oob/code?app_id=${PUTIO_CLIENT_ID}&client_name=${encodeURIComponent(clientName)}`,
     { raw: true }
   );
   return JSON.parse(typeof d === "string" ? d : JSON.stringify(d));

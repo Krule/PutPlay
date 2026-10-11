@@ -1,6 +1,6 @@
 name: Release
 
-# On tag vX.Y.Z: build, test, package io.put.lg_X.Y.Z_all.ipk, and publish a
+# On tag vX.Y.Z: build, test, package ba.ovo.putplay_X.Y.Z_all.ipk, and publish a
 # GitHub release named vX.Y.Z with the ipk attached.
 #
 # The tag is the single source of truth for the version — the workflow writes
@@ -52,7 +52,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          files: io.put.lg_${{ steps.ver.outputs.version }}_all.ipk
+          files: ba.ovo.putplay_${{ steps.ver.outputs.version }}_all.ipk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ github.token }}

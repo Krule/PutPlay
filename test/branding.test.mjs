@@ -1,8 +1,9 @@
 // Rebrand gate: the app identifies as PutPlay everywhere a name is shown —
 // launcher (appinfo.json title), page (index.html), the put.io consent
 // screen during device-code login (api.ts clientName), and the settings
-// subline. The package id must stay "io.put.lg": it is the webOS app
-// identity that updates are keyed on, and changing it breaks updates.
+// subline. The package id is "ba.ovo.putplay": it is the webOS app
+// identity that updates are keyed on, and changing it AFTER the first
+// release breaks updates — it may only change in the pre-release window.
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,7 @@ const read = (p) => readFileSync(join(root, p), "utf8");
 test("appinfo.json: launcher title is PutPlay, package id untouched", () => {
   const info = JSON.parse(read("appinfo.json"));
   assert.equal(info.title, "PutPlay");
-  assert.equal(info.id, "io.put.lg");
+  assert.equal(info.id, "ba.ovo.putplay");
 });
 
 test("index.html: page title is PutPlay", () => {

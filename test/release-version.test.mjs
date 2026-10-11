@@ -35,8 +35,8 @@ test("applyVersion: writes the version into both manifest files, keeps the rest"
   const dir = mkdtempSync(join(tmpdir(), "putio-ver-"));
   const pkgPath = join(dir, "package.json");
   const infoPath = join(dir, "appinfo.json");
-  writeFileSync(pkgPath, JSON.stringify({ name: "io.put.lg", version: "1.0.0", private: true }, null, 2) + "\n");
-  writeFileSync(infoPath, JSON.stringify({ id: "io.put.lg", version: "1.0.0", title: "PutIo" }, null, 2) + "\n");
+  writeFileSync(pkgPath, JSON.stringify({ name: "ba.ovo.putplay", version: "1.0.0", private: true }, null, 2) + "\n");
+  writeFileSync(infoPath, JSON.stringify({ id: "ba.ovo.putplay", version: "1.0.0", title: "PutPlay" }, null, 2) + "\n");
 
   applyVersion("1.1.0", { packageJsonPath: pkgPath, appinfoJsonPath: infoPath });
 
@@ -45,8 +45,8 @@ test("applyVersion: writes the version into both manifest files, keeps the rest"
   assert.equal(pkg.version, "1.1.0");
   assert.equal(info.version, "1.1.0");
   // untouched fields survive
-  assert.equal(pkg.name, "io.put.lg");
+  assert.equal(pkg.name, "ba.ovo.putplay");
   assert.equal(pkg.private, true);
-  assert.equal(info.id, "io.put.lg");
-  assert.equal(info.title, "PutIo");
+  assert.equal(info.id, "ba.ovo.putplay");
+  assert.equal(info.title, "PutPlay");
 });
