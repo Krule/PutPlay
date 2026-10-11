@@ -216,7 +216,7 @@
   .wait-row {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
   }
 
   /* ---- shared ---- */
@@ -229,7 +229,7 @@
     color: var(--accent-2);
   }
   .btn.big {
-    padding: 22px 48px;
+    padding: 24px 48px;
     font-size: var(--fs-h3);
   }
   .error-text {

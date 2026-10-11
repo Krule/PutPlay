@@ -76,8 +76,7 @@
       body = JSON.stringify({
         status: "ok",
         code: "TEST1234",
-        qr_code_url:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        qr_code_url: location.origin + "/test/e2e/qr-fake.svg"
       });
     else if (p.indexOf("/subtitles") !== -1)
       // NOTE: deliberately returned in API "wrong" order (suggestion first) —
