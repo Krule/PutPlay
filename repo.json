@@ -4,20 +4,22 @@
       "id": "ba.ovo.putplay",
       "title": "PutPlay",
       "shortDescription": "put.io browser & player for webOS — stream your files straight to the TV.",
+      "fullDescriptionUrl": "https://raw.githubusercontent.com/Krule/PutPlay/main/docs/full-description.html",
       "iconUri": "https://raw.githubusercontent.com/Krule/PutPlay/main/largeIcon.png",
       "manifest": {
         "id": "ba.ovo.putplay",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "type": "web",
         "title": "PutPlay",
+        "appDescription": "Browses your put.io library and plays the original file on the big screen — MKV/MP4 as uploaded, with put.io MP4/HLS fallback, subtitles, and audio switching.",
         "iconUri": "https://raw.githubusercontent.com/Krule/PutPlay/main/largeIcon.png",
         "sourceUrl": "https://github.com/Krule/PutPlay",
         "rootRequired": false,
-        "ipkUrl": "https://github.com/Krule/PutPlay/releases/download/v1.0.0/ba.ovo.putplay_1.0.0_all.ipk",
+        "ipkUrl": "https://github.com/Krule/PutPlay/releases/download/v1.0.1/ba.ovo.putplay_1.0.1_all.ipk",
         "ipkHash": {
-          "sha256": "410b99bf95794de79800bc350895032e0163ba3de1a010a7f16e0c303b1dab1e"
+          "sha256": "13dd8ed29e62cde1d60fda5b426c85eb68134a40e5bacc0432e35ca0d401697a"
         },
-        "ipkSize": 159680
+        "ipkSize": 160786
       }
     }
   ]
