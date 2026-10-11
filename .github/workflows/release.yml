@@ -56,3 +56,36 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Update Homebrew Channel repo.json (on main)
+        # Homebrew Channel apps are discovered via a static repo.json on main.
+        # The release runner sits on the tag (detached), so base the update on
+        # a fresh fetch of main: compute the entry from the real ipk
+        # (sha256 + size, never hand-entered), commit onto main, push.
+        run: |
+          curl -fsSL -o /tmp/repo-current.json \
+            "https://raw.githubusercontent.com/${{ github.repository }}/main/repo.json" \
+            || echo '{"packages": []}' > /tmp/repo-current.json
+          node build/update-repo.mjs \
+            --app-id ba.ovo.putplay \
+            --title "PutPlay" \
+            --version "${{ steps.ver.outputs.version }}" \
+            --tag "$GITHUB_REF_NAME" \
+            --ipk "ba.ovo.putplay_${{ steps.ver.outputs.version }}_all.ipk" \
+            --repo "https://github.com/${{ github.repository }}" \
+            --current /tmp/repo-current.json \
+            --out /tmp/repo-next.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main --depth 1
+          git checkout --detach origin/main
+          cp /tmp/repo-next.json repo.json
+          git add repo.json
+          if git diff --cached --quiet; then
+            echo "repo.json already up to date"
+          else
+            git commit -m "Homebrew: $GITHUB_REF_NAME"
+            git push origin HEAD:main
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

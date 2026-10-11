@@ -42,10 +42,25 @@ In the player: **blue** play/pause · **red** subtitles · **yellow** audio ·
 
 Download the current `.ipk` from the [releases page](https://github.com/Krule/PutPlay/releases).
 
-- **Regular TV:** install the `.ipk` through Homebrew Channel.
+- **Regular TV:** install the `.ipk` through Homebrew Channel (below).
 - **Rooted TV (mine):** dev install straight into `appinstalld` — no Developer
   Mode needed. From a checkout, `TV_IP=<your tv> TV_USER=root pnpm deploy:tv`
   copies, installs, and verifies in about four seconds.
+
+### Homebrew Channel
+
+1. On the TV, open **Homebrew Channel** (install it from [webosbrew.org](https://webosbrew.org) if you don't have it).
+2. Select **Add App** → **Add from URL**.
+3. Paste this repository address and press OK:
+
+   ```
+   https://raw.githubusercontent.com/Krule/PutPlay/main/repo.json
+   ```
+
+4. Pick **PutPlay** from the list and confirm the install.
+
+Each GitHub release updates this repository automatically, so “check for
+updates” in Homebrew Channel picks up new versions on its own.
 
 ## Building
 
