@@ -20,11 +20,12 @@ function sha(bufOrPath) {
 }
 
 /** Extract a member from an ipk (ar + data.tar.gz) and return its bytes.
- *  -xO is BSD-tar only (GNU tar treats -O as the output-device flag);
- *  --to-stdout is the portable spelling both accept during extraction. */
+ *  Fully explicit so BSD tar (macOS) and GNU tar (Linux CI) agree: -z (GNU
+ *  refuses to auto-detect gzip), -f - (stdin), --to-stdout (portable
+ *  member-to-stdout; -xO is BSD-only). */
 function ipkMember(ipk, member) {
   const data = execSync(`ar p "${ipk}" data.tar.gz`, { maxBuffer: 64 * 1024 * 1024 });
-  const tar = execSync("tar -x --to-stdout " + JSON.stringify(member), { input: data, maxBuffer: 64 * 1024 * 1024 });
+  const tar = execSync("tar -xzf - --to-stdout " + JSON.stringify(member), { input: data, maxBuffer: 64 * 1024 * 1024 });
   return tar;
 }
 
