@@ -2,7 +2,9 @@
 // vX.Y.Z needs a "## [X.Y.Z]" section — a release that ships without a
 // changelog entry is a process violation (see the Changelog section in
 // AGENTS.md for the maintenance rules this gate enforces).
-// Skipped where there is no git checkout (e.g. a dist zip).
+// Skipped where the invariant is not checkable: no git checkout, or a
+// checkout with no tags visible (CI branch pushes — the Release workflow,
+// which does see the tag, is the enforcement point).
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync, existsSync } from "node:fs";
@@ -15,7 +17,7 @@ const root = join(here, "..");
 
 function latestTagVersion() {
   const tag = execSync("git tag --sort=-v:refname | head -1", { cwd: root, stdio: "pipe" }).toString().trim();
-  return tag.replace(/^v/, "");
+  return tag ? tag.replace(/^v/, "") : null;
 }
 
 test("CHANGELOG.md has a section for the latest release tag", (t) => {
@@ -28,6 +30,10 @@ test("CHANGELOG.md has a section for the latest release tag", (t) => {
     version = latestTagVersion();
   } catch {
     t.skip("not a git checkout — skipping");
+    return;
+  }
+  if (version === null) {
+    t.skip("no tags visible in this checkout — skipping");
     return;
   }
   const changelog = readFileSync(file, "utf8");
