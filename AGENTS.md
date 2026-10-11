@@ -43,6 +43,24 @@ Every time you reach a **Green** state (both in the inner and outer loops), you 
 
 ---
 
+## Changelog Maintenance (Strict Enforcement)
+
+`CHANGELOG.md` at the repo root records every user-visible change. A gate in the test
+suite fails a release whose tag has no changelog section — the file is not optional.
+
+1. Every commit that changes user-visible behavior (features, fixes, UX, packaging,
+   release/distribution behavior) MUST add an entry under `## [Unreleased]` in the same
+   commit. No entry, no commit.
+2. Internal refactors, test-only changes, and CI chores do NOT get entries.
+3. When tagging `vX.Y.Z`: move the `## [Unreleased]` entries under a new
+   `## [X.Y.Z] - YYYY-MM-DD` heading BEFORE pushing the tag.
+4. Entry format: Keep a Changelog categories (Added / Changed / Fixed / Removed).
+   Write user-facing sentences ("the sign-in logo now appears on installed apps"), not
+   commit-log phrasing.
+5. Never invent entries: every line must trace to an actual change.
+
+---
+
 ## Output Format and State Tracking
 
 To prove you are adhering to this workflow, you must prepend every response or code block with a state header matching this format:
