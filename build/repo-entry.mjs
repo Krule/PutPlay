@@ -1,24 +1,31 @@
 /**
  * Homebrew Channel repo.json — pure entry construction.
  *
- * Schema verified against the live community example
- * (RF1705/youtube-webos-cobalt-adfree repo.json): top-level
- * {id, title, shortDescription, iconUri, manifest}, where manifest carries
- * {id, version, type, title, iconUri, sourceUrl, rootRequired, ipkUrl,
- * ipkHash: {sha256}, ipkSize}.
+ * Schema verified against the official webosbrew/docs schemas
+ * (HomebrewRepository + HomebrewPackageManifest) and the live immich entry
+ * on repo.webosbrew.org: top-level {id, title, shortDescription,
+ * fullDescriptionUrl, iconUri, manifest}, where manifest carries
+ * {id, version, type, title, appDescription, iconUri, sourceUrl,
+ * rootRequired, ipkUrl, ipkHash: {sha256}, ipkSize}.
+ *
+ * The TV's DetailsPanel fetches fullDescriptionUrl, DOMPurify-sanitizes it
+ * (style/script/form/input/button tags are STRIPPED) and renders it into a
+ * moonstone BodyText; without it, the panel falls back to shortDescription.
  */
 
-export function repoEntry({ appId, title, shortDescription, version, iconUri, sourceUrl, ipkUrl, sha256, size }) {
+export function repoEntry({ appId, title, shortDescription, appDescription, fullDescriptionUrl, version, iconUri, sourceUrl, ipkUrl, sha256, size }) {
   return {
     id: appId,
     title,
     shortDescription,
+    fullDescriptionUrl,
     iconUri,
     manifest: {
       id: appId,
       version,
       type: "web",
       title,
+      appDescription,
       iconUri,
       sourceUrl,
       rootRequired: false,

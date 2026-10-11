@@ -33,6 +33,11 @@ const currentPath = arg("current");
 const outPath = arg("out");
 
 const SHORT_DESCRIPTION = "put.io browser & player for webOS — stream your files straight to the TV.";
+// One-line detail-page description (HomebrewPackageManifest.schema: "shown in
+// the application details page") + the full description page the TV's
+// DetailsPanel fetches and renders (DOMPurify-sanitized; see repo-entry.mjs).
+const APP_DESCRIPTION = "Browses your put.io library and plays the original file on the big screen — MKV/MP4 as uploaded, with put.io MP4/HLS fallback, subtitles, and audio switching.";
+const FULL_DESCRIPTION_URL = repoUrl.replace("https://github.com/", "https://raw.githubusercontent.com/") + "/main/docs/full-description.html";
 
 // hash + size of the real artifact — never hand-entered
 const ipkBytes = readFileSync(ipkPath);
@@ -43,7 +48,7 @@ const iconUri = repoUrl.replace("https://github.com/", "https://raw.githubuserco
 const ipkUrl = `${repoUrl}/releases/download/${tag}/${appId}_${version}_all.ipk`;
 
 const current = existsSync(currentPath) ? JSON.parse(readFileSync(currentPath, "utf8")) : { packages: [] };
-const next = upsertPackage(current, repoEntry({ appId, title, version, iconUri, sourceUrl: repoUrl, ipkUrl, sha256, size, shortDescription: SHORT_DESCRIPTION }));
+const next = upsertPackage(current, repoEntry({ appId, title, version, iconUri, sourceUrl: repoUrl, ipkUrl, sha256, size, shortDescription: SHORT_DESCRIPTION, appDescription: APP_DESCRIPTION, fullDescriptionUrl: FULL_DESCRIPTION_URL }));
 
 writeFileSync(outPath, JSON.stringify(next, null, 2) + "\n");
 console.log(`repo.json: ${next.packages.length} package(s); ${appId} v${version} sha256=${sha256.slice(0, 12)}… size=${size}`);
