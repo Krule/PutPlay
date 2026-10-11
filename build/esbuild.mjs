@@ -8,6 +8,7 @@ import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";import { join, extname, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -17,6 +18,23 @@ const outFile = join(outDir, "bundle.js");
 
 const entry = join(srcDir, "main.ts");
 const isWatch = process.argv.includes("--watch");
+
+/**
+ * Build stamp: which commit (and whether the tree was dirty) produced this
+ * bundle. Shown on the Account screen; not part of the webOS version.
+ */
+function gitBuildStamp() {
+  try {
+    const sha = execSync("git rev-parse --short HEAD", { cwd: root, stdio: "pipe" }).toString().trim();
+    const dirty = execSync("git status --porcelain", { cwd: root, stdio: "pipe" }).toString().trim().length > 0;
+    return { sha, dirty };
+  } catch {
+    return { sha: null, dirty: false }; // not a git checkout (e.g. a dist zip)
+  }
+}
+
+const pkgVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const BUILD_STAMP = { version: pkgVersion, ...gitBuildStamp() };
 
 function findSvelte(dir) {
   const out = [];
@@ -85,13 +103,15 @@ function build() {
       define: {
         "process.env.NODE_ENV": JSON.stringify("production"),
         global: "globalThis",
+        "__BUILD__": JSON.stringify(BUILD_STAMP),
       },
     })
       .then(() => {
       const kb = (statSync(outFile).size / 1024).toFixed(1);
       const cssFile = outFile.replace(/\.js$/, ".css");
       const cssKb = existsSync(cssFile) ? ` + ${cssFile.slice(cssFile.lastIndexOf("/") + 1)} (${(statSync(cssFile).size / 1024).toFixed(0)} kB)` : "";
-      console.log(`✓ built js/bundle.js (${kb} kB)${cssKb}`);
+      const stamp = BUILD_STAMP.sha ? ` — v${pkgVersion} · ${BUILD_STAMP.sha}${BUILD_STAMP.dirty ? " (dirty)" : ""}` : "";
+      console.log(`✓ built js/bundle.js (${kb} kB)${cssKb}${stamp}`);
     })
     .catch((e) => {
       console.error(e);
@@ -115,6 +135,7 @@ if (isWatch) {
     define: {
       "process.env.NODE_ENV": JSON.stringify("development"),
       global: "globalThis",
+      "__BUILD__": JSON.stringify(BUILD_STAMP),
     },
   });
   await ctx.watch();

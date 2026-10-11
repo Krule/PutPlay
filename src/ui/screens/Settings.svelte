@@ -9,6 +9,8 @@
   import { LANGUAGES } from "../../putio/languages";
   import LangPicker from "../components/LangPicker.svelte";
 
+  import { BUILD_INFO } from "../build-info";
+
   const remote = getRemote();
 
   let a: any;
@@ -158,7 +160,9 @@
 <div class="settings" bind:this={settingsEl}>
   <header class="head">
     <h1 class="title">Account</h1>
-    <p class="sub">PutPlay — put.io for webOS</p>
+    <p class="sub">
+      PutPlay — put.io for webOS{#if BUILD_INFO && BUILD_INFO.sha}<span class="stamp">{BUILD_INFO.version} · {BUILD_INFO.sha}{BUILD_INFO.dirty ? " (dirty)" : ""}</span>{/if}
+    </p>
   </header>
 
   <div class="cols">
@@ -273,6 +277,11 @@
   .sub {
     color: var(--text-3);
     font-size: var(--fs-h3);
+  }
+  .stamp {
+    margin-left: 14px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
   }
   .cols {
     display: grid;

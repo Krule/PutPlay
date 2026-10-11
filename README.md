@@ -4,6 +4,8 @@
 [![Latest release](https://img.shields.io/github/v/release/Krule/PutPlay?label=latest%20release)](https://github.com/Krule/PutPlay/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Krule/PutPlay/total?label=downloads)](https://github.com/Krule/PutPlay/releases)
 
+![PutPlay icon](largeIcon.png "Title")
+
 put.io on the big screen — original files, embedded subtitles, my remote.
 
 > Unofficial. Not affiliated with put.io or LG.
@@ -12,7 +14,7 @@ put.io on the big screen — original files, embedded subtitles, my remote.
 
 My LG C1 stopped working with [put.io](https://app.put.io), an app I occasionally used. I like their [TV App](https://tv.put.io), but it comes a bit limited and I want to be able to stream the **original** file directly. My file, just as I uploaded it.
 
-Unfortunately, for me, their web app moved on as web moves on. And that was to b e expected. They are not the only ones and I think web evolving is always a good thing. I also understand tv manufacturer doesn't have any interest investing in browser updates for 5 years old TV. They are a business after all and they have to be selective as to where they invest their resources.
+Unfortunately, for me, their web app moved on as web moves on. And that was to be expected. They are not the only ones and I think web evolving is always a good thing. I also understand tv manufacturer doesn't have any interest investing in browser updates for 5 years old TV. They are a business after all and they have to be selective as to where they invest their resources.
 
 But, it is my TV and I just don't like the idea that it's becoming less usable just because it's not getting browser (software) updates.
 
