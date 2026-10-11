@@ -10,13 +10,13 @@ put.io on the big screen — original files, embedded subtitles, my remote.
 
 ## Why this exists
 
-My LG C1 stopped working with app.put.io. I like tv.put.io — but I want to
-stream the **original**, my file as I uploaded it. I understand the web moves
-on and LG doesn't want to invest in browser updates. I just didn't like the
-idea that a really good TV becomes unusable from obsolescence.
+My LG C1 stopped working with [put.io](https://app.put.io), an app I occasionally used. I like their [TV App](https://tv.put.io), but it comes a bit limited and I want to be able to stream the **original** file directly. My file, just as I uploaded it.
 
-Then I remembered I used to be a software engineer, and I had Qwen 3.8 27B
-to play with. A few days later, we had the first version of PutPlay.
+Unfortunately, for me, their web app moved on as web moves on. And that was to b e expected. They are not the only ones and I think web evolving is always a good thing. I also understand tv manufacturer doesn't have any interest investing in browser updates for 5 years old TV. They are a business after all and they have to be selective as to where they invest their resources.
+
+But, it is my TV and I just don't like the idea that it's becoming less usable just because it's not getting browser (software) updates.
+
+But, some time ago, I used to be a professional software engineer. And, I wanted to play with local inference and Qwen 3.8 27B 8-bit. So I outlined a project and a few days later (it's local model after all), here is PutPlay.
 
 ## What it does
 
