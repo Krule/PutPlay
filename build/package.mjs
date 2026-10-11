@@ -1,7 +1,8 @@
 // Stage only the shippable app files into a pristine dir, then package from
 // there. ares-package 3.x's -e pattern matching is unreliable (plain names
 // are ignored; .git copies throw EACCES on some systems), so staging is the
-// deterministic path. Shipped: appinfo.json, index.html, icons, js/.
+// deterministic path. Shipped: appinfo.json, index.html, icons (launcher
+// PNGs + the sign-in logo icon.svg), js/.
 import { cpSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join, dirname } from "node:path";
@@ -15,7 +16,7 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const id = JSON.parse(readFileSync(join(root, "appinfo.json"), "utf8")).id;
 
 rmSync(staging, { recursive: true, force: true });
-for (const f of ["appinfo.json", "index.html", "icon.png", "largeIcon.png"]) {
+for (const f of ["appinfo.json", "index.html", "icon.svg", "icon.png", "largeIcon.png"]) {
   cpSync(join(root, f), join(staging, f));
 }
 cpSync(join(root, "js"), join(staging, "js"), { recursive: true });
