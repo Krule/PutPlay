@@ -40,8 +40,8 @@ test("connectBackAction takes only the status (the paste mode is gone)", () => {
   assert.equal(connectBackAction.length, 1);
 });
 
-test("pending (waiting for approval) → back to choices, never exit", () => {
-  assert.equal(connectBackAction("pending"), "choices");
+test("pending (QR screen) → root: double-press exit guard (user decision: there is no sign-in screen to go back to)", () => {
+  assert.equal(connectBackAction("pending"), "root");
 });
 
 test("loading → ignore (nothing to go back to)", () => {

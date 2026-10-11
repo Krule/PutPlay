@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { get } from "svelte/store";
-  import { startOOB, cancelOOB, LINK_URL } from "../../store/auth";
+  import { startOOB, LINK_URL } from "../../store/auth";
   import type { AuthState, AuthStore } from "../../store/auth";
   import { getRemote } from "../../webos/remote";
   import { platform } from "../../webos/platform";
@@ -36,8 +36,8 @@
         if (newCodeBtn) remote.focusEl(newCodeBtn);
       });
     }
-    // the unauthed screen only has a focusable element on failure
-    // (the Try again button) — focusFirst is a no-op when there is none
+    // the unauthed-with-error frame has exactly one focusable element
+    // (Try again) — focusFirst is a no-op in the transient spinner states
     if (status === "unauthed") {
       requestAnimationFrame(() => remote.focusFirst());
     }
@@ -52,19 +52,13 @@
   // the double-press exit guard is a plain object — kept out of reactive state
   const exitGuard = { lastRootBackAt: 0 };
 
-  // BUG 6: the Connect screen owns Back through the same channel as every
-  // other screen. pending → cancel the device-code flow and show the sign-in
-  // screen again; choices → double-press exit (same guard as the library root).
+  // The Connect screen owns Back through the same channel as every other
+  // screen. Both visible frames (QR screen, error frame) exit the app via
+  // the double-press guard — there is no sign-in screen to go back to.
+  // The approval flow is bounded (TTL + 429 stop) and self-terminates in
+  // the background.
   function onBack() {
-    const action = connectBackAction(status);
-    if (action === "ignore") return;
-    if (action === "choices") {
-      cancelOOB();
-      platform.toast("Back to sign-in options", 1600);
-      requestAnimationFrame(() => remote.focusFirst());
-      return;
-    }
-    // "root": unauthed choices screen
+    if (connectBackAction(status) === "ignore") return;
     const now = Date.now();
     if (doublePress(exitGuard, now) === "exit") {
       platform.back();
@@ -99,16 +93,7 @@
   });
 </script>
 
-<div class="connect fade-up" class:full={status === "pending" || status === "loading"}>
-  <div class="brand">
-    <img src="icon.png" alt="put.io" class="logo" />
-    <div class="brand-text">
-      <h1>put.io<span class="dot">.</span></h1>
-      <p class="tag">your library, on the big screen</p>
-      <div class="stamp" aria-hidden="true">put.io</div>
-    </div>
-  </div>
-
+<div class="connect fade-up">
   {#if status === "loading"}
     <div class="form-col center">
       <div class="spinner"></div>
@@ -117,8 +102,9 @@
   {:else if status === "unauthed"}
     <div class="form-col center">
       {#if oobError}
-        <h2 class="h2">Connect your put.io</h2>
-        <p class="muted">You'll approve this TV from your phone or PC.</p>
+        <!-- the failure renders INSIDE the approve screen's frame — the
+             sign-in gate is gone, the approve screen is THE connect screen -->
+        <h2 class="h2">Approve this TV</h2>
         <p class="error-text">{oobError}</p>
         <button class="btn primary big" bind:this={oobBtn} data-focus on:click={startOOB}>
           Try again
@@ -157,65 +143,11 @@
     width: 1920px;
     height: 1080px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 64px;
+    grid-template-columns: 1fr;
     align-items: center;
     padding: 72px 112px 0;
     position: relative;
     overflow: hidden;
-  }
-  .connect.full {
-    grid-template-columns: 1fr;
-  }
-  .connect.full .brand {
-    display: none;
-  }
-  .brand {
-    display: flex;
-    flex-direction: column;
-    padding-left: 8px;
-  }
-  .brand > :not(:first-child) {
-    margin-top: 26px;
-  }
-  .logo {
-    width: 104px;
-    height: 104px;
-    border-radius: var(--r-lg);
-  }
-  .brand-text {
-    position: relative;
-  }
-  .brand-text h1 {
-    font-size: var(--fs-display);
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    line-height: 1;
-  }
-  .brand-text h1 .dot {
-    color: var(--accent-2);
-  }
-  .brand-text .tag {
-    margin-top: 12px;
-    font-size: var(--fs-h3);
-    color: var(--text-2);
-  }
-  /* the signature: a rotated stamp, quiet but present, echoing a library card */
-  .stamp {
-    position: absolute;
-    right: -120px;
-    top: -44px;
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--accent-2);
-    border: 2px solid var(--line-strong);
-    border-radius: var(--r-md);
-    padding: 10px 18px;
-    transform: rotate(-8deg);
-    opacity: 0.45;
-    user-select: none;
   }
   .form-col {
     display: flex;

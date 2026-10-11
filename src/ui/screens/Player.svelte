@@ -63,6 +63,8 @@
   let error: string | null = null;
   let audioTracks: AudioTrackInfo[] = [];
   let audioTrack = 0;
+  /** The user's pending audio pick — confirmed (or refused) by the engine's next audioTrack state. */
+  let pendingAudioPick: number | null = null;
   let hlsSubTracks: SubtitleTrackInfo[] = [];
   let live = false;
 
@@ -107,7 +109,19 @@
       const i = pickAudioTrack(audioTracks, preferredAudioLang);
       if (i >= 0 && i < audioTracks.length) engine?.setAudioTrack(i);
     }
-    if (p.audioTrack !== undefined) audioTrack = p.audioTrack;
+    if (p.audioTrack !== undefined) {
+      audioTrack = p.audioTrack;
+      // a pick is only toasted once the ENGINE confirms the switch landed
+      // (the webview can silently veto it — the old code toasted a lie)
+      if (pendingAudioPick !== null) {
+        if (p.audioSwitchFailed) {
+          platform.toast("The TV player didn't switch audio for this file. The HLS source often exposes switchable tracks.");
+        } else if (audioTracks[audioTrack]) {
+          platform.toast(`Audio: ${audioTracks[audioTrack].label}`);
+        }
+        pendingAudioPick = null;
+      }
+    }
     if (p.subtitleTracks !== undefined) hlsSubTracks = p.subtitleTracks;
     if (p.live !== undefined) live = p.live;
   }
@@ -343,8 +357,8 @@
   }
 
   function onAudioPick(i: number) {
+    pendingAudioPick = i;
     engine?.setAudioTrack(i);
-    if (audioTracks[i]) platform.toast(`Audio: ${audioTracks[i].label}`);
   }
 
   function onSourcePick(kind: SourceKind) {

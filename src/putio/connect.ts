@@ -6,12 +6,12 @@
  * unmount in every screen).
  *
  * Intended behavior:
- *  - while waiting for approval ("pending") → Back cancels the device-code
- *    flow and returns to the sign-in choices — a half-finished flow should
- *    not exit the app.
+ *  - pending (QR screen) and unauthed (error/spinner frame) → double-press
+ *    guard, same as the library root: first press hints, second press within
+ *    EXIT_WINDOW exits the app. There is no sign-in choices screen to go
+ *    back to — the QR screen IS the connect screen. The approval flow is
+ *    bounded (TTL + 429 stop), so it self-terminates in the background.
  *  - loading → ignore (nothing to go back to).
- *  - choices screen → double-press guard, same as the library root:
- *    first press hints, second press within EXIT_WINDOW exits.
  *
  * The screen has a single sign-in method (device code + QR) — the paste-a
  * token mode was removed because a TV remote can't type.
@@ -24,13 +24,9 @@ export type ConnectStatus = "loading" | "unauthed" | "pending" | "authed";
  * "root" means the caller should run the double-press guard (doublePress)
  * to decide hint vs exit.
  */
-export function connectBackAction(status: ConnectStatus):
-  | "choices"
-  | "root"
-  | "ignore" {
+export function connectBackAction(status: ConnectStatus): "root" | "ignore" {
   if (status === "loading") return "ignore";
-  if (status === "pending") return "choices";
-  // unauthed (choices): handled by the double-press guard
+  // pending (QR) and unauthed (error/spinner frame) both exit via the guard
   return "root";
 }
 

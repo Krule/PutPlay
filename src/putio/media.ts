@@ -1,5 +1,6 @@
 import type { Auth } from "./api";
 import { hlsURL, mp4StreamURL, streamURL } from "./api";
+import { applyAudioTrack } from "./audio-switch";
 import Hls from "hls.js";
 
 export type SourceKind = "original" | "mp4" | "hls";
@@ -33,6 +34,8 @@ export interface MediaState {
   error: string | null;
   audioTracks: AudioTrackInfo[];
   audioTrack: number;
+  /** The webview vetoed the last native audio-track switch (known MKV quirk). */
+  audioSwitchFailed?: boolean;
   /** HLS only: WebVTT renditions surfaced on the video's textTracks (MKV embedded subs). */
   subtitleTracks: SubtitleTrackInfo[];
   live: boolean;
@@ -398,10 +401,14 @@ export class MediaEngine {
     }
     const at = (this.v() as any).audioTracks;
     if (!at || index >= at.length) return;
-    for (let i = 0; i < at.length; i++) {
-      at[i].enabled = i === index;
+    // READ BACK: the webOS webview silently ignores `enabled` writes for some
+    // MKV files — only the read-back can confirm the switch actually landed.
+    const actual = applyAudioTrack(at, index);
+    if (actual === index) {
+      this.onState({ audioTrack: index });
+    } else {
+      this.onState({ audioTrack: actual >= 0 ? actual : index, audioSwitchFailed: true });
     }
-    this.onState({ audioTrack: index });
   }
 
   /* ---------------- video events ---------------- */

@@ -63,6 +63,42 @@ test("the 'Sign in with code' gate button is gone", () => {
   assert.ok(!code.includes("Sign in with code"), "the manual gate button must be removed");
 });
 
+test("the brand-gate screen is gone — one full-width column, no two-column brand layout", () => {
+  // the gate (logo + tagline + stamp + 'Connect your put.io') was the
+  // pre-autostart landing; with the QR screen as THE connect screen it
+  // must never render — not even after an OOB error.
+  assert.ok(!source.includes('<div class="brand">'), "the brand block must be removed");
+  assert.ok(!source.includes("Connect your put.io"), "the gate heading must be gone");
+  assert.ok(!/class:full=/.test(source), "the layout must be a single full-width column unconditionally");
+  assert.ok(!/\bstamp\b/.test(source), "the gate's stamp signature element must go with the gate");
+});
+
+test("an OOB failure renders inside the Approve screen's frame (never a separate screen)", () => {
+  const start = source.indexOf("{#if oobError}");
+  assert.ok(start !== -1, "the oobError branch must exist");
+  const end = source.indexOf("{/if}", start);
+  const errBranch = source.slice(start, end);
+  assert.ok(
+    /Approve this TV/.test(errBranch),
+    "the error state must keep the 'Approve this TV' heading — the user is on the approve screen, the flow just hasn't succeeded"
+  );
+  assert.ok(/error-text/.test(errBranch), "the error must still be shown in red");
+  assert.ok(/Try again/.test(errBranch), "the recovery button must stay in the error branch");
+});
+
+test("Back on the QR screen exits the app — no 'back to sign-in options' branch remains", () => {
+  assert.ok(
+    !source.includes("Back to sign-in options"),
+    "the sign-in-options screen no longer exists — Back must not reference it"
+  );
+  const onBack = source.slice(source.indexOf("function onBack"));
+  const onBackBody = onBack.slice(0, onBack.indexOf("\n  }"));
+  assert.ok(
+    /doublePress\(exitGuard/.test(onBackBody) && /platform\.back\(\)/.test(onBackBody),
+    "onBack must run the double-press guard and exit the app"
+  );
+});
+
 test("failure keeps a recovery path: error text + Try again button", () => {
   assert.ok(/oobError/.test(code), "the OOB error must still be surfaced");
   const retry = source.indexOf("Try again");

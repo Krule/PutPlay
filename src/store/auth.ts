@@ -5,6 +5,8 @@ export type AuthStore = Writable<AuthState>;
 import type { Auth } from "../putio/api";
 import { requestOOBCode, pollOOBCode, validateOAuth, getAccountInfo, PUTIO_WEB_APP_URL } from "../putio/api";
 import type { OOBCodeResponse, OOBPollResponse } from "../putio/types";
+import { PutioError } from "../putio/api";
+import { nextPollStep } from "../putio/oob-poll";
 import { store } from "../webos/platform";
 
 export interface AuthState {
@@ -39,6 +41,10 @@ export const auth: AuthStore = writable<AuthState>(initial);
 
 let pollTimer: number | null = null;
 let polling = false;
+/** Bumped on every stop — an in-flight tick sees the stale generation and dies (no zombie pollers). */
+let pollGen = 0;
+let pollStartedAt = 0;
+let consecutiveErrors = 0;
 
 function set(patch: Partial<AuthState>) {
   auth.update((s) => ({ ...s, ...patch }));
@@ -106,28 +112,57 @@ export async function startOOB(): Promise<void> {
   }
 }
 
-function startOOBPoll(): Promise<void> {
+function startOOBPoll(): void {
   const code = get(auth).oobCode;
-  if (!code || polling) return Promise.resolve();
+  if (!code || polling) return;
   polling = true;
+  const gen = pollGen;
+  pollStartedAt = Date.now();
+  consecutiveErrors = 0;
   const tick = async () => {
+    if (gen !== pollGen) return; // stopped while we were queued
+    let res: OOBPollResponse | null = null;
+    let was429 = false;
     try {
-      const res: OOBPollResponse = await pollOOBCode(code);
-      if (res.oauth_token) {
-        stopOOBPoll();
-        await completeAuth(res.oauth_token);
-        return;
-      }
-    } catch {
-      /* transient network errors: keep polling */
+      res = await pollOOBCode(code);
+      consecutiveErrors = 0;
+    } catch (e: any) {
+      // 429 = put.io rate-limiting us — never hammer a limiter (that's how
+      // the account got throttled). Other errors: back off, keep trying.
+      was429 = e instanceof PutioError && e.status === 429;
+      if (!was429) consecutiveErrors++;
     }
-    pollTimer = window.setTimeout(tick, 3000);
+    if (gen !== pollGen) return; // stopped while the request was in flight
+    if (res && res.oauth_token) {
+      stopOOBPoll();
+      await completeAuth(res.oauth_token);
+      return;
+    }
+    const step = nextPollStep({
+      elapsedMs: Date.now() - pollStartedAt,
+      consecutiveErrors,
+      lastErrorWas429: was429,
+    });
+    if (step.action === "stop") {
+      stopOOBPoll();
+      set({
+        status: "unauthed",
+        oobCode: null,
+        oobQr: null,
+        oobError:
+          step.reason === "rate-limited"
+            ? "put.io is rate-limiting sign-in. Wait a minute, then try again."
+            : "Sign-in code expired. Press Sign in to start a fresh one.",
+      });
+      return;
+    }
+    pollTimer = window.setTimeout(tick, step.delayMs);
   };
   pollTimer = window.setTimeout(tick, 2000);
-  return Promise.resolve();
 }
 
 export function stopOOBPoll(): void {
+  pollGen++;
   polling = false;
   if (pollTimer) {
     clearTimeout(pollTimer);

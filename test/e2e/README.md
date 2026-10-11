@@ -19,13 +19,16 @@ agent-browser open "http://localhost:8642/?seedtoken" \
   (the fake file list has one folder + 8 videos; every stream URL is rewritten
   to `test/e2e/testvid.mp4`, a 60 s clip generated with ffmpeg).
 - `/` (no param) — unauthenticated → **Connect screen** verification. The
-  OOB endpoints are faked: "Sign in with code" lands on a pending screen with
-  code `TEST1234`; the poll never approves, so it stays in "waiting".
+  OOB endpoints are faked: the device-code flow auto-starts on arrival and
+  lands on the pending screen with code `TEST1234`; the poll never approves,
+  so it stays in "waiting".
 
 ## Verifications covered
 
-- Connect: no paste-a-token option; sole CTA gets initial focus; pending →
-  Back cancels the flow and returns to the choices with focus restored.
+- Connect: no paste-a-token option; no sign-in gate (QR auto-starts); an OOB
+  failure renders inside the Approve screen's frame (error + Try again);
+  Back on the QR screen runs the double-press exit guard (hint → exit, no
+  cancel — the bounded flow self-terminates in the background).
 - Library: `.acct` → Settings → Back → `.acct` round-trip repeats cleanly;
   D-pad (ArrowUp/Right + Enter) reaches and activates the header button.
 - Player: `.bar-fill` width tracks `currentTime` during playback.
