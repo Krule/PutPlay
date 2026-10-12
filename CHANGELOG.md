@@ -7,6 +7,14 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Added
+- Archive viewer: open a ZIP from the library and it browses like a folder
+  — put.io's file is never downloaded, just its index (one range read of
+  the tail). Drill into folders, and pictures inside open in the image
+  viewer (Left/Right steps through the folder's pictures). Back pops one
+  folder at a time, then leaves the archive with the library exactly where
+  you left it. RAR/7z stay "coming soon"; ZIP64 and password-protected
+  archives are refused by name, not by freeze. This is also the foundation
+  for CBZ/CBR comics later.
 - Image viewer: open a picture from the library (JPEG / PNG / GIF / WebP /
   BMP) and it fills the screen. Left and Right step through the folder's
   pictures; Back drops you straight back into the folder you opened it from.

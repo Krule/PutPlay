@@ -143,6 +143,18 @@
             parent_id: 0,
             is_folder: 0,
             start_from: 0
+          },
+          {
+            // ARCHIVE (viewer e2e): a real zip at the root — open it like a
+            // folder, browse pages/, open an image inside. /stream serves it
+            // WITH Range support (the parser depends on Range).
+            id: 15,
+            name: "comic.zip",
+            size: 672,
+            content_type: "application/zip",
+            parent_id: null,
+            is_folder: 0,
+            start_from: 0
           }
         ])
     )
@@ -233,6 +245,30 @@
       var mid = ms ? parseInt(ms[1], 10) : 0;
       if (mid === 13 || mid === 14) {
         return origFetch("/test/e2e/wall-" + mid + ".png");
+      }
+      if (mid === 15) {
+        // the archive e2e: honour Range (tail read + per-entry reads)
+        return origFetch("/test/e2e/comic.zip").then(function (r) {
+          return r.arrayBuffer().then(function (buf) {
+            var total = buf.byteLength;
+            var range = init && init.headers ? init.headers.Range : null;
+            var rm = range ? String(range).match(/^bytes=(\d+)-?(\d*)$/) : null;
+            if (!rm) {
+              return new Response(buf, { status: 200, headers: { "Content-Length": String(total) } });
+            }
+            var start = parseInt(rm[1], 10);
+            var end = rm[2] ? parseInt(rm[2], 10) : total - 1;
+            end = Math.min(end, total - 1);
+            return new Response(buf.slice(start, end + 1), {
+              status: 206,
+              headers: {
+                "Content-Range": "bytes " + start + "-" + end + "/" + total,
+                "Content-Length": String(end - start + 1),
+                "Content-Type": "application/zip"
+              }
+            });
+          });
+        });
       }
       return origFetch(mid === 9 || mid === 10 ? "/test/e2e/dual-audio.mp4" : "/test/e2e/testvid.mp4");
     }

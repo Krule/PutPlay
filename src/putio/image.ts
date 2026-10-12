@@ -1,3 +1,5 @@
+import { streamURL, type Auth } from "./api";
+
 /**
  * Image-viewer decisions (pure).
  *
@@ -20,6 +22,7 @@ export interface ImageFileEntry {
   name?: string;
   content_type?: string | null;
   is_folder?: number | boolean;
+  size?: number;
 }
 
 /**
@@ -37,20 +40,45 @@ export function isImageFile(f: ImageFileEntry): boolean {
   return DECODABLE_EXT_RE.test(name);
 }
 
+
+
 /**
- * Browse a folder's images in listing order (non-images skipped).
- * @param dir -1 = previous, +1 = next.
- * @returns the id to show, or null at either end (no wrap) / when the current
- *          file is not an image in the list (nothing honest to navigate to).
+ * One thing the image viewer can show. `load` is what makes the library and
+ * the archive viewers share one screen: library targets resolve to the
+ * signed stream URL, archive targets extract the entry and resolve to a
+ * blob URL. Returning a Promise keeps both on one shape.
  */
-export function nextImageId(
+export interface ViewerTarget {
+  name: string;
+  size: number;
+  load: () => Promise<string>;
+}
+
+/**
+ * Browse the viewer's target list (the shared primitive for both contexts).
+ * @param dir -1 = previous, +1 = next.
+ * @returns the next index, or null at either end (no wrap) / when `at` is
+ *          outside the list (nothing honest to navigate to).
+ */
+export function stepIndex(at: number, count: number, dir: -1 | 1): number | null {
+  if (at < 0 || at >= count) return null;
+  const next = at + dir;
+  return next < 0 || next >= count ? null : next;
+}
+
+/**
+ * The folder's decodable images as viewer targets, in listing order.
+ * (The viewer itself stays agnostic: it only knows targets.)
+ */
+export function buildLibraryTargets(
   files: ImageFileEntry[],
-  currentId: number,
-  dir: -1 | 1
-): number | null {
-  const ids = files.filter(isImageFile).map((f) => f.id);
-  const at = ids.indexOf(currentId);
-  if (at === -1) return null;
-  const next = ids[at + dir];
-  return next === undefined ? null : next;
+  auth: Auth
+): ViewerTarget[] {
+  return files
+    .filter(isImageFile)
+    .map((f) => ({
+      name: f.name || "",
+      size: f.size || 0,
+      load: () => Promise.resolve(streamURL(auth, f.id)),
+    }));
 }

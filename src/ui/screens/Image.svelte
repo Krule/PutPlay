@@ -1,59 +1,77 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from "svelte";
-  import { get } from "svelte/store";
   import { getRemote, type Dir } from "../../webos/remote";
-  import { library } from "../../store/library";
-  import { currentAuth } from "../../store/auth";
-  import { streamURL, fmtBytes } from "../../putio/api";
-  import { nextImageId, isImageFile } from "../../putio/image";
-  import type { PutFile } from "../../putio/types";
+  import { stepIndex, type ViewerTarget } from "../../putio/image";
+  import { fmtBytes } from "../../putio/api";
 
-  export let file: PutFile;
+  export let targets: ViewerTarget[];
+  export let initial: number;
 
   /**
    * Image viewer v1 — fit-to-screen + Left/Right browse + Back. No zoom
    * (deliberate: a TV remote has no pinch; zoom needs a real interaction
    * design and is a v2 question).
    *
-   * The viewer has no sub-levels of its own: Back always dispatches back to
-   * the App (which returns to the library, folder intact — the library store
-   * persists under the viewer).
+   * The viewer is TARGET-based: it shows a list of ViewerTargets and never
+   * builds URLs itself. Library images resolve to signed stream URLs;
+   * archive images resolve to blob URLs — one screen, two worlds.
+   *
+   * Back always dispatches back to the App (no sub-levels of the viewer's
+   * own); the App decides where "back" lands.
    */
   const dispatch = createEventDispatcher();
   const remote = getRemote();
 
-  let viewing: PutFile = file;
+  let at = initial >= 0 && initial < targets.length ? initial : 0;
   let state: "loading" | "ready" | "error" = "loading";
   let src = "";
+  let objectUrl = ""; // blob: URLs we own must be revoked (the TV's memory)
   let captionVisible = true;
   let hideTimer: number | null = null;
-  let nonce = 0; // retry counter — a fresh URL per attempt, never a silent blank
+  let attempt = 0;
 
-  let libFiles: PutFile[] = []; // subscribed: the caption's "n of m" must track the store
   let errorEl: HTMLElement | null = null;
 
-  /* ---------------- loading (honest: the signed URL, the same as video) ---- */
+  $: active = targets[at];
+
+  function freeUrl() {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = "";
+    }
+  }
+
+  /* ---------------- loading (honest: the target's own load) ---------------- */
   function loadImage() {
-    const au = currentAuth();
-    if (!au) return;
     state = "loading";
-    src = nonce ? `${streamURL(au, viewing.id)}&r=${nonce}` : streamURL(au, viewing.id);
+    attempt += 1;
+    const mine = attempt;
+    freeUrl();
+    src = "";
+    active
+      .load()
+      .then((url) => {
+        if (mine !== attempt) return; // superseded by a newer load
+        if (url.indexOf("blob:") === 0) objectUrl = url;
+        src = url;
+      })
+      .catch((err) => {
+        console.error("image target failed to load", err);
+        if (mine !== attempt) return;
+        state = "error";
+      });
   }
 
   function retry() {
     wake();
-    nonce += 1;
     loadImage();
   }
 
-  /* ---------------- browsing (the folder's images, listing order) ---------- */
+  /* ---------------- browsing (the target list, no wrap) ------------------- */
   function step(dir: -1 | 1) {
-    const to = nextImageId(libFiles, viewing.id, dir);
-    if (to == null) return; // end of the folder (no wrap) — nothing to do
-    const next = libFiles.find((f) => f.id === to);
-    if (!next) return;
-    viewing = next;
-    nonce = 0;
+    const to = stepIndex(at, targets.length, dir);
+    if (to == null) return; // end of the list (no wrap) — nothing to do
+    at = to;
     wake();
     loadImage();
   }
@@ -67,9 +85,6 @@
     }, 4000);
   }
 
-  $: imageIds = libFiles.filter(isImageFile).map((f) => f.id);
-  $: position = imageIds.indexOf(viewing.id);
-
   /* ---------------- remote keys ------------------------------------------- */
   function onBack() {
     dispatch("back");
@@ -81,24 +96,18 @@
     else if (dir === "right") step(1);
   }
 
-  function wire() {
+  onMount(() => {
     remote.setHandlers({
       onBack,
       onOK: wake,
       onNavigate,
     });
-    libFiles = get(library).files;
     loadImage();
     wake();
-  }
-
-  onMount(() => {
-    wire();
-    const unsub = library.subscribe((v) => (libFiles = v.files));
     return () => {
-      unsub();
       remote.clearHandlers(); // BUG 5 contract: no stale handlers leak
       if (hideTimer) clearTimeout(hideTimer);
+      freeUrl();
     };
   });
 
@@ -109,11 +118,11 @@
 </script>
 
 <div class="viewer" class:ready={state === "ready"}>
-  {#if state !== "error"}
+  {#if state !== "error" && src}
     <img
       class="shot"
       {src}
-      alt={viewing.name}
+      alt={active.name}
       draggable="false"
       on:load={() => {
         state = "ready";
@@ -127,13 +136,13 @@
   {#if state === "loading"}
     <div class="center">
       <div class="spinner" role="status" aria-label="Loading"></div>
-      <p class="muted">Loading {viewing.name}…</p>
+      <p class="muted">Loading {active.name}…</p>
     </div>
   {:else if state === "error"}
     <div class="center">
       <p class="big">Couldn’t display this image</p>
       <p class="muted">
-        {viewing.name} — {fmtBytes(viewing.size)}
+        {active.name} — {fmtBytes(active.size)}
       </p>
       <p class="muted small">
         The file didn’t load, or the format isn’t decodable by this TV.
@@ -149,11 +158,11 @@
 
   {#if state === "ready"}
     <div class="caption" class:dim={!captionVisible}>
-      <span class="name">{viewing.name}</span>
+      <span class="name">{active.name}</span>
       <span class="meta">
-        {position + 1} of {imageIds.length}
+        {at + 1} of {targets.length}
         <span class="sep">·</span>
-        {fmtBytes(viewing.size)}
+        {fmtBytes(active.size)}
       </span>
     </div>
   {/if}

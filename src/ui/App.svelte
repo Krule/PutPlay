@@ -13,12 +13,20 @@
   import Library from "./screens/Library.svelte";
   import Player from "./screens/Player.svelte";
   import Image from "./screens/Image.svelte";
+  import Archive from "./screens/Archive.svelte";
   import Settings from "./screens/Settings.svelte";
+  import { buildLibraryTargets, type ViewerTarget } from "../putio/image";
+  import { resetArchive } from "../store/archive";
+  import { currentAuth } from "../store/auth";
 
   let a: AuthState;
-  let screen: "connect" | "library" | "player" | "image" | "settings" = "connect";
+  let screen: "connect" | "library" | "player" | "image" | "archive" | "settings" = "connect";
   let playingFile: PutFile | null = null;
-  let imageFile: PutFile | null = null;
+  let imageTargets: ViewerTarget[] = [];
+  let imageInitial = 0;
+  // where Back from the image lands: the library, or the archive it came from
+  let imageReturn: "library" | "archive" = "library";
+  let archiveFile: PutFile | null = null;
 
   /* ---------------- back key ----------------
    * Primary path: remote.ts delivers the Back key (keydown 461; appinfo.json
@@ -67,7 +75,13 @@
       return;
     }
     if (screen === "image") {
-      imageFile = null;
+      imageTargets = [];
+      screen = imageReturn;
+      return;
+    }
+    if (screen === "archive") {
+      archiveFile = null;
+      resetArchive();
       screen = "library";
       return;
     }
@@ -113,7 +127,9 @@
       if (v.status === "authed" && screen === "connect") screen = "library";
       if (v.status === "unauthed" && screen !== "connect") {
         playingFile = null;
-        imageFile = null;
+        imageTargets = [];
+        archiveFile = null;
+        resetArchive();
         // the store is module-level: without this, a fresh login would show
         // the previous account's folders (needsInitialList skips the fetch
         // when a cached listing exists)
@@ -154,7 +170,27 @@
   }
 
   function onOpenImage(e: CustomEvent<{ file: PutFile }>) {
-    imageFile = e.detail.file;
+    // the folder's decodable images become the viewer's targets
+    const au = currentAuth();
+    if (!au) return;
+    const targets = buildLibraryTargets(get(library).files, au);
+    imageTargets = targets;
+    imageInitial = Math.max(0, targets.findIndex((t) => t.name === e.detail.file.name));
+    imageReturn = "library";
+    screen = "image";
+    platform.pushBackLevel();
+  }
+
+  function onOpenArchive(e: CustomEvent<{ file: PutFile }>) {
+    archiveFile = e.detail.file;
+    screen = "archive";
+    platform.pushBackLevel();
+  }
+
+  function onOpenArchiveImage(e: CustomEvent<{ targets: ViewerTarget[]; initial: number }>) {
+    imageTargets = e.detail.targets;
+    imageInitial = e.detail.initial;
+    imageReturn = "archive"; // Back returns to the archive (folder intact — its store persists)
     screen = "image";
     platform.pushBackLevel();
   }
@@ -165,7 +201,13 @@
   }
 
   function onImageBack() {
-    imageFile = null;
+    imageTargets = [];
+    screen = imageReturn;
+  }
+
+  function onArchiveBack() {
+    archiveFile = null;
+    resetArchive();
     screen = "library";
   }
 
@@ -190,11 +232,13 @@
   {#if screen === "connect"}
     <Connect state={auth} />
   {:else if screen === "library"}
-    <Library on:open={onOpen} on:open-image={onOpenImage} on:root={onLibraryRoot} />
+    <Library on:open={onOpen} on:open-image={onOpenImage} on:open-archive={onOpenArchive} on:root={onLibraryRoot} />
   {:else if screen === "player" && playingFile}
     <Player file={playingFile} on:back={onPlayerBack} />
-  {:else if screen === "image" && imageFile}
-    <Image file={imageFile} on:back={onImageBack} />
+  {:else if screen === "archive" && archiveFile}
+    <Archive file={archiveFile} on:open-image={onOpenArchiveImage} on:back={onArchiveBack} />
+  {:else if screen === "image" && imageTargets.length}
+    <Image targets={imageTargets} initial={imageInitial} on:back={onImageBack} />
   {:else if screen === "settings"}
     <Settings on:back={onSettingsBack} />
   {/if}

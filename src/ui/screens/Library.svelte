@@ -55,6 +55,10 @@
       // Decodable raster image → the fit-to-screen viewer (v1: no zoom).
       // Only provably displayable formats reach here (HEIC/SVG stay closed).
       dispatch("open-image", { file: f });
+    } else if (/\.zip$/i.test(f.name || "")) {
+      // ZIP is browsable (one range read of the tail lists it); the CBR/CBZ
+      // comic path rides on the same viewer later. RAR/7z stay honest.
+      dispatch("open-archive", { file: f });
     } else if (/\.(zip|rar|7z|tar|gz|iso)$/i.test(f.name || "")) {
       platform.toast("Archive — coming soon");
     } else {

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "hls.js": "1.0.11",
+    "pako": "^3.0.2",
     "webostvjs": "^1.2.13"
   },
   "devDependencies": {

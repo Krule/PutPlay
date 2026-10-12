@@ -8,8 +8,10 @@
 // Contract (pure decisions in src/putio/image.ts):
 //   1. isImageFile: content_type image/* wins; extension fallback when the
 //      type is missing; only decodable raster formats (jpeg/png/gif/webp/bmp).
-//   2. nextImageId: browse the folder's images in listing order;
-//      no wrap at either end; a file not in the list navigates nowhere.
+//   2. stepIndex: browse the viewer's target list; no wrap at either
+//      end; an index outside the list navigates nowhere.
+//      buildLibraryTargets: the folder's decodable images -> ViewerTargets
+//      that load through the signed stream URL.
 //
 // Run: npm test
 import { build } from "esbuild";
@@ -66,29 +68,32 @@ test("isImageFile: folders and non-images are never images", () => {
   assert.equal(img.isImageFile(file("a.mp4", "video/mp4")), false);
 });
 
-const pics = [
-  { id: 10, name: "a.png", content_type: "image/png" },
-  { id: 20, name: "clip.mp4", content_type: "video/mp4" },
-  { id: 30, name: "b.jpg", content_type: "image/jpeg" },
-  { id: 40, name: "c.gif", content_type: "image/gif" },
-];
-
-test("nextImageId: steps over non-images, keeps listing order", () => {
-  assert.equal(img.nextImageId(pics, 10, 1), 30);
-  assert.equal(img.nextImageId(pics, 30, 1), 40);
-  assert.equal(img.nextImageId(pics, 30, -1), 10);
-  assert.equal(img.nextImageId(pics, 40, -1), 30);
+/* ---------------- stepIndex: the viewer's browse primitive ---------------- */
+test("stepIndex: steps the target list, no wrap at either end", () => {
+  assert.equal(img.stepIndex(0, 3, 1), 1);
+  assert.equal(img.stepIndex(1, 3, 1), 2);
+  assert.equal(img.stepIndex(2, 3, 1), null);
+  assert.equal(img.stepIndex(1, 3, -1), 0);
+  assert.equal(img.stepIndex(0, 3, -1), null);
+  assert.equal(img.stepIndex(0, 0, 1), null);
+  assert.equal(img.stepIndex(5, 3, 1), null, "an index outside the list goes nowhere (honest)");
 });
 
-test("nextImageId: no wrap at either end", () => {
-  assert.equal(img.nextImageId(pics, 10, -1), null);
-  assert.equal(img.nextImageId(pics, 40, 1), null);
-});
-
-test("nextImageId: a file not in the list navigates nowhere (honest)", () => {
-  assert.equal(img.nextImageId(pics, 99, 1), null);
-  assert.equal(img.nextImageId(pics, 99, -1), null);
-  assert.equal(img.nextImageId([], 10, 1), null);
+test("buildLibraryTargets: the folder's images become viewer targets", () => {
+  const files = [
+    { id: 1, name: "a.png", content_type: "image/png", size: 10 },
+    { id: 2, name: "v.mp4", content_type: "video/mp4", size: 99 },
+    { id: 3, name: "b.heic", content_type: "image/heic", size: 5 },
+    { id: 4, name: "c.jpg", content_type: "image/jpeg", size: 20 },
+  ];
+  const t = img.buildLibraryTargets(files, { oauthToken: "t", downloadToken: "d" });
+  assert.deepEqual(t.map((x) => x.name), ["a.png", "c.jpg"]);
+  assert.equal(t[0].size, 10);
+  assert.equal(typeof t[0].load, "function");
+  return Promise.resolve(t[0].load()).then((src) => {
+    assert.ok(src.indexOf("/files/1/stream") !== -1, "library targets load through the signed stream URL");
+    assert.ok(src.indexOf("oauth_token=d") !== -1, "the download token signs the URL");
+  });
 });
 
 /* ================= UI wiring (source contracts) ================= */
@@ -151,12 +156,13 @@ test("app: routes to the image screen and back to the library", () => {
   );
 });
 
-test("viewer: honest loading/error states over the signed stream URL", () => {
+test("viewer: honest loading/error states over the target's own load()", () => {
   const viewer = read("src/ui/screens/Image.svelte");
   assert.ok(
-    /streamURL\(.*file/.test(viewer) || /streamURL\(/.test(viewer),
-    "the viewer must load through the signed streamURL"
+    viewer.indexOf("streamURL") === -1,
+    "the viewer must not build URLs itself — targets carry their load() (library AND archive images)"
   );
+  assert.ok(/\.load\(\)/.test(viewer), "the viewer must call the active target's load()");
   assert.ok(/on\:error=/.test(viewer), "the <img> must handle decode/load failure");
   assert.ok(
     /retry|loadImage|reload/.test(viewer),
@@ -173,8 +179,8 @@ test("viewer: remote keys — back exits, left/right browse the folder", () => {
     "Left/Right must browse the folder's images"
   );
   assert.ok(
-    /nextImageId\(/.test(viewer),
-    "browsing must go through the pure nextImageId decision"
+    /stepIndex\(/.test(viewer),
+    "browsing must go through the pure stepIndex decision"
   );
   assert.ok(
     /dispatch\("back"\)/.test(viewer),
