@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-12
+
 ### Added
 - Subtitle size selection right on the player: Small / Default / Large / XL in
   the Subtitles panel. It applies to both the on-screen subtitles and the
