@@ -3,6 +3,7 @@
  *  - seeds the saved oauth token (desktop path = localStorage)
  *  - intercepts fetch() for https://api.put.io/v2 (JSON endpoints)
  *  - rewrites <video>.src for api.put.io stream URLs to a local test mp4 blob
+ *  - rewrites <img>.src for api.put.io stream URLs to the local PNG assets
  */
 (function () {
   var TOKEN = "fake-oauth-token";
@@ -121,6 +122,27 @@
             is_folder: 0,
             is_mp4_available: false,
             start_from: 0
+          },
+          {
+            // IMAGE (viewer e2e): two PNGs inside "Movies" — open, browse
+            // Left/Right, Back restores the folder. /stream serves the real
+            // PNG assets so the browser actually decodes them.
+            id: 13,
+            name: "wall-1.png",
+            size: 1234,
+            content_type: "image/png",
+            parent_id: 0,
+            is_folder: 0,
+            start_from: 0
+          },
+          {
+            id: 14,
+            name: "wall-2.png",
+            size: 1234,
+            content_type: "image/png",
+            parent_id: 0,
+            is_folder: 0,
+            start_from: 0
           }
         ])
     )
@@ -209,6 +231,9 @@
       // media load (rarely via fetch): the multi-audio files carry their own
       var ms = p.match(/\/files\/(\d+)(?:\/|$)/);
       var mid = ms ? parseInt(ms[1], 10) : 0;
+      if (mid === 13 || mid === 14) {
+        return origFetch("/test/e2e/wall-" + mid + ".png");
+      }
       return origFetch(mid === 9 || mid === 10 ? "/test/e2e/dual-audio.mp4" : "/test/e2e/testvid.mp4");
     }
     else if (p.indexOf("/hls/") !== -1) {
@@ -451,4 +476,35 @@
     }
     window.XMLHttpRequest = FakeXHR;
   })();
+
+  /* <img> never goes through fetch: point the signed stream URL at the
+   * local PNG asset so the browser decodes REAL image bytes (naturalWidth
+   * and friends are honest). */
+  var imgDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+  var rewriteImgSrc = function (val) {
+    if (val && val.indexOf("api.put.io") !== -1 && val.indexOf("/stream") !== -1) {
+      var im = val.match(/\/files\/(\d+)\//);
+      var fid = im ? parseInt(im[1], 10) : 0;
+      if (fid === 13 || fid === 14)
+        return "/test/e2e/wall-" + fid + ".png";
+    }
+    return null;
+  };
+  Object.defineProperty(HTMLImageElement.prototype, "src", {
+    get: function () { return imgDesc.get.call(this); },
+    set: function (val) {
+      var local = rewriteImgSrc(val);
+      imgDesc.set.call(this, local || val);
+    }
+  });
+  /* Svelte sets <img src={...}> via setAttribute, not the property — hook
+   * both paths (the browser's native loader bypasses the fetch patch). */
+  var imgSetAttr = HTMLImageElement.prototype.setAttribute;
+  HTMLImageElement.prototype.setAttribute = function (name, val) {
+    if (name === "src") {
+      var local = rewriteImgSrc(val);
+      if (local) val = local;
+    }
+    return imgSetAttr.call(this, name, val);
+  };
 })();

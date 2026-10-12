@@ -6,6 +6,13 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Image viewer: open a picture from the library (JPEG / PNG / GIF / WebP /
+  BMP) and it fills the screen. Left and Right step through the folder's
+  pictures; Back drops you straight back into the folder you opened it from.
+  HEIC/HEIF are not offered — the TV's browser can't decode them — and a
+  picture that fails to load says so, with a Try again.
+
 ## [1.0.3] - 2026-10-12
 
 ### Added

@@ -12,11 +12,13 @@
   import Connect from "./screens/Connect.svelte";
   import Library from "./screens/Library.svelte";
   import Player from "./screens/Player.svelte";
+  import Image from "./screens/Image.svelte";
   import Settings from "./screens/Settings.svelte";
 
   let a: AuthState;
-  let screen: "connect" | "library" | "player" | "settings" = "connect";
+  let screen: "connect" | "library" | "player" | "image" | "settings" = "connect";
   let playingFile: PutFile | null = null;
+  let imageFile: PutFile | null = null;
 
   /* ---------------- back key ----------------
    * Primary path: remote.ts delivers the Back key (keydown 461; appinfo.json
@@ -64,6 +66,11 @@
       screen = "library";
       return;
     }
+    if (screen === "image") {
+      imageFile = null;
+      screen = "library";
+      return;
+    }
     if (screen === "settings") {
       screen = "library";
       return;
@@ -106,6 +113,7 @@
       if (v.status === "authed" && screen === "connect") screen = "library";
       if (v.status === "unauthed" && screen !== "connect") {
         playingFile = null;
+        imageFile = null;
         // the store is module-level: without this, a fresh login would show
         // the previous account's folders (needsInitialList skips the fetch
         // when a cached listing exists)
@@ -145,8 +153,19 @@
     platform.pushBackLevel();
   }
 
+  function onOpenImage(e: CustomEvent<{ file: PutFile }>) {
+    imageFile = e.detail.file;
+    screen = "image";
+    platform.pushBackLevel();
+  }
+
   function onPlayerBack() {
     playingFile = null;
+    screen = "library";
+  }
+
+  function onImageBack() {
+    imageFile = null;
     screen = "library";
   }
 
@@ -171,9 +190,11 @@
   {#if screen === "connect"}
     <Connect state={auth} />
   {:else if screen === "library"}
-    <Library on:open={onOpen} on:root={onLibraryRoot} />
+    <Library on:open={onOpen} on:open-image={onOpenImage} on:root={onLibraryRoot} />
   {:else if screen === "player" && playingFile}
     <Player file={playingFile} on:back={onPlayerBack} />
+  {:else if screen === "image" && imageFile}
+    <Image file={imageFile} on:back={onImageBack} />
   {:else if screen === "settings"}
     <Settings on:back={onSettingsBack} />
   {/if}

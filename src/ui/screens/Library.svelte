@@ -8,6 +8,7 @@
   import { currentAuth, auth } from "../../store/auth";
   import { nav, requestSettings } from "../../store/nav";
   import { libraryOkAction } from "../../putio/library-ok";
+  import { isImageFile } from "../../putio/image";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
   import ItemTile from "../components/ItemTile.svelte";
@@ -50,6 +51,10 @@
       if (au) openFolder(au, f);
     } else if (isPlayable(f)) {
       openFile(f);
+    } else if (isImageFile(f)) {
+      // Decodable raster image → the fit-to-screen viewer (v1: no zoom).
+      // Only provably displayable formats reach here (HEIC/SVG stay closed).
+      dispatch("open-image", { file: f });
     } else if (/\.(zip|rar|7z|tar|gz|iso)$/i.test(f.name || "")) {
       platform.toast("Archive — coming soon");
     } else {
