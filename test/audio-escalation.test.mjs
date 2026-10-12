@@ -157,11 +157,16 @@ function makeFakeVideo(options = {}) {
     dispatch(t) {
       (this._listeners[t] || []).slice().forEach((f) => f());
     },
+    // Faithful to a real element: pausing/playing fire events. (The TV can
+    // pause the element WITHOUT the app's knowledge — e.g. a system volume
+    // change re-negotiating the audio pipeline — and the engine must notice.)
     pause() {
       this.paused = true;
+      this.dispatch("pause");
     },
     play() {
       this.paused = false;
+      this.dispatch("playing");
       return Promise.resolve();
     },
     error: null,
@@ -655,4 +660,78 @@ test("escalation: a pick while one is in flight is ignored, not queued", () => {
     guardCount >= 2,
     `expected the switchingAudio guard at both entry points, found ${guardCount}`
   );
+});
+
+// ---------------------------------------------------------------------------
+// TV-side pauses (the volume key)
+// On webOS the remote's volume rocker is handled by the SYSTEM — the app never
+// sees it. But a volume change can make the webview pause the <video> element
+// on its own (the audio pipeline re-negotiates). A pause nobody requested is
+// not a user pause: the engine must resume it. A pause that WAS requested
+// (blue key) must stick.
+// ---------------------------------------------------------------------------
+
+test("a pause the engine did not request (TV side, e.g. a volume change) auto-resumes", async () => {
+  const video = makeFakeVideo();
+  const engine = new MediaEngine(
+    video,
+    { id: 1, is_mp4_available: false },
+    { token: "t", scope: "files" },
+    { onState: () => {} }
+  );
+  engine.setSource("original");
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(video.paused, false, "must be playing before the simulated TV pause");
+  // The webview pauses the element on its own — no user gesture involved,
+  // exactly what a system volume change can do on webOS.
+  video.pause();
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(
+    video.paused,
+    false,
+    "the engine must resume a pause it did not request (a volume-key pause must not stop playback)"
+  );
+});
+
+test("a user pause (blue key) is never auto-resumed", async () => {
+  const video = makeFakeVideo();
+  const engine = new MediaEngine(
+    video,
+    { id: 1, is_mp4_available: false },
+    { token: "t", scope: "files" },
+    { onState: () => {} }
+  );
+  engine.setSource("original");
+  await new Promise((r) => setTimeout(r, 30));
+  engine.pause();
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(video.paused, true, "a user-requested pause must stick");
+});
+
+test("a pause storm from the TV is bounded and recovers", async () => {
+  const video = makeFakeVideo();
+  let plays = 0;
+  const rawPlay = video.play.bind(video);
+  video.play = () => {
+    plays++;
+    return rawPlay();
+  };
+  const engine = new MediaEngine(
+    video,
+    { id: 1, is_mp4_available: false },
+    { token: "t", scope: "files" },
+    { onState: () => {} }
+  );
+  engine.setSource("original");
+  await new Promise((r) => setTimeout(r, 30));
+  const baseline = plays;
+  // The TV holds the element paused for a beat (a long volume press).
+  for (let i = 0; i < 3; i++) {
+    video.pause();
+    await new Promise((r) => setTimeout(r, 15));
+  }
+  const extra = plays - baseline;
+  assert.ok(extra <= 3, `at most one resume attempt per TV pause (saw ${extra})`);
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(video.paused, false, "must end up playing once the TV stops holding it");
 });

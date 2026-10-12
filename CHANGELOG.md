@@ -6,6 +6,13 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Fixed
+- Playback no longer stops when the TV's volume is changed. The app never
+  sees the volume keys (they are the system's), but the webview can pause
+  the video element on its own when the system volume changes — and the app
+  used to just sit there showing the pause icon. A pause nobody requested is
+  now resumed automatically; a pause you asked for (blue key) still sticks.
+
 ## [1.0.2] - 2026-10-12
 
 ### Added

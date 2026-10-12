@@ -99,6 +99,9 @@ export class MediaEngine {
   /** true while the reload dance owns the element (its src strip fires an
    * element error that onError must not treat as a dead stream) */
   private dancing = false;
+  /** a pause the USER asked for (blue key) — the engine never auto-resumes
+   * this one. Cleared by play() and by a fresh source load. */
+  private userPaused = false;
   /** set when a failed dance already triggered the same-source restore —
    * the restore is one chance, not a loop (if IT dies, the normal
    * fallback chain takes over) */
@@ -196,6 +199,7 @@ export class MediaEngine {
     this.pendingSeek = t || undefined;
     this.recoveredAfterDance = false; // a fresh load is a fresh chance
     this.prefApplied = false; // a new source load re-arms the preference
+    this.userPaused = false; // a new source load is a fresh playback intent
     if (kind === "mp4") v.src = mp4StreamURL(this.auth, this.file.id);
     else if (kind === "original") v.src = streamURL(this.auth, this.file.id);
     else if (kind === "hls") this.attachHls(t);
@@ -220,6 +224,7 @@ export class MediaEngine {
   }
 
   async play(): Promise<void> {
+    this.userPaused = false;
     const v = this.v();
     try {
       await v.play();
@@ -228,6 +233,7 @@ export class MediaEngine {
     }
   }
   pause(): void {
+    this.userPaused = true;
     this.v().pause();
   }
   seek(t: number): void {
@@ -243,9 +249,6 @@ export class MediaEngine {
   skip(delta: number): void {
     const v = this.v();
     v.currentTime = Math.max(0, Math.min(v.duration || v.currentTime + delta, v.currentTime + delta));
-  }
-  setVolume(v: number): void {
-    this.v().volume = Math.max(0, Math.min(1, v));
   }
 
   get duration(): number {
@@ -880,6 +883,19 @@ export class MediaEngine {
   };
   private onWait = () => this.onState({ buffering: true });
   private onPlaying = () => this.onState({ buffering: false, error: null });
+  /** A pause nobody in the app requested: the element stopped on its own.
+   *  On webOS this is what a system volume change can do — the audio
+   *  pipeline re-negotiates and the webview pauses the element, leaving
+   *  playback stuck on the pause icon (the old "turn the volume and it
+   *  stops" behavior). Resume it. Never touch a pause the engine caused:
+   *  the user's blue key (userPaused), a switch in flight (switchingAudio,
+   *  whose paused-write step pauses deliberately), or the dance (dancing). */
+  private onPause = () => {
+    if (this.userPaused || this.dancing || this.switchingAudio) return;
+    const v = this.v();
+    if (v.ended || v.error) return;
+    v.play().catch(() => undefined);
+  };
   private onError = () => {
     // the reload dance strips src mid-flight — the element's error for THAT
     // is expected, not a dead stream. Treating it as fatal ran the fallback
@@ -924,6 +940,7 @@ export class MediaEngine {
       [v, "loadedmetadata", this.onMeta],
       [v, "waiting", this.onWait],
       [v, "playing", this.onPlaying],
+      [v, "pause", this.onPause],
       [v, "error", this.onError],
       [v, "ended", this.onEndedFn],
     ];
