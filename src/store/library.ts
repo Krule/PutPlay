@@ -41,6 +41,43 @@ const initial: LibraryState = {
 
 export const library = writable<LibraryState>(initial);
 
+/**
+ * The folder to (re)list when the Library screen (re)mounts: the folder
+ * the user was in — or the root (null) if they were at the root. The store
+ * is module-level, so this state survives the player round-trip; the old
+ * mount code ignored it and always re-listed the root ("Back to Library
+ * should take one to previous folder, not to root").
+ */
+export function mountFolderId(state: Pick<LibraryState, "folderId">): number | null {
+  return state.folderId;
+}
+
+/**
+ * Whether the mount must fetch a listing at all. A healthy cached listing
+ * is shown instantly (returning from the player must not flash a spinner);
+ * an empty, pending or failed state fetches (the folder may have changed
+ * while the file was playing).
+ */
+export function needsInitialList(
+  state: Pick<LibraryState, "files" | "loading" | "error">
+): boolean {
+  if (state.loading || state.error) return true;
+  return state.files.length === 0;
+}
+
+/**
+ * Back to the pristine state. A fresh login must never show the previous
+ * account's folders — the store is module-level and would otherwise
+ * survive sign-out/re-auth untouched.
+ */
+export function resetLibrary(): void {
+  library.set({
+    ...initial,
+    files: [],
+    breadcrumbs: [{ id: null, name: "My Library" }],
+  });
+}
+
 function set(patch: Partial<LibraryState>) {
   library.update((s) => ({ ...s, ...patch }));
 }
@@ -84,9 +121,15 @@ export async function listFolder(auth: Auth, folderId: number | null, reset = tr
   }
 }
 
-function buildBreadcrumbs(folderId: number | null): Breadcrumb[] {
+/**
+ * Breadcrumb rebuild on a reset list: the root (null) starts the chain;
+ * any folder (INCLUDING id 0 — falsy-zero bug: `!folderId` used to treat
+ * folder 0 as the root and dropped its whole crumb chain) keeps the chain
+ * openFolder maintains incrementally.
+ */
+export function buildBreadcrumbs(folderId: number | null): Breadcrumb[] {
   // full breadcrumb rebuild requires folder ids up the tree; we maintain it incrementally instead
-  if (!folderId) return [{ id: null, name: "My Library" }];
+  if (folderId == null) return [{ id: null, name: "My Library" }];
   return get(library).breadcrumbs;
 }
 

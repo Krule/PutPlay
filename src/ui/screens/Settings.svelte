@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { auth, signOut } from "../../store/auth";
-  import { config, saveConfig, type ConfigState } from "../../store/config";
+  import { config, saveConfig, SUB_SCALE_OPTIONS, type ConfigState } from "../../store/config";
   import { requestLibrary } from "../../store/nav";
   import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
@@ -31,12 +31,6 @@
     { kind: "original", label: "Original" },
     { kind: "mp4", label: "put.io MP4" },
     { kind: "hls", label: "HLS" },
-  ];
-  const SCALE_OPTIONS: { v: number; label: string }[] = [
-    { v: 0.8, label: "Small" },
-    { v: 1, label: "Default" },
-    { v: 1.35, label: "Large" },
-    { v: 1.8, label: "XL" },
   ];
 
   let confirmSignOut = false;
@@ -264,7 +258,7 @@
       <div class="card">
         <p class="card-title">Subtitle size</p>
         <div class="opt-row">
-          {#each SCALE_OPTIONS as o (o.v)}
+          {#each SUB_SCALE_OPTIONS as o (o.v)}
             <button class="chip" class:sel={cfgScale === o.v} data-focus on:click={() => (cfgScale = o.v)}>{o.label}</button>
           {/each}
         </div>

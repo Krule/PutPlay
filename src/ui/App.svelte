@@ -4,7 +4,7 @@
   import { platform, isWebOSLike } from "../webos/platform";
   import { auth, loadAuth, type AuthState } from "../store/auth";
   import { nav, requestBackLevel, routeNav } from "../store/nav";
-  import { library } from "../store/library";
+  import { library, resetLibrary } from "../store/library";
   import { loadConfig } from "../store/config";
 
   const getLib = () => get(library);
@@ -106,6 +106,10 @@
       if (v.status === "authed" && screen === "connect") screen = "library";
       if (v.status === "unauthed" && screen !== "connect") {
         playingFile = null;
+        // the store is module-level: without this, a fresh login would show
+        // the previous account's folders (needsInitialList skips the fetch
+        // when a cached listing exists)
+        resetLibrary();
         screen = "connect";
       }
     });

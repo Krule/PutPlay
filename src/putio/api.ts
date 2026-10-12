@@ -93,7 +93,9 @@ export interface ListParams {
 export async function listFiles(auth: Auth, params: ListParams = {}): Promise<FilesListResponse> {
   const qs = new URLSearchParams();
   qs.set("oauth_token", auth.oauthToken);
-  if (params.parentId) qs.set("parent_id", String(params.parentId));
+  // `!= null` (not truthiness): a folder can legitimately have id 0 — a
+  // truthiness check dropped parent_id=0 and folder 0 listed the ROOT.
+  if (params.parentId != null) qs.set("parent_id", String(params.parentId));
   qs.set("per_page", String(params.perPage ?? 50));
   qs.set("order_by", params.orderBy || "name");
   qs.set("order", params.order || "asc");

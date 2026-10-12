@@ -7,9 +7,10 @@ import {
   pickAudioTrack,
   matchLang,
   pickSubtitleTrack,
+  SUB_SCALE_OPTIONS,
 } from "../putio/config";
 export type { ConfigState };
-export { pickAudioTrack, matchLang, pickSubtitleTrack };
+export { pickAudioTrack, matchLang, pickSubtitleTrack, SUB_SCALE_OPTIONS };
 
 /**
  * The Config-page state as a Svelte store: default source, preferred audio

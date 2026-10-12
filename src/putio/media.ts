@@ -53,6 +53,10 @@ export interface MediaState {
    *  track for — an honest announcement (the old behavior was silence).
    *  One message per file open. */
   audioPrefMiss?: string;
+  /** Mid-playback stalls on the CURRENT source (waiting events after the
+   *  first frame). Reset to 0 on every source load. The Player turns this
+   *  into the once-per-file smoother-stream advisory (putio/stall). */
+  stalls?: number;
   /** An audio switch (incl. the reload-dance escalation) is in flight. */
   audioSwitching?: boolean;
   /** Who asked for the last pick — the user, or the configured preference. */
@@ -102,6 +106,13 @@ export class MediaEngine {
   /** a pause the USER asked for (blue key) — the engine never auto-resumes
    * this one. Cleared by play() and by a fresh source load. */
   private userPaused = false;
+  /** Mid-playback stall count for the CURRENT source (reset per load).
+   *  The native buffer can't be grown from HTML5 — the count is what lets
+   *  the app say so honestly. */
+  private stalls = 0;
+  /** The current source delivered its first frame (a waiting event before
+   *  this is a normal load, not a stall). Reset per source load. */
+  private everPlayed = false;
   /** set when a failed dance already triggered the same-source restore —
    * the restore is one chance, not a loop (if IT dies, the normal
    * fallback chain takes over) */
@@ -190,8 +201,10 @@ export class MediaEngine {
   setSource(kind: SourceKind, startAt?: number, silent = false): void {
     this.teardownHls();
     this.source = kind;
+    this.stalls = 0; // a new source load is a fresh stall record
+    this.everPlayed = false;
     if (!silent) this.onSourceChange(kind);
-    this.onState({ error: null, buffering: true, source: kind });
+    this.onState({ error: null, buffering: true, source: kind, stalls: 0 });
     const v = this.v();
     const t = startAt ?? (v.currentTime || 0);
     // remember where we were so the swap doesn't reset to the start
@@ -317,7 +330,10 @@ export class MediaEngine {
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: false, // Chrome 79 webview: keep it simple
-        maxBufferLength: 30,
+        // Deep buffer (issue: interruptions): a TV viewer sits still — trade
+        // a few seconds of start latency for immunity to network dips.
+        maxBufferLength: 60,
+        maxMaxBufferLength: 90, // let the buffer actually grow past the 60s auto-cap
         manifestLoadingTimeOut: 15000,
         manifestLoadingMaxRetry: 3,
         fragLoadingTimeOut: 20000,
@@ -881,8 +897,20 @@ export class MediaEngine {
       });
     }
   };
-  private onWait = () => this.onState({ buffering: true });
-  private onPlaying = () => this.onState({ buffering: false, error: null });
+  private onWait = () => {
+    // A STALL is a waiting event DURING playback (after the first frame) —
+    // the initial load's buffering is normal, and an in-flight switch/dance
+    // buffers by design. Counted per source; the Player advises once.
+    if (this.everPlayed && !this.dancing && !this.switchingAudio) {
+      this.stalls += 1;
+      this.onState({ stalls: this.stalls });
+    }
+    this.onState({ buffering: true });
+  };
+  private onPlaying = () => {
+    this.everPlayed = true;
+    this.onState({ buffering: false, error: null });
+  };
   /** A pause nobody in the app requested: the element stopped on its own.
    *  On webOS this is what a system volume change can do — the audio
    *  pipeline re-negotiates and the webview pauses the element, leaving

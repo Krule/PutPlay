@@ -3,7 +3,7 @@
   import { get } from "svelte/store";
   import { getRemote } from "../../webos/remote";
   import { platform } from "../../webos/platform";
-  import { library, listFolder, openFolder, backOneLevel, loadMore, cycleSort } from "../../store/library";
+  import { library, listFolder, openFolder, backOneLevel, loadMore, cycleSort, mountFolderId, needsInitialList } from "../../store/library";
   import type { SortBy } from "../../store/library";
   import { currentAuth, auth } from "../../store/auth";
   import { nav, requestSettings } from "../../store/nav";
@@ -114,9 +114,11 @@
     s = get(library);
     a = get(auth);
 
-    // initial list
+    // initial list: a first launch fetches the root; a return from the
+    // player/Settings shows the cached folder the user was in (no reset to
+    // root, no spinner flash)
     const au = currentAuth();
-    if (au) listFolder(au, null);
+    if (au && needsInitialList(get(library))) listFolder(au, mountFolderId(get(library)));
 
     // auto-load-more near the bottom
     const onScroll = () => {
@@ -386,10 +388,16 @@
   .grid {
     flex: 1;
     overflow-y: auto;
+    /* clip x: a scaled (transformed) focus target must never grow scrollable
+       x-overflow — that summoned a bottom scrollbar whenever the rightmost
+       tile was active. Vertical scrolling is untouched. */
+    overflow-x: hidden;
     display: grid;
     grid-template-columns: repeat(7, 236px);
     justify-content: center;
-    gap: 20px 24px;
+    /* 20px gap (not 24): 7×236px tracks must fit the grid content box so the
+       scaled (1.06×) rightmost tile keeps ≥7px of room to the clip edge */
+    gap: 20px;
     align-content: start;
     padding: 8px 12px 80px;
     scrollbar-width: thin;

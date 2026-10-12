@@ -29,6 +29,20 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   subScaleMax: 2,
 };
 
+/**
+ * The subtitle size ladder — the single shared source for the Settings
+ * chips and the in-player subtitle panel (issue: size selection directly on
+ * the player). Every value must stay inside subScaleMin/Max: a value outside
+ * the clamp would be silently re-clamped on the next load and the UI would
+ * show the wrong row selected.
+ */
+export const SUB_SCALE_OPTIONS: { v: number; label: string }[] = [
+  { v: 0.8, label: "Small" },
+  { v: 1, label: "Default" },
+  { v: 1.35, label: "Large" },
+  { v: 1.8, label: "XL" },
+];
+
 const SOURCE_KINDS = ["original", "mp4", "hls"] as const;
 const AUDIO_FALLBACKS = ["ask", "auto-hls"] as const;
 

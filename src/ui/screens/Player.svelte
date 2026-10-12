@@ -27,9 +27,10 @@
   import { controlsPinned } from "../../putio/player-controls";
   import { clickIsOutsideClickTarget } from "../../putio/overlay";
   import { progressPct } from "../../putio/progress";
+  import { shouldAdviseSmootherSource } from "../../putio/stall";
   import { playerOkAction } from "../../putio/player-ok";
   import { pickerDefaultIndex, rowFocusState } from "../../putio/picker-default";
-  import { config, pickSubtitleTrack } from "../../store/config";
+  import { config, pickSubtitleTrack, saveConfig, SUB_SCALE_OPTIONS } from "../../store/config";
 
   export let file: {
     id: number;
@@ -79,6 +80,10 @@
   let autoHlsTried = false;
   let hlsSubTracks: SubtitleTrackInfo[] = [];
   let live = false;
+  /** Mid-playback stalls on the current source (engine-owned). */
+  let stalls = 0;
+  /** The smoother-stream advice was already given for this file (once, not a nag). */
+  let stallAdvised = false;
 
   let overlays: { audio: boolean; subs: boolean; source: boolean } = {
     audio: false,
@@ -183,6 +188,7 @@
     }
     if (p.subtitleTracks !== undefined) hlsSubTracks = p.subtitleTracks;
     if (p.live !== undefined) live = p.live;
+    if (p.stalls !== undefined) stalls = p.stalls;
   }
 
   function initEngine() {
@@ -231,9 +237,7 @@
       return;
     }
     if (overlays.audio || overlays.subs || overlays.source) {
-      overlays.audio = false;
-      overlays.subs = false;
-      overlays.source = false;
+      closeOverlays();
       return;
     }
     if (confirmLeave) {
@@ -296,6 +300,17 @@
     error: !!error,
     panelOpen: overlays.audio || overlays.subs || overlays.source,
   });
+
+  // The original stream's buffer belongs to the webview — the app cannot
+  // grow it (no HTML5 API) — but it must not sit silent when it keeps
+  // stalling either: once per file, point at the smoother, engine-buffered
+  // put.io stream. (Issue: "the current one suffers from interruptions.")
+  $: if (shouldAdviseSmootherSource({ source, stalls, advised: stallAdvised })) {
+    stallAdvised = true;
+    platform.toast(
+      "Original keeps stalling on this connection — the put.io MP4 stream is usually smoother (Source, green key)."
+    );
+  }
 
   function wake() {
     showControls = true;
@@ -398,6 +413,20 @@
     subCues = subtitles[i] ? subtitles[i].cues || [] : [];
   }
 
+  /** Subtitle size, picked directly on the player (issue: "an option to
+   *  select subtitle size directly on the player"). Persisted like every
+   *  other setting; both rendering paths react to the config — the DOM
+   *  overlay via subFontSize, the HLS ::cue via the --cue-size variable on
+   *  the video element. */
+  function pickSubScale(v: number) {
+    config.update((c) => ({ ...c, subScale: v }));
+    saveConfig().catch(() => undefined);
+    closeOverlays(); // a selection was made — close the dialogue
+    platform.toast(
+      "Subtitle size: " + (SUB_SCALE_OPTIONS.find((o) => o.v === v)?.label || String(v))
+    );
+  }
+
   function selectHlsSub(i: number) {
     const t = (engine?.video as any);
     const tt = t && t.textTracks;
@@ -433,7 +462,17 @@
     }
   }
 
+  /** Close every pick panel. A made selection dismisses its dialogue
+   *  (issue: "once I make a selection … close the dialogue"); the Back key
+   *  and the scrim use the same single close-list. */
+  function closeOverlays() {
+    overlays.audio = false;
+    overlays.subs = false;
+    overlays.source = false;
+  }
+
   function onSubPick(i: number) {
+    closeOverlays(); // a selection was made — close the panel (issue #2)
     if (source === "hls") {
       if (i < 0 || hlsSub === i) {
         selectHlsSub(-1);
@@ -458,12 +497,14 @@
     autoHlsTried = false;
     pendingAudioPick = row.key;
     engine?.selectAudioRow(row);
+    closeOverlays(); // a selection was made — the result still arrives as a toast
   }
 
   function onSourcePick(kind: SourceKind) {
-    if (kind === source) return;
+    if (kind === source) return; // re-picking the active source is not a selection
     const t = engine?.video.currentTime || 0;
     engine?.setSource(kind, t);
+    closeOverlays();
     platform.toast(`Source: ${kind === "original" ? "original file" : kind === "mp4" ? "put.io MP4" : "HLS"}`);
   }
 
@@ -615,9 +656,7 @@
   function onPanelScrimClick(e: MouseEvent, panelEl: HTMLElement | null) {
     if (!clickIsOutsideClickTarget(e, panelEl)) return;
     const leaving = !!(resumePrompt || confirmLeave);
-    overlays.audio = false;
-    overlays.subs = false;
-    overlays.source = false;
+    closeOverlays();
     if (resumePrompt) {
       resumePrompt = null;
       engine?.play(); // dismissing the resume prompt = "just play"
@@ -745,6 +784,7 @@
     class:active={engine}
     playsinline
     preload="auto"
+    style="--cue-size: {subFontSize}px"
     on:click={() => {
       engine?.togglePlayPause();
       wake();
@@ -916,6 +956,13 @@
             {/each}
           {/if}
         {/if}
+        <p class="muted small pad pick-sub" style="margin-top: 16px">Text size</p>
+        {#each SUB_SCALE_OPTIONS as o (o.v)}
+          <button class="pick-row" class:sel={subScale === o.v} data-focus on:click={() => pickSubScale(o.v)}>
+            <span class="pick-label">{o.label}</span>
+            <span class="pick-hint" class:ok={subScale === o.v}>{subScale === o.v ? "on" : ""}</span>
+          </button>
+        {/each}
       </div>
     </div>
   {/if}
@@ -980,7 +1027,9 @@
     background: transparent;
     color: var(--text);
     font-family: "Segoe UI", "Noto Sans", Roboto, Arial, sans-serif;
-    font-size: 30px;
+    /* follows the subtitle size picked on the player (--cue-size is set on
+       the video element from subScale; the 30px fallback is the default) */
+    font-size: var(--cue-size, 30px);
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.6);
   }
   .subs {

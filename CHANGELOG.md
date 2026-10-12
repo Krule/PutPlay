@@ -6,7 +6,25 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Subtitle size selection right on the player: Small / Default / Large / XL in
+  the Subtitles panel. It applies to both the on-screen subtitles and the
+  stream's embedded captions, and it is saved like every other setting.
+- If the original stream keeps stalling on your connection, the player now
+  says so (once per file) and points at the smoother put.io MP4 stream. The
+  TV's buffer for the original file is fixed by the webOS webview — the app
+  can't grow it, but it no longer sits silent about it.
+- The HLS source now runs a much deeper buffer (60s target, 90s ceiling —
+  was 30s) to ride out network dips.
+
 ### Fixed
+- Leaving playback returns you to the folder you were browsing — not the
+  library root.
+- The Video / Audio / Subtitles panels now close as soon as you make a
+  selection.
+- A folder whose id happens to be 0 (and its breadcrumb trail) was treated as
+  the library root: opening it showed the root's contents. The e2e fixture
+  now models real folders, which is what caught it.
 - Playback no longer stops when the TV's volume is changed. The app never
   sees the volume keys (they are the system's), but the webview can pause
   the video element on its own when the system volume changes — and the app

@@ -58,7 +58,7 @@
           name: "testvid-" + n + ".mp4",
           size: 906084,
           content_type: "video/mp4",
-          parent_id: null,
+          parent_id: 0, // inside the "Movies" folder (folder-browsing e2e)
           is_folder: 0,
           is_mp4_available: n === 1, // file 1 proves the "put.io MP4" source path in e2e
           // file 8 simulates a previously-watched title (put.io start_from >30s)
@@ -163,7 +163,18 @@
     try { p = new URL(url).pathname; } catch (e) { p = ""; }
     var body;
     if (p.indexOf("/account/info") !== -1) body = JSON.stringify(accountInfo);
-    else if (p.indexOf("/files/list") !== -1) body = JSON.stringify(fileList);
+    else if (p.indexOf("/files/list") !== -1) {
+      // honor parent_id (folder browsing): absent/null = root listing
+      var pid = null;
+      try {
+        var qv = new URL(url).searchParams.get("parent_id");
+        if (qv) pid = Number(qv);
+      } catch (e2) {}
+      var shown = fileList.files.filter(function (f) {
+        return pid === null ? f.parent_id === null : f.parent_id === pid;
+      });
+      body = JSON.stringify({ status: "ok", cursor: null, files: shown });
+    }
     else if (p.indexOf("/oauth2/oob/code") !== -1 && p.split("/").pop().length > 4)
       // poll: never approve in the harness (stays in "waiting" state)
       body = JSON.stringify({ status: "ok" });

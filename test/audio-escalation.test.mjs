@@ -735,3 +735,54 @@ test("a pause storm from the TV is bounded and recovers", async () => {
   await new Promise((r) => setTimeout(r, 80));
   assert.equal(video.paused, false, "must end up playing once the TV stops holding it");
 });
+
+// ---------------------------------------------------------------------------
+// Stream stalls (issue: the original stream "suffers from interruptions")
+// A STALL = a waiting event DURING playback (after the first frame). The
+// initial load's buffering is normal, not a stall. The engine reports the
+// per-source count in state so the Player can advise — once — about the
+// smoother engine-buffered stream (the native buffer itself is webview-owned
+// and cannot be grown from HTML5).
+// ---------------------------------------------------------------------------
+
+test("stalls: counted only during playback, reported in state, reset per source", async () => {
+  const video = makeFakeVideo();
+  const rec = recorder();
+  // autoplay blocked: the element has NOT delivered its first frame yet
+  video.play = () => Promise.reject(new Error("autoplay blocked"));
+  const engine = new MediaEngine(
+    video,
+    { id: 1, is_mp4_available: false },
+    { token: "t", scope: "files" },
+    { onState: (p) => rec.seen(p) }
+  );
+  engine.setSource("original");
+  await new Promise((r) => setTimeout(r, 30));
+  // pre-first-frame buffering is a normal load — NOT a stall (a stalls: 0
+  // reset patch from the source load is fine; a COUNT is not)
+  video.dispatch("waiting");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(
+    !rec.patches.some((p) => (p.stalls ?? 0) > 0),
+    "waiting before the first frame must not count as a stall"
+  );
+  // playback starts (first frame) — from here on, waiting = interruption
+  video.play = () => {
+    video.paused = false;
+    video.dispatch("playing");
+    return Promise.resolve();
+  };
+  video.dispatch("playing");
+  video.dispatch("waiting");
+  video.dispatch("waiting");
+  await new Promise((r) => setTimeout(r, 10));
+  let last = rec.patches.filter((p) => p.stalls !== undefined).pop();
+  assert.equal(last.stalls, 2, "mid-playback stalls are counted and reported in state");
+  // a fresh source load: the count starts over
+  engine.setSource("original");
+  await new Promise((r) => setTimeout(r, 30));
+  video.dispatch("waiting");
+  await new Promise((r) => setTimeout(r, 10));
+  last = rec.patches.filter((p) => p.stalls !== undefined).pop();
+  assert.equal(last.stalls, 1, "a new source load resets the stall count");
+});
