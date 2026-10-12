@@ -104,11 +104,6 @@ test("pickAudioTrack: preference matches the 2nd track → 2nd", () => {
   assert.equal(pickAudioTrack(tracks, "eng"), 1);
 });
 
-test("pickAudioTrack: no match → fall back to first (still play something)", () => {
-  const tracks = [trk("German", "ger")];
-  assert.equal(pickAudioTrack(tracks, "eng"), 0);
-});
-
 test("pickAudioTrack: empty track list → 0", () => {
   assert.equal(pickAudioTrack([], "eng"), 0);
 });
@@ -134,4 +129,78 @@ test("pickSubtitleTrack: preference matches but that track has no cues → off",
     { language: "German", languageCode: "ger", cues: [1] },
   ];
   assert.equal(pickSubtitleTrack(tracks, "eng"), -1);
+});
+
+// ---------------- audioFallback (Phase 5) ----------------
+//
+// When the original file can't switch audio (the webview vetoed even the
+// reload dance), what happens next is a user choice:
+//   "ask" (default)     → honest refusal + the row offers the put.io stream
+//   "auto-hls"          → go straight to the put.io rendition of the chosen
+//                         language, position preserved
+
+test("normalizeConfig: audioFallback defaults to 'ask'", () => {
+  assert.equal(normalizeConfig({}).audioFallback, "ask");
+  assert.equal(normalizeConfig(null).audioFallback, "ask");
+});
+
+test("normalizeConfig: audioFallback keeps a valid value, coerces garbage to 'ask'", () => {
+  assert.equal(normalizeConfig({ audioFallback: "auto-hls" }).audioFallback, "auto-hls");
+  assert.equal(normalizeConfig({ audioFallback: "bogus" }).audioFallback, "ask");
+  assert.equal(normalizeConfig({ audioFallback: "" }).audioFallback, "ask");
+});
+
+test("pickAudioTrack: a preference matching NO track is -1 (no silent track-0 force)", () => {
+  // the old fallback (0) made a non-matching preference switch to track 0 —
+  // a switch nobody asked for. -1 = "play the file's own default".
+  const tracks = [{ lang: "eng" }, { lang: "ita" }];
+  assert.equal(pickAudioTrack(tracks, "spa"), -1);
+  // an empty preference still means "first track" (the webview default)
+  assert.equal(pickAudioTrack(tracks, ""), 0);
+  // a match still wins
+  assert.equal(pickAudioTrack(tracks, "ita"), 1);
+});
+
+// ---------------- label matching (EAAAO regression, round 5) ----------------
+//
+// The real EAAAO MKV (ffprobe): audio streams carry language "ita"/"eng"
+// AND titles "Italiano AC-3 5.1" / "English AC-3 5.1". The TV webview does
+// not reliably expose the 3-letter code (empty or 2-letter "en" observed as
+// a real possibility) — matching on the code field alone then SILENTLY
+// misses, and a configured preference does nothing (no pick, no toast,
+// no auto-hls — "it just plays Italian"). The track's LABEL (the MKV
+// title, which the webview does expose) must participate in the match.
+
+test("matchLang: an empty language code still matches via the track label", () => {
+  // the EAAAO case: webview exposes no code, but the title is real
+  assert.ok(matchLang({ lang: "", label: "English AC-3 5.1" }, "eng"));
+  assert.ok(matchLang({ lang: "", label: "Italiano AC-3 5.1" }, "ita"));
+  assert.ok(!matchLang({ lang: "", label: "English AC-3 5.1" }, "ita"));
+});
+
+test("matchLang: a 2-letter webview code matches the 3-letter preference via the label", () => {
+  // webview normalizes "eng" → "en"; the code comparison misses, the label saves it
+  assert.ok(matchLang({ lang: "en", label: "English AC-3 5.1" }, "eng"));
+  assert.ok(matchLang({ lang: "it", label: "Italiano AC-3 5.1" }, "ita"));
+  assert.ok(!matchLang({ lang: "en", label: "English AC-3 5.1" }, "spa"));
+});
+
+test("matchLang: a display-name preference matches the label", () => {
+  // if the stored preference is a display name ("english" / "English")
+  assert.ok(matchLang({ lang: "eng", label: "English AC-3 5.1" }, "English"));
+  assert.ok(matchLang({ lang: "eng", label: "English" }, "english"));
+  assert.ok(matchLang({ lang: "eng", label: "English" }, "eng"));
+  assert.ok(!matchLang({ lang: "spa", label: "Spanish (DTS)" }, "english"));
+});
+
+test("pickAudioTrack: EAAAO exposure variants all resolve to the English track", () => {
+  const mk = (itaLang, engLang) => [
+    { lang: itaLang, label: "Italiano AC-3 5.1" },
+    { lang: engLang, label: "English AC-3 5.1" },
+  ];
+  assert.equal(pickAudioTrack(mk("ita", "eng"), "eng"), 1); // tag-correct
+  assert.equal(pickAudioTrack(mk("", ""), "eng"), 1);       // no codes at all
+  assert.equal(pickAudioTrack(mk("it", "en"), "eng"), 1);   // 2-letter codes
+  assert.equal(pickAudioTrack(mk("ita", "eng"), "ita"), 0); // the other lang
+  assert.equal(pickAudioTrack(mk("ita", "eng"), "fre"), -1); // absent language
 });

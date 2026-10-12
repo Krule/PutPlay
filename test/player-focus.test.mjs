@@ -116,3 +116,39 @@ test("Settings.svelte compiles (Svelte 4: no bare return inside $: blocks)", asy
     "Settings.svelte must compile — a parse error there (e.g. `return` in a $: block) is invisible to every other gate"
   );
 });
+
+test("Player: opening one panel closes the others (no stacked overlays)", () => {
+  // green (source) then yellow (audio) must not leave both panels open at
+  // once — two stacked .center-panels break D-pad focus and make the
+  // top panel's rows unreachable (caught while driving the audio e2e:
+  // a stale ref clicked the hidden source panel underneath)
+  const player = read("src/ui/screens/Player.svelte");
+  assert.ok(
+    /function toggleOverlay/.test(player),
+    "Player must centralize panel toggling in one sibling-closing helper"
+  );
+  const helper = player.slice(player.indexOf("function toggleOverlay"));
+  assert.ok(
+    /overlays\.audio\s*=\s*false/.test(helper) && /overlays\.source\s*=\s*false/.test(helper),
+    "toggleOverlay must close the sibling overlays before opening one"
+  );
+  assert.ok(
+    !/on:click=\{\(\) => \(overlays\.audio = !overlays\.audio\)\}/.test(player),
+    "the audio button must use toggleOverlay, not a raw toggle"
+  );
+});
+
+test("Player: a source change never force-opens the source panel", () => {
+  // onSourceChange used to set overlays.source = true unconditionally — so
+  // picking "Spanish (DTS) via put.io stream" from the AUDIO panel (which
+  // switches to HLS) popped the source panel over the audio panel and stole
+  // D-pad focus mid-interaction. A switch must only keep the panel open if
+  // the user is already in it.
+  const player = read("src/ui/screens/Player.svelte");
+  const m = player.match(/onSourceChange:\s*\(s\) => \{[\s\S]*?\n      \},/);
+  assert.ok(m, "onSourceChange handler must exist");
+  assert.ok(
+    !/overlays\.source\s*=\s*true/.test(m[0]),
+    "onSourceChange must not force overlays.source = true"
+  );
+});

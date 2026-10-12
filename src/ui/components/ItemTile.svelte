@@ -86,7 +86,7 @@
     z-index: 5;
   }
   .tile[data-state="visited"] {
-    border-color: rgba(77, 163, 255, 0.25);
+    border-color: var(--accent-visited);
   }
   .tile[data-state="disabled"] {
     opacity: 0.35;

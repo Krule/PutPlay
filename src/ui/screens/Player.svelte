@@ -11,6 +11,8 @@
     type MediaState,
   } from "../../putio/media";
   import type { SubtitleTrackInfo } from "../../putio/media";
+  import type { AudioPanelRow } from "../../putio/track-merge";
+  import { panelRowHint } from "../../putio/track-merge";
   import { fmtTime } from "../../putio/api";
   import {
     loadSubtitle,
@@ -27,7 +29,7 @@
   import { progressPct } from "../../putio/progress";
   import { playerOkAction } from "../../putio/player-ok";
   import { pickerDefaultIndex, rowFocusState } from "../../putio/picker-default";
-  import { config, pickAudioTrack, pickSubtitleTrack } from "../../store/config";
+  import { config, pickSubtitleTrack } from "../../store/config";
 
   export let file: {
     id: number;
@@ -50,7 +52,6 @@
   let cfg: any = get(config);
   let cfgSub: (() => void) | null = null;
   $: subScale = cfg?.subScale || 1;
-  $: preferredAudioLang = cfg?.audioLang || "";
   $: preferredSubLang = cfg?.subtitleLang || "";
 
   // --- ui state
@@ -63,8 +64,19 @@
   let error: string | null = null;
   let audioTracks: AudioTrackInfo[] = [];
   let audioTrack = 0;
-  /** The user's pending audio pick — confirmed (or refused) by the engine's next audioTrack state. */
-  let pendingAudioPick: number | null = null;
+  /** The merged panel model: one row per audio stream in the FILE. */
+  let audioPanelRows: AudioPanelRow[] = [];
+  let audioActiveKey: string | null = null;
+  let audioSwitching = false;
+  /** The preferred audio language was already applied for the current
+   *  source — it must NOT be re-applied on every track sync (a `change`
+   *  event from our own confirmed switch would otherwise fight the user's
+   *  pick). Reset on every source change. */
+  /** The user's pending audio pick (row key) — confirmed (or refused) by the engine's next state. */
+  let pendingAudioPick: string | null = null;
+  /** The auto-hls fallback was already tried for this pick — a second
+   *  refusal toasts instead of looping back into the stream. */
+  let autoHlsTried = false;
   let hlsSubTracks: SubtitleTrackInfo[] = [];
   let live = false;
 
@@ -96,29 +108,76 @@
 
   /** Engine state patch → screen state, one field at a time (undefined = unchanged). */
   function applyEngineState(p: Partial<MediaState>): void {
+    // (a new source invalidates any pending pick — done in
+    // onSourceChange, which runs BEFORE this patch and can therefore
+    // observe the change at all; comparing p.source here against the
+    // already-updated `source` state was dead code)
     if (p.source !== undefined) source = p.source;
     if (p.duration !== undefined && p.duration !== Infinity) duration = p.duration;
     if (p.currentTime !== undefined) currentTime = p.currentTime;
     if (p.paused !== undefined) paused = p.paused;
     if (p.buffering !== undefined) buffering = p.buffering;
     if (p.buffered !== undefined) bufferEnd = p.buffered;
-    if (p.error !== undefined) error = p.error;
-    if (p.audioTracks !== undefined) {
-      audioTracks = p.audioTracks;
-      // FEATURE: honor the preferred audio language on (re)load
-      const i = pickAudioTrack(audioTracks, preferredAudioLang);
-      if (i >= 0 && i < audioTracks.length) engine?.setAudioTrack(i);
+    if (p.error !== undefined) {
+      error = p.error;
+      // the fallback's setSource clears the panel error a moment later —
+      // toast the (descriptive) message so the source bounce is explained
+      // instead of reading as a silent refusal
+      if (p.error) platform.toast(p.error);
     }
-    if (p.audioTrack !== undefined) {
+    if (p.audioPanelRows !== undefined) audioPanelRows = p.audioPanelRows;
+    if (p.audioActiveKey !== undefined) audioActiveKey = p.audioActiveKey;
+    if (p.audioSwitching !== undefined) audioSwitching = p.audioSwitching;
+    // The configured preference named a language this file has no track
+    // for — say so (one toast per file open; the old behavior was
+    // silence, which read as "the setting does nothing")
+    if (p.audioPrefMiss) platform.toast(p.audioPrefMiss);
+    if (p.audioTracks !== undefined) audioTracks = p.audioTracks;
+    // NOTE: the preferred-language pick is owned by the ENGINE
+    // (setAudioPreference → applied to the first REAL track list, with
+    // full escalation). Doing it here per-sync consumed the once-flag on
+    // the EMPTY first sync (src set → bindTrackEvents before the pipeline
+    // exposes tracks) and the preference was never applied — the reported
+    // "still plays italian" bug.
+    // A pick is only toasted once the ENGINE confirms it landed (the webview
+    // can silently veto the switch). A refusal arrives as audioSwitchFailed —
+    // say so (with the reason when the engine has one), never pretend.
+    if (p.audioSwitchFailed) {
+      // a user pick resolves via pendingAudioPick; a PREFERENCE refusal
+      // has none — resolve its row via audioPickIndex instead, or the
+      // "use the put.io stream" setting is dead for configured
+      // preferences (the user's exact case)
+      const row =
+        pendingAudioPick !== null
+          ? audioPanelRows.find((r) => r.key === pendingAudioPick)
+          : p.audioPickIndex !== undefined
+          ? audioPanelRows.find((r) => r.nativeIndex === p.audioPickIndex)
+          : undefined;
+      // "If the original can't switch audio: use the put.io stream" — go
+      // straight to the rendition of the chosen language, position kept.
+      const autoHls =
+        get(config).audioFallback === "auto-hls" && !!row && row.hlsIndex >= 0 && !autoHlsTried;
+      if (autoHls) {
+        autoHlsTried = true;
+        platform.toast("The TV couldn't switch — using the put.io stream for this language.");
+        engine?.enterHlsForRow(row);
+      } else {
+        platform.toast(
+          p.audioFailReason ||
+            "The TV player didn't switch audio for this file. The HLS source often exposes switchable tracks."
+        );
+        pendingAudioPick = null;
+      }
+    } else if (p.audioTrack !== undefined) {
       audioTrack = p.audioTrack;
-      // a pick is only toasted once the ENGINE confirms the switch landed
-      // (the webview can silently veto it — the old code toasted a lie)
-      if (pendingAudioPick !== null) {
-        if (p.audioSwitchFailed) {
-          platform.toast("The TV player didn't switch audio for this file. The HLS source often exposes switchable tracks.");
-        } else if (audioTracks[audioTrack]) {
-          platform.toast(`Audio: ${audioTracks[audioTrack].label}`);
-        }
+      // A pick is confirmed ONLY by the terminal patch (the one that clears
+      // audioSwitching). Mid-switch syncs — the dance re-binds the track
+      // list and reports the CURRENT track — must not confirm: doing so
+      // toasted the wrong track ("Audio: English" for a Spanish pick) and
+      // cleared the pending pick before the real confirmation arrived.
+      if (pendingAudioPick !== null && !audioSwitching) {
+        const row = audioPanelRows.find((r) => r.key === pendingAudioPick);
+        if (row) platform.toast(`Audio: ${row.label}`);
         pendingAudioPick = null;
       }
     }
@@ -138,14 +197,19 @@
       onState: applyEngineState,
       onSourceChange: (s) => {
         source = s;
-        overlays.source = true;
-        showControls = true;
+        // never FORCE the source panel open here: an audio-row pick also
+        // switches source, and popping this panel over the audio panel the
+        // user is interacting with steals D-pad focus. The panel simply
+        // stays open (badge updates in place) if the user is already in
+        // it; the source button's label always shows the active source.
+        if (overlays.source) showControls = true;
         // a source swap drops the previous source's tracks — reset subtitle selection
         activeSub = -1;
         hlsSub = -1;
         subCues = [];
         subText = "";
         if (s !== "hls") ensureSubtitles();
+      pendingAudioPick = null; // a source swap invalidates any pending pick
       },
       onEnded: () => {
         showControls = true;
@@ -154,6 +218,7 @@
       // BUG 1: if we'll show the resume prompt, the engine must NOT auto-seek
       suppressAutoResume: shouldShowResumePrompt(file.start_from),
     });
+    engine.setAudioPreference(cfg?.audioLang || null);
 
     sourceOptions = engine.sourceOptions().map((o) => ({ ...o }));
     engine.setSource(prefSource, undefined, true); // silent: don't pop the source overlay on entry
@@ -196,9 +261,15 @@
 
   function onColor(c: "blue" | "green" | "red" | "yellow") {
     if (c === "blue") engine?.togglePlayPause();
-    if (c === "green") overlays.source = !overlays.source;
-    if (c === "yellow") overlays.audio = !overlays.audio;
-    if (c === "red") { overlays.subs = !overlays.subs; }
+    if (c === "green") toggleOverlay("source");
+    if (c === "yellow") toggleOverlay("audio");
+    if (c === "red") {
+      if (overlays.subs) toggleOverlay("subs");
+      else {
+        toggleOverlay("subs");
+        ensureSubtitles();
+      }
+    }
     wake();
   }
 
@@ -242,9 +313,36 @@
     wake();
   }
 
+  // ---------------- audio panel helpers ----------------
+
+  /** The row actually on (merged-model aware; falls back to the legacy list). */
+  $: activeAudioRow =
+    audioPanelRows.find((r) => r.key === audioActiveKey) || null;
+  $: audioButtonLabel = activeAudioRow
+    ? activeAudioRow.label
+    : audioTracks[audioTrack] && audioTracks[audioTrack].label
+    ? audioTracks[audioTrack].label
+    : audioTracks.length
+    ? audioTracks[0].label
+    : "—";
+
+  /** What a not-on row can offer: native rows need no hint; metadata-only
+   *  rows point at the put.io stream when it has the language, else they
+   *  say the truth (the TV can't decode the codec). */
   // ---------------- subtitles ----------------
 
   let subsLoading = false;
+
+  /** Panel toggling with sibling-closing: opening one panel never leaves
+   *  another open — two stacked .center-panels break D-pad focus and make
+   *  the top panel's rows unreachable. */
+  function toggleOverlay(which: "audio" | "subs" | "source") {
+    const wasOpen = overlays[which];
+    overlays.audio = false;
+    overlays.subs = false;
+    overlays.source = false;
+    if (!wasOpen) overlays[which] = true;
+  }
 
   async function ensureSubtitles() {
     if (subtitles.length || subsLoading) return;
@@ -356,9 +454,10 @@
     }
   }
 
-  function onAudioPick(i: number) {
-    pendingAudioPick = i;
-    engine?.setAudioTrack(i);
+  function onAudioPick(row: AudioPanelRow) {
+    autoHlsTried = false;
+    pendingAudioPick = row.key;
+    engine?.selectAudioRow(row);
   }
 
   function onSourcePick(kind: SourceKind) {
@@ -393,7 +492,13 @@
     initEngine();
 
     // keep config-derived values live (the store loads asynchronously)
-    cfgSub = config.subscribe((v) => (cfg = v));
+    cfgSub = config.subscribe((v) => {
+    cfg = v;
+    // setting changed (Settings screen) — the engine re-applies it when
+    // the current source's preference hasn't been applied yet, and keeps
+    // it for the next source/HLS load
+    engine?.setAudioPreference(v.audioLang || null);
+  });
 
     // resume from put.io? (BUG 1: the prompt is ours — the engine was built
     // with suppressAutoResume so it can't race the user's choice; the choice
@@ -622,7 +727,7 @@
   // track lists can change or arrive while a panel is open — the new rows are
   // committed to the DOM after this flush's reactive phase, so re-scan on the
   // next frame (registerAll is idempotent; the engine GCs the old rows)
-  $: if (audioPanelEl && audioTracks.length) requestAnimationFrame(() => remote.registerAll(audioPanelEl));
+  $: if (audioPanelEl && audioPanelRows.length) requestAnimationFrame(() => remote.registerAll(audioPanelEl));
   $: if (subsPanelEl && subtitles.length) requestAnimationFrame(() => remote.registerAll(subsPanelEl));
 
   // D-pad focus trap: while any panel is open, arrows stay inside the
@@ -685,13 +790,13 @@
 
       <span class="spacer"></span>
 
-      <button class="cbtn text" data-focus data-ctl="source" on:click={() => (overlays.source = !overlays.source)} class:sel={overlays.source}>
+      <button class="cbtn text" data-focus data-ctl="source" on:click={() => toggleOverlay("source")} class:sel={overlays.source}>
         Source <span class="sub">{source === "original" ? "original" : source}</span>
       </button>
-      <button class="cbtn text" data-focus data-ctl="audio" on:click={() => (overlays.audio = !overlays.audio)} class:sel={overlays.audio}>
-        Audio <span class="sub">{audioTracks.length ? audioTracks[audioTrack]?.label || audioTracks[0]?.label : "—"}</span>
+      <button class="cbtn text" data-focus data-ctl="audio" on:click={() => toggleOverlay("audio")} class:sel={overlays.audio}>
+        Audio <span class="sub">{audioButtonLabel}</span>
       </button>
-      <button class="cbtn text" data-focus data-ctl="subs" on:click={() => { overlays.subs = !overlays.subs; ensureSubtitles(); }} class:sel={overlays.subs}>
+      <button class="cbtn text" data-focus data-ctl="subs" on:click={() => { if (overlays.subs) toggleOverlay("subs"); else { toggleOverlay("subs"); ensureSubtitles(); } }} class:sel={overlays.subs}>
         Subtitles <span class="sub">{source === "hls" ? (hlsSub === -1 ? "off" : hlsSubTracks[hlsSub]?.label || "on") : (activeSub === -1 ? "off" : subtitles[activeSub]?.language || "off")}</span>
       </button>
     </div>
@@ -741,24 +846,29 @@
     <div class="center-panel" on:click={(e) => onPanelScrimClick(e, audioPanelEl)}>
       <div class="panel pick-panel" bind:this={audioPanelEl} on:click={(e) => e.stopPropagation()}>
         <p class="pick-title">Audio track</p>
-        {#if audioTracks.length === 0}
-          <p class="muted pad">Only one audio track is available in this source.</p>
-          {#if source === "original"}
-            <p class="muted small pad">
-              Switching to <button class="link" on:click={() => onSourcePick("hls")}>HLS</button> often exposes more
-              audio tracks for multi-language files.
-            </p>
-          {/if}
+        {#if audioPanelRows.length === 0}
+          <p class="muted pad">No audio track information for this file.</p>
         {:else}
-          {#each audioTracks as t, i (t.id)}
+          <p class="muted small pad pick-sub">
+            {audioPanelRows.length === 1
+              ? `1 audio track in this file${audioPanelRows[0].codec ? ` (${audioPanelRows[0].codec.toUpperCase()})` : ""}`
+              : `${audioPanelRows.length} audio tracks in this file`}
+          </p>
+          {#each audioPanelRows as row (row.key)}
             <button
               class="pick-row"
-              class:sel={audioTrack === i}
+              class:sel={audioActiveKey === row.key}
               data-focus
-              on:click={() => onAudioPick(i)}
+              data-focus-disabled={audioSwitching ? "true" : ""}
+              on:click={() => !audioSwitching && onAudioPick(row)}
             >
-              <span class="pick-label">{t.label}</span>
-              <span class="pick-hint" class:ok={audioTrack === i}>{audioTrack === i ? "on" : ""}</span>
+              <span class="pick-label">{row.label}</span>
+              <span class="pick-hint" class:ok={audioActiveKey === row.key}>
+                {panelRowHint(row, {
+                  active: audioActiveKey === row.key,
+                  switching: audioSwitching && pendingAudioPick === row.key,
+                })}
+              </span>
             </button>
           {/each}
         {/if}

@@ -196,6 +196,17 @@ class Platform {
     return hide;
   }
 
+  /** Best-effort Luna media selectTrack. The webview honours it for some
+   *  pipelines; a webview <video> may not be a Luna media session at all —
+   *  callers must treat it as a hint, never as the mechanism. */
+  lunaSelectTrack(index: number): void {
+    try {
+      lunaCall("luna://com.webos.media", "selectTrack", { type: "audio", index }, 2000);
+    } catch {
+      /* no Luna on this system */
+    }
+  }
+
   copyToClipboard(text: string): Promise<void> {
     const native = lunaCall("luna://com.webos.service.clipboard", "copy", { text });
     if (isWebOS()) return native.then(() => {});

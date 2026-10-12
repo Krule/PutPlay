@@ -6,6 +6,9 @@
  *  - audioLang / subtitleLang: preferred language code or display name
  *    ("" = no preference); they steer auto-selection of tracks
  *  - subScale: DOM-overlay subtitle font scale (1 = default)
+ *  - audioFallback: what to do when the original file can't switch audio
+ *    ("ask" = honest refusal + the row offers the put.io stream;
+ *    "auto-hls" = go straight to the put.io rendition of the chosen language)
  */
 
 export interface ConfigState {
@@ -13,6 +16,7 @@ export interface ConfigState {
   audioLang: string;
   subtitleLang: string;
   subScale: number;
+  audioFallback: "ask" | "auto-hls";
 }
 
 export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: number } = {
@@ -20,11 +24,13 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   audioLang: "",
   subtitleLang: "",
   subScale: 1,
+  audioFallback: "ask",
   subScaleMin: 0.8,
   subScaleMax: 2,
 };
 
 const SOURCE_KINDS = ["original", "mp4", "hls"] as const;
+const AUDIO_FALLBACKS = ["ask", "auto-hls"] as const;
 
 /** Merge user input onto defaults, coercing to the stored shape. */
 export function normalizeConfig(partial: Partial<ConfigState> | null | undefined): ConfigState {
@@ -34,25 +40,37 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
     ? (p.source as ConfigState["source"])
     : d.source;
   const scale = typeof p.subScale === "number" && !isNaN(p.subScale) ? p.subScale : d.subScale;
+  const audioFallback = (AUDIO_FALLBACKS as readonly string[]).includes(p.audioFallback || "")
+    ? (p.audioFallback as ConfigState["audioFallback"])
+    : d.audioFallback;
   return {
     source,
     audioLang: (p.audioLang ?? "").trim(),
     subtitleLang: (p.subtitleLang ?? "").trim(),
     subScale: Math.min(d.subScaleMax, Math.max(d.subScaleMin, scale)),
+    audioFallback,
   };
 }
 
 /** Does a track's language satisfy the preference? "" / null = no preference. */
 export function matchLang(
-  track: { lang?: string | null; code?: string | null } | null | undefined,
+  track: { lang?: string | null; code?: string | null; label?: string | null } | null | undefined,
   preferred: string | null | undefined
 ): boolean {
   if (!preferred) return true;
   if (!track) return false;
-  const want = preferred.toLowerCase();
-  const code = (track.code || track.lang || "").toLowerCase();
-  const label = (track.lang || "").toLowerCase();
-  return code === want || label === want;
+  const want = preferred.toLowerCase().trim();
+  if (!want) return true;
+  const code = (track.code || track.lang || "").toLowerCase().trim();
+  // 1) exact ISO code match (the form both sides normally use)
+  if (code && code === want) return true;
+  // 2) label/title match: the webview exposes the MKV track title
+  //    ("English AC-3 5.1") even when the language code comes through
+  //    empty or 2-letter — the EAAAO regression where code-only matching
+  //    silently missed and a configured preference did nothing
+  const label = (track.label || "").toLowerCase();
+  if (label && (label === want || label.indexOf(want) !== -1)) return true;
+  return false;
 }
 
 /**
@@ -68,6 +86,9 @@ export function pickAudioTrack(
     for (let i = 0; i < tracks.length; i++) {
       if (matchLang(tracks[i], preferred)) return i;
     }
+    // a preference that matches NO track must not force track 0 (a switch
+    // nobody asked for) — -1 = play the file's own default track
+    return -1;
   }
   return 0;
 }

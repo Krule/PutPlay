@@ -6,6 +6,35 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-12
+
+### Added
+- The audio panel lists every audio track in the file: the file's real metadata
+  (titles, languages, codecs) is merged with the TV player's track list, so a
+  track the webview hides is still visible — and selectable via the put.io
+  stream when that's the only way to play it.
+- Each audio row shows an honest state (switching, via the put.io stream, or
+  "the TV can't decode this codec") instead of a silent no-op.
+- New setting, "If the original can't switch audio": ask (the put.io option
+  appears in the panel) or use the put.io stream automatically.
+- If the preferred audio language isn't in the file, the app says so and lists
+  what the file does have.
+
+### Fixed
+- Multi-audio MKV: a track pick the TV's player silently vetoes now escalates
+  (a retry, then a source reload the webview accepts) and is only reported as
+  failed when it truly couldn't switch.
+- The preferred audio language is now honored when a file opens. It was
+  previously ignored on files where the webview reports no track language or
+  title — the common case for MKV (e.g. 4K HEVC rips), where the setting
+  appeared to do nothing.
+- A mid-switch track sync no longer fired a wrong "Audio: …" toast for a
+  different track.
+- An undecodable source (error code 4 — 10-bit HEVC / Dolby Vision is the
+  usual suspect) now explains why before falling back to the put.io MP4.
+- Opening one player panel now closes the others; stacked overlays could trap
+  the D-pad focus on the hidden panel.
+
 ## [1.0.1] - 2026-10-11
 
 ### Added

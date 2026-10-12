@@ -25,6 +25,7 @@
   $: cfgAudio = c?.audioLang ?? "";
   $: cfgSub = c?.subtitleLang ?? "";
   $: cfgScale = c?.subScale ?? 1;
+  $: cfgFallback = c?.audioFallback ?? "ask";
 
   const SOURCE_OPTIONS: { kind: ConfigState["source"]; label: string }[] = [
     { kind: "original", label: "Original" },
@@ -60,6 +61,22 @@
     langPicker = null;
     // return the D-pad to the field that opened the picker
     if (field) requestAnimationFrame(() => remote.focusEl(field));
+  }
+
+  // the audio-fallback picker ("if the original can't switch audio")
+  let fallbackPicker = false;
+  let fallbackFieldEl: HTMLButtonElement;
+  const FALLBACK_OPTIONS: { value: string; label: string }[] = [
+    { value: "ask", label: "Ask me" },
+    { value: "auto-hls", label: "Use the put.io stream" },
+  ];
+  function pickFallback(v: string): void {
+    if (v === "ask" || v === "auto-hls") cfgFallback = v;
+    closeFallbackPicker();
+  }
+  function closeFallbackPicker(): void {
+    fallbackPicker = false;
+    if (fallbackFieldEl) requestAnimationFrame(() => remote.focusEl(fallbackFieldEl));
   }
 
   // ---------------- 5-way remote focus wiring ----------------
@@ -110,6 +127,10 @@
       closeLangPicker();
       return;
     }
+    if (fallbackPicker) {
+      closeFallbackPicker();
+      return;
+    }
     if (confirmSignOut) {
       confirmSignOut = false;
       return;
@@ -127,6 +148,7 @@
         audioLang: cfgAudio,
         subtitleLang: cfgSub,
         subScale: cfgScale,
+        audioFallback: cfgFallback,
       });
     }
     saveConfig().catch(() => undefined);
@@ -221,6 +243,17 @@
       </div>
 
       <div class="card">
+        <p class="card-title">If the original can't switch audio</p>
+        <button class="lang-field" bind:this={fallbackFieldEl} data-focus on:click={() => (fallbackPicker = true)}>
+          <span class="lf-value">{cfgFallback === "auto-hls" ? "Use the put.io stream" : "Ask me"}</span>
+        </button>
+        <p class="note">
+          Some files refuse in-place audio switches. Pick the put.io stream manually each time, or
+          switch to its matching language automatically (your position is kept).
+        </p>
+      </div>
+
+      <div class="card">
         <p class="card-title">Preferred subtitle language</p>
         <button class="lang-field" bind:this={subFieldEl} data-focus on:click={() => (langPicker = "sub")}>
           {#if cfgSub}<span class="lf-value">{langLabel(cfgSub) || cfgSub}</span>{:else}<span class="lf-empty">None (no auto-select)</span>{/if}
@@ -250,6 +283,16 @@
       selected={langPicker === "audio" ? cfgAudio : cfgSub}
       on:pick={(e) => pickLang(e.detail)}
       on:close={closeLangPicker}
+    />
+  {/if}
+
+  {#if fallbackPicker}
+    <LangPicker
+      title="If the original can't switch audio"
+      options={FALLBACK_OPTIONS}
+      selected={cfgFallback}
+      on:pick={(e) => pickFallback(e.detail)}
+      on:close={closeFallbackPicker}
     />
   {/if}
 </div>
