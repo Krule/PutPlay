@@ -12,13 +12,17 @@ put.io on the big screen — original files, embedded subtitles, my remote.
 
 ## Why this exists
 
-My LG C1 stopped working with [put.io](https://app.put.io), an app I occasionally used. I like their [TV App](https://tv.put.io), but it comes a bit limited and I want to be able to stream the **original** file directly. My file, just as I uploaded it.
+A couple of months ago my LG C1 OLED TV stopped working with [put.io](https://app.put.io), a service and an app I occasionally used. The reason why my TV stopped working, I assume, was that they updated their app using either CSS or JS features my TV does not support. Now, I like put.io. I like their apps and there is one I can still use, their [TV App](https://tv.put.io). But there was a reason why I preferred using their main app. The functionality it offers, having been built a long time ago for users with different use cases than mine, is just not what I would choose to use.
 
-Unfortunately, for me, their web app moved on as web moves on. And that was to be expected. They are not the only ones and I think web evolving is always a good thing. I also understand tv manufacturer doesn't have any interest investing in browser updates for 5 years old TV. They are a business after all and they have to be selective as to where they invest their resources.
+Anyway, just like that, my really good TV, with pretty amazing picture quality, became less useful to me. The worst thing, this is not the first time it happened. I've watched my perfectly good hardware degrade in usability over time for a while now. 
 
-But, it is my TV and I just don't like the idea that it's becoming less usable just because it's not getting browser (software) updates.
+Web tech moves on, as it should. On the other hand, webOS 6 (the OS on C1) is built on a variant of Chrome 79. A version of the browser unsupported by Google since 2019. And this browser worked fine until a few months ago when problems started. First, it was CSS, then I was unable to load some websites, and pass the [Cloudflare CAPTCHA verification](https://community.cloudflare.com/t/cloudflare-blocking-smart-tv-browser/352249/6).
 
-But, some time ago, I used to be a professional software engineer. And, I wanted to play with local inference and Qwen 3.8 27B 8-bit. So I outlined a project and a few days later (it's local model after all), here is PutPlay.
+I understand that LG and other hardware manufacturers operate with limited resources, don't we all, and that they are not going to support their hardware 5 years after manufacture. But it is still a good piece of hardware and the one I don't intend to turn into e-waste.
+
+Now, this still leaves me with some options. The first is to spend some money and buy something to extend my device's usable lifetime. I am not a big fan of this solution. The second is to accept the situation as it is and live with it. At the end of the day, this was just a small part of the overall experience and I could live with it. But this is obviously not what I did. Instead, I figured, webOS apps are mostly HTML/JS and I know how to deal with that. I don't have a lot of time on my hands, but I also do have a local language model I want to try. I don't even need to root my TV, even though I do want to.
+
+So I outlined this project, put together some resources, some rules and some limitations. And what do you know, a few days later we have PutPlay. Not fully up to my satisfaction, but it's usable and we are iterating over the rough edges. If you care to try, read on!
 
 ## What it does
 
