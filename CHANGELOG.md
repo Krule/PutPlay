@@ -18,6 +18,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   was 30s) to ride out network dips.
 
 ### Fixed
+- Library focus on the TV is now the soft glow only — the harsh blue box that
+  wrapped the focused tile is gone (the desktop keyboard indicator is
+  unchanged). Navigating to the rightmost tile — or the last item — no longer
+  summons a bottom horizontal scrollbar in the grid.
 - Leaving playback returns you to the folder you were browsing — not the
   library root.
 - The Video / Audio / Subtitles panels now close as soon as you make a

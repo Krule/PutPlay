@@ -236,16 +236,19 @@ button {
    :focus is the webOS 6 (Chrome 79) path — the remote calls el.focus();
    :focus-visible (Chrome 86+) is kept for desktop parity.
 
+   On the TV the indicator is the GLOW (and the active border on
+   [data-focus] elements) — a hard solid outline with offset renders on
+   webOS 6 as a harsh blue line box floating around the active element.
+
    These MUST stay two separate rules: an unknown pseudo-class anywhere in a
    selector list invalidates the WHOLE list, so mixing them would kill the
-   :focus outline on Chrome 79. @supports selector() (Chrome 48) keeps the
+   :focus glow on Chrome 79. @supports selector() (Chrome 86+) keeps the
    desktop-only rule inert on the TV. */
 [data-focus]:focus,
 button:focus,
 a:focus,
 input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline: none;
   box-shadow: var(--focus-shadow);
 }
 @supports selector(:focus-visible) {
