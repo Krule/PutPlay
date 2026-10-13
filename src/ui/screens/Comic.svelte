@@ -11,6 +11,7 @@
     cycleZoom,
     zoomScale,
     panBounds,
+    nudge,
     buildSheets,
     sheetForPage,
     sheetPageLabel,
@@ -33,7 +34,8 @@
    * 1 + 20 pairs; Mushoku v01 → exactly the 4 scanned spreads solo.
    *
    *   ←/→  turn the sheet (direction-aware — in a manga, LEFT goes forward)
-   *        or PAN when zoomed (clamped to the sheet, never the wall)
+   *        or PAN when zoomed (the arrow names where you LOOK: Up reveals
+   *        the top — clamped to the sheet, never the wall)
    *   OK   zoom: fit → 2× → 4× → fit (relative to the sheet's OWN fit, so a
    *        675-px scan and a 2138-px scan feel identical)
    *   Up   flip the reading direction (persisted for THIS comic; the legend
@@ -303,10 +305,10 @@
     if (sheetState !== "ready" || sheetW <= 0) return;
     const stepPx = Math.max(48, Math.round(((d === "up" || d === "down") ? viewH : viewW) * 0.08));
     const b = panBounds(sheetW, sheetH, viewW, viewH, scale);
-    if (d === "right") panX = Math.min(b.maxX, panX + stepPx);
-    else if (d === "left") panX = Math.max(-b.maxX, panX - stepPx);
-    else if (d === "down") panY = Math.min(b.maxY, panY + stepPx);
-    else panY = Math.max(-b.maxY, panY - stepPx);
+    // TV convention (the pure nudge): the arrow names where you LOOK —
+    // Up reveals the top, Left the left. (Drag-style was inverted on the C1.)
+    if (d === "right" || d === "left") panX = nudge(panX, b.maxX, d, stepPx);
+    else panY = nudge(panY, b.maxY, d, stepPx);
   }
 
   /* ---------------- caption + flash (auto-hide like the player) -------- */

@@ -394,3 +394,24 @@ test("sheetPageLabel: solo is a number, a pair is a 1-based en-dash range", () =
   assert.equal(comic.sheetPageLabel(sheets[1], 6), "2\u20133");
   assert.equal(comic.sheetPageLabel(sheets[2], 6), "4\u20135");
 });
+
+/* ---------------- pan nudge (TV convention, C1 feedback 2026-10-13) -------
+ * The user's C1 verdict: zoomed D-pad was INVERTED ("up went down, left
+ * went right"). The arrows name where you want to LOOK, like every TV
+ * zoom: Up moves the view toward the TOP of the page (the sheet slides
+ * DOWN on screen), Left reveals the LEFT. Pan is in screen coordinates
+ * (positive = the sheet is shifted down/right), so the deltas are:
+ * up/left -> +step, down/right -> -step, clamped to the symmetric bounds.
+ */
+test("nudge: the arrow names the direction you look (Up reveals the top, not the bottom)", () => {
+  const max = 100;
+  // from center: each press moves one step toward the named edge
+  assert.equal(comic.nudge(0, max, "up", 20), 20, "Up moves the view toward the top (pan +)");
+  assert.equal(comic.nudge(0, max, "down", 20), -20, "Down reveals the bottom (pan −)");
+  assert.equal(comic.nudge(0, max, "left", 20), 20, "Left reveals the left (pan +)");
+  assert.equal(comic.nudge(0, max, "right", 20), -20, "Right reveals the right (pan −)");
+  // …and the clamp is symmetric and honest (never the wall)
+  assert.equal(comic.nudge(90, max, "up", 20), max, "at the top edge, further Up holds");
+  assert.equal(comic.nudge(-90, max, "down", 20), -max, "…and at the bottom");
+  assert.equal(comic.nudge(0, 0, "up", 20), 0, "no overflow: no pan at all");
+});

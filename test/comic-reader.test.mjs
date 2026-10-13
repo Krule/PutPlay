@@ -261,3 +261,8 @@ test("app: the position store is still loaded (reopening a comic resumes from th
     "progress loads on boot so progressFor can resume a comic"
   );
 });
+
+test("comic screen: zoomed pan goes through the pure nudge (TV look-direction convention, not drag)", () => {
+  const pan = bodyOf(screen, "nudgePan", "Comic.svelte");
+  assert.ok(pan.includes("nudge("), "the D-pad step is the pure, tested nudge — the C1 found the drag mapping inverted");
+});

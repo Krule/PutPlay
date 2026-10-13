@@ -170,6 +170,19 @@ export function panBounds(
   };
 }
 
+/**
+ * One D-pad step of zoomed pan, TV convention (C1 feedback 2026-10-13:
+ * the drag-style mapping was INVERTED — "up went down, left went right").
+ * The arrow names the direction you want to LOOK: Up moves the view toward
+ * the TOP of the sheet (the sheet slides down on screen), Left reveals the
+ * left. Pan is in screen coordinates (positive = sheet shifted down/right),
+ * so up/left add, down/right subtract — clamped to the symmetric bounds.
+ */
+export function nudge(pan: number, max: number, d: "up" | "down" | "left" | "right", step: number): number {
+  const delta = d === "up" || d === "left" ? step : -step;
+  return Math.min(max, Math.max(-max, pan + delta));
+}
+
 /* ---------------- sheets: spread mode (v1.1) ----------------
  *
  * A single portrait page fit to 16:9 is a sliver in a black sea. The
