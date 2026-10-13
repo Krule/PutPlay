@@ -11,6 +11,7 @@
   import type { ZipModel } from "../putio/zip";
   import { clampResume } from "../putio/comic-progress";
   import { setComic, resetComic, loadShelf, progressFor, clearShelf, pageCache } from "../store/comic";
+  import { clearThumbs } from "../store/thumb-store";
 
   const getLib = () => get(library);
   import type { PutFile } from "../putio/types";
@@ -147,6 +148,7 @@
         resetComic();
         clearShelf(); // the shelf is personal data; it goes with the session
         pageCache.clear(); // …and the cached page blobs are that account's book
+        clearThumbs(); // …and the persisted cover thumbs are that account's art
         // the store is module-level: without this, a fresh login would show
         // the previous account's folders (needsInitialList skips the fetch
         // when a cached listing exists)

@@ -3,6 +3,12 @@
   import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
+  import { openArchive, extractEntry } from "../../putio/zip-extract";
+  import { buildComicModel } from "../../putio/comic";
+  import { pageCache, pageKey } from "../../store/comic";
+  import { getThumb, putThumb } from "../../store/thumb-store";
+  import { currentAuth } from "../../store/auth";
+  import { probeImage } from "../img-probe";
 
   export let file: PutFile;
   export let index = 0;
@@ -17,6 +23,95 @@
   let active = false;
   let visited = false;
   let imgFailed = false;
+
+  /* The comic cover: THREE rungs, cheapest first.
+     1. the PERSISTENT thumb (localStorage, 1-month TTL) — a previous
+        session already paid; zero network, zero blobs;
+     2. the in-memory page cache — the reader (or an earlier tile) fetched
+        this session; down-scale it now;
+     3. the network — two-stage open, cover of the READING order, range
+        read + inflate + probe; down-scale and persist for next time.
+     Failure at any rung → the glyph (an empty thumb would be a lie).
+     The LRU owns the full-res blob's life; the persistent store owns the
+     data URL. Quota refusal = displayed, not persisted — never thrown. */
+  const THUMB_MAX_PX = 480; // the tile is 236 CSS px; 2x covers the 4K glass
+  let coverState: "none" | "loading" | "ready" | "failed" = "none";
+  let coverUrl = "";
+
+  function loadCover() {
+    const au = currentAuth();
+    if (!au) return; // the library requires auth; an honest no-op regardless
+    const persisted = getThumb(file.id);
+    if (persisted) {
+      coverUrl = persisted.dataUrl;
+      coverState = "ready";
+      return;
+    }
+    const key = pageKey(file.id, 0);
+    const hit = pageCache.get(key);
+    if (hit) {
+      showDownscaled(hit.url);
+      return;
+    }
+    coverState = "loading";
+    openArchive(au, file)
+      .then((m) => buildComicModel(m.entries))
+      .then((book) => {
+        const cover = book.pages[0];
+        if (!cover) {
+          coverState = "failed"; // a "comic" with no decodable pages
+          return;
+        }
+        return extractEntry(au, file, cover.entry).then(({ data, mime }) =>
+          probeImage(URL.createObjectURL(new Blob([data], { type: mime }))),
+        ).then((p) => {
+          pageCache.put(key, { url: p.url, w: p.w, h: p.h });
+          showDownscaled(p.url);
+        });
+      })
+      .catch(() => {
+        coverState = "failed"; // offline, corrupt, not a zip: the glyph stays
+      });
+  }
+
+  /** Down-scale the cover blob to a tile-sized JPEG data URL, show it, and
+   *  persist it for the next launch. The canvas or the TV's storage can
+   *  refuse — then we show the full-res blob and skip persisting, quietly. */
+  function showDownscaled(blobUrl: string) {
+    const img = new Image();
+    img.onload = () => {
+      const w0 = img.naturalWidth;
+      if (!w0) {
+        coverUrl = blobUrl;
+        coverState = "ready";
+        return;
+      }
+      const scale = Math.min(1, THUMB_MAX_PX / w0);
+      const w = Math.max(1, Math.round(w0 * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      let dataUrl = "";
+      try {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          dataUrl = c.toDataURL("image/jpeg", 0.82);
+        }
+      } catch {
+        dataUrl = ""; // canvas refusal: full-res display, no persist
+      }
+      coverUrl = dataUrl || blobUrl;
+      coverState = "ready";
+      if (dataUrl) putThumb(file.id, { dataUrl, w, h, savedAt: Date.now() });
+    };
+    img.onerror = () => {
+      coverUrl = blobUrl;
+      coverState = "ready";
+    };
+    img.src = blobUrl;
+  }
 
   const isFolder = putioIsFolder(file);
   const isVideo = !isFolder && file.content_type ? file.content_type.startsWith("video/") : false;
@@ -42,6 +137,7 @@
       remote.register(el);
       el.addEventListener("click", () => emitOpen());
     }
+    if (isComic) loadCover();
   });
   onDestroy(() => el && remote.unregister(el));
 </script>
@@ -53,7 +149,11 @@
     {:else if isFolder}
       <span class="glyph">📁</span>
     {:else if isComic}
-      <span class="glyph">📖</span>
+      {#if coverState === "ready" && coverUrl}
+        <img src={coverUrl} alt="" onerror={() => (coverState = "failed")} />
+      {:else}
+        <span class="glyph">📖</span>
+      {/if}
     {:else if isArchive}
       <span class="glyph">🗜️</span>
     {:else if isVideo}
