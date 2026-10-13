@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-13
+
 ### Added
 - Archive viewer: open a ZIP from the library and it browses like a folder
   — put.io's file is never downloaded, just its index (one range read of
