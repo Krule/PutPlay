@@ -182,8 +182,11 @@ test("comic screen: a page that fails to load is an honest error, and the next k
   assert.ok(onImgErr.includes('"error"'), "the <img> error event lands in the error state");
 });
 
-test("comic screen: blob URLs are revoked (the memory honesty)", () => {
-  assert.ok(screen.includes("revokeObjectURL"), "extracted pages are blobs; dead blobs are revoked");
+test("comic screen: the LRU cache owns blob lifetimes (the screen never revokes)", () => {
+  // v1 managed its own blob list (freeUrls); v1.1 delegates to the page cache
+  // — eviction and sign-out revoke, the screen just reads and puts.
+  assert.ok(!screen.includes("revokeObjectURL"), "no screen-level revoke — the cache owns it");
+  assert.ok(!screen.includes("freeUrls"), "…and the v1 url list is gone");
 });
 
 test("comic screen: the progress bar is direction-aware and the caption counts pages", () => {
@@ -274,3 +277,35 @@ test("comic screen: a turn is persisted when it HAPPENS, not when the sheet fini
     "the new sheet's page is saved at turn time — the sheet rewrite regressed this (the page-mode code saved in step()); a Back during a slow 6MB page load must not lose the turn"
   );
 });
+
+/* ---------------- the page LRU cache + direction-aware prefetch (v1.1) ----
+ * C1: "the pages we already read should stay cached (10, LRU), and when
+ * we're going back, prefetch in the opposite direction".
+ */
+test("comic screen: pages go through the shared LRU cache (a turn back is a cache hit, not a fetch)", () => {
+  assert.ok(
+    /pageKey\(/.test(screen) && /pageCache/.test(screen),
+    "every page load/prefetch is keyed and cached — the cache owns the blob"
+  );
+  assert.ok(!/freeUrls\(\)/.test(screen), "the screen no longer revokes blobs it no longer owns");
+});
+
+test("comic screen: the prefetch follows the LAST MOVE (backwards when you're going back)", () => {
+  const pre = bodyOf(screen, "prefetch", "Comic.svelte");
+  assert.ok(/lastMove/.test(pre), "prefetch direction is the last move, not always forward");
+  const stepFn = bodyOf(screen, "step", "Comic.svelte");
+  assert.ok(/lastMove =/.test(stepFn), "a turn records which way you went");
+});
+
+test("store/comic: the LRU instance is module-level, 10 pages, guarded revoke (node has no URL.revokeObjectURL)", () => {
+  assert.ok(/createPageCache\(10,/.test(store), "the C1's number: 10 pages");
+  assert.ok(/revokeObjectURL/.test(store) && /typeof URL/.test(store), "the revoke is node-safe (the tests import this module)");
+});
+
+test("app: signing out clears the page cache (the blobs are that account's book)", () => {
+  const at = app.indexOf("clearShelf(");
+  assert.ok(at >= 0, "the unauthed handler clears the shelf");
+  const block = app.slice(at - 400, at + 400);
+  assert.ok(/pageCache\.clear\(\)/.test(block), "…and the cached page blobs go with the session too");
+});
+

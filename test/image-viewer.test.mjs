@@ -210,3 +210,32 @@ test("e2e fake: serves real images for the image files", () => {
     "the fake /stream route must serve the PNG assets for the image ids"
   );
 });
+
+/* ---------------- the screen (v1.1: the zoom the comic reader proved) ----
+ * The comic reader's OK = fit → 2x → 4x ladder + look-direction pan is now
+ * shared with the image viewer (the math lives in putio/zoom.ts, NOT
+ * copied into either screen).
+ */
+const imgScreen = read("src/ui/screens/Image.svelte");
+
+test("image screen: OK cycles the relative zoom ladder (same math as the reader, imported not copied)", () => {
+  assert.ok(/putio\/zoom/.test(imgScreen) || /from "\.\.\/\.\.\/putio\/comic"/.test(imgScreen), "the zoom math comes from the shared module");
+  assert.ok(/cycleZoom\(/.test(imgScreen), "OK must cycle fit → 2x → 4x");
+  assert.ok(/zoomScale\(/.test(imgScreen), "…scaled to the image's OWN fit (675px and 2138px feel identical)");
+});
+
+test("image screen: zoomed, the arrows PAN (look-direction nudge, clamped); at fit they browse", () => {
+  const onNav = imgScreen.slice(imgScreen.search("function onNavigate"), imgScreen.search("function onNavigate") + 700);
+  assert.ok(/nudge\(/.test(imgScreen), "the pan step is the pure, tested nudge (TV convention — drag was inverted on the C1)");
+  assert.ok(/panBounds\(/.test(imgScreen), "…clamped so the wall is never revealed");
+  assert.ok(/zoom !== "fit"/.test(onNav), "arrows only browse while at fit — zoomed they are the pan");
+});
+
+test("image screen: browsing resets the zoom (a new image starts at fit, centered)", () => {
+  const stepFn = imgScreen.slice(imgScreen.search("function step"), imgScreen.search("function step") + 500);
+  assert.ok(/zoom = "fit"/.test(stepFn), "step() must reset the ladder");
+});
+
+test("image screen: the caption says which zoom you're in", () => {
+  assert.ok(/\{zoom\}/.test(imgScreen) && /zoom !== "fit"/.test(imgScreen), "the caption shows the level above fit (like the reader)");
+});

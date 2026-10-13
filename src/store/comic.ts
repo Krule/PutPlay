@@ -2,6 +2,7 @@ import { writable, get } from "svelte/store";
 import { store } from "../webos/platform";
 import type { PutFile } from "../putio/types";
 import type { ComicModel, Direction } from "../putio/comic";
+import { createPageCache, type PageCache } from "../putio/page-cache";
 import {
   decodeProgress,
   encodeProgress,
@@ -125,3 +126,20 @@ export function progressFor(fileId: number): ComicProgress | null {
   const found = get(shelf).find((p) => p.file_id === fileId);
   return found || null;
 }
+
+/* ---------------- the page LRU cache ("already read" memory) -----------
+ * Module-level: it survives screen swaps (comic → library → comic) and is
+ * SHARED with the library — a comic tile's cover thumbnail is page 0 of
+ * the same key space, so the thumb you saw in the grid is the blob the
+ * reader loads on open. 10 pages (the C1's number), LRU. The revoke is
+ * guarded: node (the tests) has no URL.revokeObjectURL, and a missing
+ * revoke there is a no-op, not a leak.
+ */
+export const pageCache: PageCache = createPageCache(10, (url) => {
+  if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+    URL.revokeObjectURL(url);
+  }
+});
+
+/** The cache key for a page: file id + page index (stable per book). */
+export const pageKey = (fileId: number, page: number): string => `${fileId}:${page}`;

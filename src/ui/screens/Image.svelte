@@ -2,15 +2,18 @@
   import { onMount, createEventDispatcher } from "svelte";
   import { getRemote, type Dir } from "../../webos/remote";
   import { stepIndex, type ViewerTarget } from "../../putio/image";
+  import { cycleZoom, zoomScale, panBounds, nudge, type ZoomLevel } from "../../putio/zoom";
   import { fmtBytes } from "../../putio/api";
 
   export let targets: ViewerTarget[];
   export let initial: number;
 
   /**
-   * Image viewer v1 — fit-to-screen + Left/Right browse + Back. No zoom
-   * (deliberate: a TV remote has no pinch; zoom needs a real interaction
-   * design and is a v2 question).
+   * Image viewer — fit-to-screen + Left/Right browse + Back, and (v1.1)
+   * the same zoom the comic reader proved: OK = fit → 2× → 4× (relative
+   * to the image's OWN fit, so 675-px and 2138-px feel identical), arrows
+   * PAN when zoomed (look-direction, clamped), browse at fit. The math is
+   * the shared putio/zoom.ts — the same ladder, the same clamp.
    *
    * The viewer is TARGET-based: it shows a list of ViewerTargets and never
    * builds URLs itself. Library images resolve to signed stream URLs;
@@ -29,6 +32,24 @@
   let captionVisible = true;
   let hideTimer: number | null = null;
   let attempt = 0;
+  let dims: { w: number; h: number } | null = null; // the decoded size (from the <img>)
+
+  let viewW = 1920;
+  let viewH = 1080;
+  let imgEl: HTMLImageElement | null = null;
+
+  /* ---------------- zoom + pan (the reader's ladder, shared math) -------- */
+  let zoom: ZoomLevel = "fit";
+  let panX = 0;
+  let panY = 0;
+
+  $: scale = dims ? zoomScale(zoom, dims.w, dims.h, viewW, viewH) : 1;
+  $: wPx = dims ? Math.round(dims.w * scale) : 0;
+  $: hPx = dims ? Math.round(dims.h * scale) : 0;
+  // CENTER-anchored, like the reader: at fit the image sits centered; above
+  // fit the pan is symmetric, clamped by panBounds.
+  $: leftPx = (viewW - wPx) / 2 + panX;
+  $: topPx = (viewH - hPx) / 2 + panY;
 
   let errorEl: HTMLElement | null = null;
 
@@ -48,10 +69,16 @@
     const mine = attempt;
     freeUrl();
     src = "";
+    dims = null; // a new image is a new size (the zoom reset lives in step();
+    // a retry of the SAME image keeps the user's zoom)
     active
       .load()
       .then((url) => {
-        if (mine !== attempt) return; // superseded by a newer load
+        if (mine !== attempt) {
+          // superseded by a newer load: a blob we made is ours to revoke
+          if (url.indexOf("blob:") === 0) URL.revokeObjectURL(url);
+          return;
+        }
         if (url.indexOf("blob:") === 0) objectUrl = url;
         src = url;
       })
@@ -72,6 +99,10 @@
     const to = stepIndex(at, targets.length, dir);
     if (to == null) return; // end of the list (no wrap) — nothing to do
     at = to;
+    // a new image starts at fit, centered — the zoom is a per-image choice
+    zoom = "fit";
+    panX = 0;
+    panY = 0;
     wake();
     loadImage();
   }
@@ -90,16 +121,39 @@
     dispatch("back");
   }
 
+  function onOK() {
+    wake();
+    if (state !== "ready" || !dims) return; // nothing on screen to zoom
+    zoom = cycleZoom(zoom);
+    panX = 0;
+    panY = 0; // every step of the ladder starts from the image's center
+  }
+
+  function nudgePan(dir: Dir) {
+    if (!dims) return;
+    const stepPx = Math.max(48, Math.round(((dir === "up" || dir === "down") ? viewH : viewW) * 0.08));
+    const b = panBounds(dims.w, dims.h, viewW, viewH, scale);
+    // the pure nudge: the arrow names where you LOOK (Up reveals the top —
+    // the drag mapping was inverted on the C1)
+    if (dir === "right" || dir === "left") panX = nudge(panX, b.maxX, dir, stepPx);
+    else panY = nudge(panY, b.maxY, dir, stepPx);
+  }
+
   function onNavigate(dir: Dir) {
     wake();
+    if (zoom !== "fit") {
+      nudgePan(dir);
+      return; // zoomed: the arrows are the pan
+    }
     if (dir === "left") step(-1);
     else if (dir === "right") step(1);
+    // at fit, up/down is an honest no-op (there is nothing above/below)
   }
 
   onMount(() => {
     remote.setHandlers({
       onBack,
-      onOK: wake,
+      onOK,
       onNavigate,
     });
     loadImage();
@@ -117,14 +171,20 @@
   $: if (errorEl) remote.focusEl(errorEl);
 </script>
 
-<div class="viewer" class:ready={state === "ready"}>
+<div class="viewer" class:ready={state === "ready"} bind:clientWidth={viewW} bind:clientHeight={viewH}>
   {#if state !== "error" && src}
     <img
       class="shot"
+      class:placed={!!dims}
       {src}
       alt={active.name}
       draggable="false"
+      bind:this={imgEl}
+      style={dims ? "width: " + wPx + "px; height: " + hPx + "px; left: " + leftPx + "px; top: " + topPx + "px;" : ""}
       on:load={() => {
+        if (imgEl && imgEl.naturalWidth) {
+          dims = { w: imgEl.naturalWidth, h: imgEl.naturalHeight };
+        }
         state = "ready";
       }}
       on:error={() => {
@@ -161,6 +221,7 @@
       <span class="name">{active.name}</span>
       <span class="meta">
         {at + 1} of {targets.length}
+        {#if zoom !== "fit"}<span class="sep">·</span>{zoom}{/if}
         <span class="sep">·</span>
         {fmtBytes(active.size)}
       </span>
@@ -189,6 +250,18 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+  }
+
+  /* dims known: explicit size + center-anchored position (the zoom model)
+     — the contain fallback above only serves the pre-load frame */
+  .shot.placed {
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    margin: 0;
+    max-width: none;
+    max-height: none;
   }
 
   .center {

@@ -20,7 +20,8 @@
     type TurnDir,
     type Sheet,
   } from "../../putio/comic";
-  import { comic, setComic, upsertProgress } from "../../store/comic";
+  import { probeImage } from "../img-probe";
+  import { comic, setComic, upsertProgress, pageCache, pageKey } from "../../store/comic";
 
   /**
    * Comic reader — the book screen (plan: .agents/plan.md, §8 = v1.1 TV
@@ -90,9 +91,10 @@
   let viewW = 1920;
   let viewH = 1080;
   let sheetState: "loading" | "ready" | "error" = "loading";
-  /** One slot per page in the current sheet: null until its bytes decode. */
+  /** One slot per page in the current sheet: null until its bytes decode.
+   *  The blob URLs here are OWNED BY THE LRU CACHE (page-cache via the
+   *  store) — the screen revokes nothing; eviction and sign-out do. */
   let slots: ({ url: string; w: number; h: number } | null)[] = [];
-  const urls: string[] = []; // blob: URLs we own must be revoked (the TV's memory)
   let attempt = 0; // supersede counter (fast turns)
   let failedPage = "";
   let failedBytes = 0;
@@ -115,33 +117,19 @@
   $: leftPx = (viewW - wPx) / 2 + panX;
   $: topPx = (viewH - hPx) / 2 + panY;
 
-  function freeUrls() {
-    while (urls.length) {
-      const u = urls.pop();
-      if (u) URL.revokeObjectURL(u);
-    }
-  }
-
-  /** A blob URL plus the dimensions its bytes actually decode to — probed
-   *  off-screen, so the displayed <img> renders at the right size on frame
-   *  one (no 0-px flash, no layout jump). */
-  function withDims(url: string): Promise<{ url: string; w: number; h: number }> {
-    return new Promise((resolve, reject) => {
-      const probe = new Image();
-      probe.onload = () => resolve({ url, w: probe.naturalWidth, h: probe.naturalHeight });
-      probe.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("not a decodable image"));
-      };
-      probe.src = url;
-    });
-  }
-
-  /** One page, extracted from the archive (two Range reads) and probed. */
-  function pageData(au: Auth, f: PutFile, entry: ZipEntry) {
-    return extractEntry(au, f, entry).then(({ data, mime }) =>
-      withDims(URL.createObjectURL(new Blob([data], { type: mime })))
-    );
+  /** One page: a cache hit (no network at all) or the range-read +
+   *  inflate + probe path. New bytes go INTO the cache — from that moment
+   *  the cache owns the blob (eviction/sign-out revoke it, never the
+   *  screen), and a turn back through this page is a hit. */
+  function pageData(au: Auth, f: PutFile, entry: ZipEntry, key: string) {
+    const hit = pageCache.get(key);
+    if (hit) return Promise.resolve({ url: hit.url, w: hit.w, h: hit.h });
+    return extractEntry(au, f, entry)
+      .then(({ data, mime }) => probeImage(URL.createObjectURL(new Blob([data], { type: mime }))))
+      .then((r) => {
+        pageCache.put(key, { url: r.url, w: r.w, h: r.h });
+        return r;
+      });
   }
 
   interface PageResult {
@@ -162,7 +150,6 @@
     failedBytes = 0;
     attempt += 1;
     const mine = attempt;
-    freeUrls();
     slots = [];
 
     const au = currentAuth();
@@ -177,9 +164,10 @@
     if (hit) prefetched = null;
 
     const datas: Promise<PageResult>[] = sheet.pages.map((p, i) => {
+      const key = pageKey(file.id, p);
       const d = hit && hit.promises[i]
         ? hit.promises[i]
-        : pageData(au, file, model.pages[p].entry);
+        : pageData(au, file, model.pages[p].entry, key);
       return d.then(
         (r) => ({ ok: true, page: p, url: r.url, w: r.w, h: r.h }),
         (err) => {
@@ -190,13 +178,10 @@
     });
 
     Promise.all(datas).then((results) => {
-      if (mine !== attempt) {
-        results.forEach((r) => {
-          if (r.ok) URL.revokeObjectURL(r.url); // superseded — dead weight
-        });
-        return;
-      }
+      // superseded results are KEPT: their bytes were read, they sit in
+      // the LRU, and the next turn through them is a cache hit
       const fail = results.find((r) => !r.ok);
+      if (mine !== attempt) return;
       if (fail) {
         const pg = model.pages[fail.page];
         failedPage = pg ? pg.base : "";
@@ -205,7 +190,6 @@
         return;
       }
       slots = results.map((r) => ({ url: r.url, w: r.w, h: r.h }));
-      urls.push(...results.map((r) => r.url));
       sheetState = "ready";
       syncStore();
       saveProgress();
@@ -215,7 +199,7 @@
   }
 
   function onImgError() {
-    // the probe (withDims) catches decode failures first; this is the
+    // the probe (probeImage) catches decode failures first; this is the
     // <img>'s own honest safety net
     if (sheetState === "ready") sheetState = "error";
   }
@@ -243,6 +227,7 @@
     if (!forward && !backward) return;
     const next = forward ? sheetIdx + 1 : sheetIdx - 1;
     if (next < 0 || next >= sheets.length) return; // the honest stop at either end
+    lastMove = forward ? "forward" : "backward"; // the prefetch follows you
     // Persist the turn NOW, not when the sheet finishes loading: a Back
     // during a slow 6 MB page load must not lose the turn (the page-mode
     // code saved in step(); the sheet rewrite regressed it — caught by
@@ -255,22 +240,26 @@
     loadSheet(next);
   }
 
-  /* ---------------- the prefetch (the next sheet, bounded) ------------- */
+  /* ---------------- the prefetch (one sheet ahead of where you're HEADING) -
+   * The C1's ask: when you're going back, prefetch backwards too. The
+   * last move decides; a fresh open defaults to forward. (Already-read
+   * sheets don't need prefetching at all — they're in the LRU cache.) */
   interface SheetPrefetch {
     sheet: number;
     promises: (Promise<{ url: string; w: number; h: number }> | null)[];
   }
   let prefetched: SheetPrefetch | null = null;
+  let lastMove: "forward" | "backward" = "forward";
 
   function prefetch() {
     prefetched = null; // a fresh decision on every call
     const au = currentAuth();
     if (!model || !file || !au) return;
-    const nextSheet = sheetIdx + 1;
-    if (nextSheet >= sheets.length) return; // last sheet — nothing to prefetch, and that is fine
+    const nextSheet = lastMove === "forward" ? sheetIdx + 1 : sheetIdx - 1;
+    if (nextSheet < 0 || nextSheet >= sheets.length) return; // the honest stop at either end
     const next = sheets[nextSheet].pages;
     const promises = next.map((p) => {
-      const d = pageData(au, file, model.pages[p].entry);
+      const d = pageData(au, file, model.pages[p].entry, pageKey(file.id, p));
       // keep the unmount case quiet: a prefetch no turn ever consumes must
       // not surface as an unhandled rejection
       d.catch(() => undefined);
@@ -362,12 +351,10 @@
       remote.clearHandlers(); // no stale handlers leak into the library
       if (hideTimer) clearTimeout(hideTimer);
       if (flashTimer) clearTimeout(flashTimer);
-      freeUrls();
-      if (prefetched) {
-        prefetched.promises.forEach((d) => {
-          if (d) d.then((r) => URL.revokeObjectURL(r.url), () => undefined);
-        });
-      }
+      // no blob cleanup: the LRU cache owns every page (it survives screen
+      // swaps on purpose — the next open is a hit); sign-out clears it.
+      // A prefetch still in flight simply lands in the cache, quieted by
+      // the .catch above.
     };
   });
 
