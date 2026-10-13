@@ -209,19 +209,7 @@ test("openArchive + extractEntry: a file bigger than the tail lists AND extracts
   // tail-local scan position. Pad the zip past 256 KB (with every internal
   // pointer shifted, so it stays a valid archive) so file space != tail
   // space — the listing AND an extraction must both come back correct.
-  const padLen = 300 * 1024;
-  const shifted = new Uint8Array(zipBytes); // copy: the original stays unshifted
-  const dv = new DataView(shifted.buffer, shifted.byteOffset, shifted.byteLength);
-  const eocd = shifted.length - 22; // makeZip writes no zip comment
-  const cdOff = dv.getUint32(eocd + 16, true);
-  const count = dv.getUint16(eocd + 10, true);
-  for (let i = 0, off = cdOff; i < count; i++, off += 46 + dv.getUint16(off + 28, true) + dv.getUint16(off + 30, true) + dv.getUint16(off + 32, true)) {
-    dv.setUint32(off + 42, dv.getUint32(off + 42, true) + padLen, true); // local header offset
-  }
-  dv.setUint32(eocd + 16, cdOff + padLen, true); // EOCD: where the CD really starts
-  const bigFile = new Uint8Array(padLen + shifted.length);
-  bigFile.fill(0xaa, 0, padLen);
-  bigFile.set(shifted, padLen);
+  const bigFile = shiftZipForPadding(zipBytes, 300 * 1024);
   const rf = rangeFetch(bigFile);
   const restore = withFetch(rf.fetchImpl);
   const BIG = { id: 15, name: "big.zip", size: bigFile.length };
@@ -233,7 +221,7 @@ test("openArchive + extractEntry: a file bigger than the tail lists AND extracts
       "a >256KB archive must list from its tail"
     );
     assert.ok(
-      model.entries.every((e) => e.offset >= padLen),
+      model.entries.every((e) => e.offset >= 300 * 1024),
       "local header offsets are FILE space (the padding is in front of the data)"
     );
     const stored = model.entries.find((e) => e.name === "notes.txt");
@@ -243,6 +231,79 @@ test("openArchive + extractEntry: a file bigger than the tail lists AND extracts
     restore();
   }
 });
+
+/* ---------------- two-stage tail: probe the EOCD, fetch the CD exactly ----
+ * The EOCD is 22 bytes, but a zip comment may push it up to 65 557 bytes
+ * back from the end — so stage 1 fetches a 64KB window (guaranteed to hold
+ * it), reads the CD pointer, and stage 2 fetches EXACTLY the central
+ * directory. A flat 256KB tail was blunt (wasted bandwidth) and dishonest
+ * (a zip whose index exceeds 256KB was refused as "not a ZIP").
+ */
+test("openArchive: a big file with a small index costs ONE 64KB request (not a flat 256KB tail)", async () => {
+  // The CD always sits directly in front of the EOCD (zip layout), so any
+  // index under 64 KB already sits inside the probe window — stage 2 is
+  // skipped and the whole listing costs one small request.
+  const bigFile = shiftZipForPadding(zipBytes, 300 * 1024);
+  const rf = rangeFetch(bigFile);
+  const restore = withFetch(rf.fetchImpl);
+  try {
+    const model = await zx.openArchive(AUTH, { id: 15, name: "big.zip", size: bigFile.length });
+    assert.equal(model.entries.length, 2);
+    assert.equal(rf.calls.length, 1, "probe window only — the CD fit inside it");
+    const [probe] = rf.calls.map((c) => c.range.match(/^bytes=(\d+)-(\d+)$/));
+    assert.equal(+probe[2], bigFile.length - 1, "the probe ends at the file end");
+    const probeLen = +probe[2] - +probe[1] + 1;
+    assert.ok(probeLen <= 65600, `one 64KB window (${probeLen}B), not a 256KB tail`);
+    assert.ok(probeLen < 100 * 1024, "less than half the old flat fetch");
+  } finally {
+    restore();
+  }
+});
+
+test("openArchive: a zip whose index is bigger than the probe window costs probe + exact CD (and still lists)", async () => {
+  // 8000 tiny entries => a ~432KB central directory: the old 256KB tail
+  // could not hold it and the only valid EOCD was rejected as "not a ZIP".
+  // Two stages: the 64KB window finds the EOCD, then exactly the CD.
+  const many = [];
+  for (let i = 0; i < 8000; i++) {
+    many.push({ name: "f" + String(i).padStart(5, "0") + ".txt", data: new Uint8Array(Buffer.from("x")), method: 0 });
+  }
+  const manyZip = makeZip(many);
+  const rf = rangeFetch(manyZip);
+  const restore = withFetch(rf.fetchImpl);
+  try {
+    const model = await zx.openArchive(AUTH, { id: 15, name: "many.zip", size: manyZip.length });
+    assert.equal(model.entries.length, 8000, "every entry of a huge index is listed");
+    assert.ok(!model.zip64);
+    const ranges = rf.calls.map((c) => c.range.match(/^bytes=(\d+)-(\d+)$/));
+    assert.equal(ranges.length, 2, "probe + precise CD — no third request");
+    const [probe, cd] = ranges;
+    assert.ok(+probe[2] - +probe[1] + 1 <= 65600, "stage 1 is the EOCD window");
+    assert.ok(+cd[1] < +probe[1], "stage 2 starts BEFORE the window (the CD is bigger than the window)");
+    assert.equal(+cd[2], manyZip.length - 1, "…and ends at the file end");
+  } finally {
+    restore();
+  }
+});
+
+function shiftZipForPadding(bytes, padLen) {
+  // A VALID big zip: `bytes` at the end of padLen filler, with every
+  // internal pointer (EOCD cdOffset + each CD entry's local header offset)
+  // shifted by padLen — as if the archive had a big chunk before its CD.
+  const shifted = new Uint8Array(bytes);
+  const dv = new DataView(shifted.buffer, shifted.byteOffset, shifted.byteLength);
+  const eocd = shifted.length - 22; // makeZip writes no zip comment
+  const cdOff = dv.getUint32(eocd + 16, true);
+  const count = dv.getUint16(eocd + 10, true);
+  for (let i = 0, off = cdOff; i < count; i++, off += 46 + dv.getUint16(off + 28, true) + dv.getUint16(off + 30, true) + dv.getUint16(off + 32, true)) {
+    dv.setUint32(off + 42, dv.getUint32(off + 42, true) + padLen, true);
+  }
+  dv.setUint32(eocd + 16, cdOff + padLen, true);
+  const file = new Uint8Array(padLen + shifted.length);
+  file.fill(0xaa, 0, padLen);
+  file.set(shifted, padLen);
+  return file;
+}
 
 /* ---------------- extractEntry ---------------- */
 async function openAndFind(rf, name) {

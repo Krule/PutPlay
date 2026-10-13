@@ -5,7 +5,7 @@
   import { auth, loadAuth, type AuthState } from "../store/auth";
   import { nav, requestBackLevel, routeNav } from "../store/nav";
   import { library, resetLibrary } from "../store/library";
-  import { config, loadConfig } from "../store/config";
+  import { loadConfig } from "../store/config";
   import { openArchive } from "../putio/zip-extract";
   import { buildComicModel, isComicZip } from "../putio/comic";
   import type { ZipModel } from "../putio/zip";
@@ -202,9 +202,10 @@
     const file = e.detail.file;
     const au = currentAuth();
     if (!au) return;
-    // The tail read (256 KB) is cheap — and the App pays for it, because the
-    // App decides what the file IS: a book goes to the reader, a folder goes
-    // to the browser. Both branches get the parsed model for free.
+    // The listing read (a 64KB EOCD window, plus the index when it is
+    // bigger) is cheap — and the App pays for it, because the App decides
+    // what the file IS: a book goes to the reader, a folder goes to the
+    // browser. Both branches get the parsed model for free.
     let model: ZipModel;
     try {
       model = await openArchive(au, file);
@@ -220,7 +221,9 @@
       const remembered = progressFor(file.id);
       // a per-comic choice beats the global Settings default; a remembered
       // page is clamped against the book as it is NOW (re-scans happen)
-      const direction = remembered ? remembered.direction : get(config).readingDirection;
+      // No Settings default (removed 2026-10-13): a never-flipped comic is
+      // LTR; the per-comic flip lives in the reader (Up) and the progress store.
+      const direction: "ltr" | "rtl" = remembered ? remembered.direction : "ltr";
       const index = remembered ? clampResume(remembered.page, book.pages.length) : 0;
       setComic(file, book, index, direction);
       comicFile = file;

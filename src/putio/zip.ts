@@ -70,15 +70,34 @@ function decodeName(bytes: Uint8Array, utf8: boolean): string {
   return utf8 ? new TextDecoder("utf-8").decode(bytes) : new TextDecoder("latin1").decode(bytes);
 }
 
-interface EocdCandidate {
-  at: number;
+interface EocdFields {
   /** CD start in FILE space (as the EOCD declares it). */
   cdOffset: number;
-  /** CD start in TAIL space (cdOffset - tailStart). */
-  cdLocal: number;
   cdSize: number;
   cdEntries: number;
   zip64: boolean;
+}
+
+/**
+ * The EOCD's raw fields at a TAIL offset (signature already matched).
+ * Null when the candidate's comment runs past the buffer end or it is a
+ * multi-disk archive (neither is browseable in v1). No central-directory
+ * bytes are read — that is the point: the CD may lie before the fetched
+ * window (see findEocdHint).
+ */
+function eocdFieldsAt(dv: DataView, at: number, len: number): EocdFields | null {
+  const commentLen = u16(dv, at + 20);
+  if (at + 22 + commentLen > len) return null;
+  if (u16(dv, at + 4) !== 0 || u16(dv, at + 6) !== 0) return null; // multi-disk: not v1
+
+  const cdOffset = u32(dv, at + 16);
+  const cdSize = u32(dv, at + 12);
+  const cdEntries = u16(dv, at + 10);
+  const zip64 =
+    at >= 20 && u32(dv, at - 20) === EOCD64_LOCATOR_SIG
+      ? true
+      : cdOffset === EOCDFIELD_MAX || cdSize === EOCDFIELD_MAX || cdEntries === 0xffff;
+  return { cdOffset, cdSize, cdEntries, zip64 };
 }
 
 /**
@@ -94,30 +113,47 @@ interface EocdCandidate {
  * the file (tailStart 0) and both spaces coincide — which is why this bug
  * was invisible on every fixture until a real >256 KB comic hit the C1.
  */
-function candidateAt(dv: DataView, at: number, len: number, tailStart: number): EocdCandidate | null {
-  const commentLen = u16(dv, at + 20);
-  if (at + 22 + commentLen > len) return null;
-  if (u16(dv, at + 4) !== 0 || u16(dv, at + 6) !== 0) return null; // multi-disk: not v1
+function candidateAt(dv: DataView, at: number, len: number, tailStart: number): EocdFields | null {
+  const f = eocdFieldsAt(dv, at, len);
+  if (!f) return null;
+  if (f.zip64) return f;
 
-  const cdOffset = u32(dv, at + 16);
-  const cdSize = u32(dv, at + 12);
-  const cdEntries = u16(dv, at + 10);
-  const cdLocal = cdOffset - tailStart;
-
-  const zip64 =
-    at >= 20 && u32(dv, at - 20) === EOCD64_LOCATOR_SIG
-      ? true
-      : cdOffset === EOCDFIELD_MAX || cdSize === EOCDFIELD_MAX || cdEntries === 0xffff;
-  if (zip64) return { at, cdOffset, cdLocal, cdSize, cdEntries, zip64: true };
-
+  const cdLocal = f.cdOffset - tailStart;
   // file-space sanity: the CD ends at/before the EOCD…
-  if (cdOffset + cdSize > tailStart + at + 22) return null;
+  if (f.cdOffset + f.cdSize > tailStart + at + 22) return null;
   // …and it must be WHOLLY inside the fetched tail…
-  if (cdLocal < 0 || cdLocal + cdSize > at + 22) return null;
+  if (cdLocal < 0 || cdLocal + f.cdSize > at + 22) return null;
   // …and it must look like a central directory of the size it claims.
-  if (cdEntries > 0 && (u32(dv, cdLocal) !== CD_SIG || cdSize < cdEntries * 46)) return null;
-  if (cdEntries === 0 && cdSize !== 0) return null;
-  return { at, cdOffset, cdLocal, cdSize, cdEntries, zip64: false };
+  if (f.cdEntries > 0 && (u32(dv, cdLocal) !== CD_SIG || f.cdSize < f.cdEntries * 46)) return null;
+  if (f.cdEntries === 0 && f.cdSize !== 0) return null;
+  return f;
+}
+
+export interface EocdHint {
+  /** CD start in FILE space, as the EOCD declares it. */
+  cdOffset: number;
+  cdSize: number;
+  cdEntries: number;
+  zip64: boolean;
+}
+
+/**
+ * Stage 1 of the two-stage open: find the EOCD in a window (the last 64 KB,
+ * or the whole file) and return its central-directory pointer — WITHOUT
+ * reading the CD bytes, which may lie before the window. Null when the
+ * window holds no valid EOCD (not a zip, or truncated). The caller fetches
+ * exactly [cdOffset, end) as stage 2 and hands that to parseZip.
+ */
+export function findEocdHint(tail: Uint8Array): EocdHint | null {
+  const dv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  const from = Math.max(0, tail.length - 22 - MAX_COMMENT);
+  for (let i = tail.length - 22; i >= from; i--) {
+    if (u32(dv, i) !== EOCD_SIG) continue;
+    const f = eocdFieldsAt(dv, i, tail.length);
+    if (!f) continue;
+    return { cdOffset: f.cdOffset, cdSize: f.cdSize, cdEntries: f.cdEntries, zip64: f.zip64 };
+  }
+  return null;
 }
 
 /**
@@ -138,7 +174,10 @@ export function parseZip(tail: Uint8Array, tailStart: number = 0): ZipModel {
     const c = candidateAt(dv, i, tail.length, tailStart);
     if (!c) continue;
     if (c.zip64) return { entries: [], zip64: true };
-    return { entries: parseCentralDirectory(dv, c.cdLocal, c.cdEntries), zip64: false };
+    return {
+      entries: parseCentralDirectory(dv, c.cdOffset - tailStart, c.cdEntries),
+      zip64: false,
+    };
   }
 
   throw new ZipError("no-eocd", "Not a ZIP archive — the end-of-central-directory record was not found.");

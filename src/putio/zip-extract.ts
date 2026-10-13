@@ -1,11 +1,14 @@
 /**
  * ZIP extract layer — the async side of the pure parser (zip.ts).
  *
- * Listing costs ONE Range request (the file's tail). Opening a file costs
- * two small ones: the 30-byte local header (its name/extra lengths decide
- * where the data starts — they can differ from the central directory's),
- * then exactly the entry's bytes. Deflated entries inflate with pako
- * (Chromium 79 has no DecompressionStream).
+ * Listing costs TWO small Range requests at most: a 64 KB window that is
+ * guaranteed to contain the EOCD (a zip comment may push it up to 65 557
+ * bytes back from the end), then EXACTLY the central directory the EOCD
+ * points at — never a flat 256 KB tail, and never more than the index
+ * weighs. Opening a file costs two small ones: the 30-byte local header
+ * (its name/extra lengths decide where the data starts — they can differ
+ * from the central directory's), then exactly the entry's bytes. Deflated
+ * entries inflate with pako (Chromium 79 has no DecompressionStream).
  *
  * Everything that is not provably openable is refused by name: ZIP64,
  * password-protected archives, unknown compression methods, and entries
@@ -15,6 +18,7 @@ import { inflateRaw } from "pako";
 import { streamURL, type Auth } from "./api";
 import {
   parseZip,
+  findEocdHint,
   localDataStart,
   ZipError,
   type ZipModel,
@@ -22,8 +26,10 @@ import {
 } from "./zip";
 import type { PutFile } from "./types";
 
-/** How much of the tail we fetch for the EOCD + central directory. */
-export const TAIL_BYTES = 256 * 1024;
+/** Stage 1: the EOCD window. 22 (EOCD) + 65 535 (max zip comment) + slack. */
+export const EOCD_WINDOW = 65600;
+/** A central directory beyond this is a pathological index for a TV webview. */
+const MAX_CD_BYTES = 8 * 1024 * 1024;
 /** One entry may not inflate to more than this — the webview's memory says no. */
 export const MAX_EXTRACT_BYTES = 64 * 1024 * 1024;
 
@@ -79,22 +85,48 @@ async function streamTotalSize(url: string): Promise<number> {
 }
 
 /**
- * Open an archive for browsing: fetch the tail, parse it, and refuse the
- * archives v1 cannot honestly browse (ZIP64, encrypted, multi-disk — the
- * parser already rejects the last).
+ * Open an archive for browsing — two precise stages, never a flat tail:
+ * 1. fetch the EOCD window (last 64 KB; the whole file when smaller),
+ * 2. read the EOCD's central-directory pointer and fetch EXACTLY that range
+ *    (unless it already sits inside the window — small zips cost one request).
+ * Refuses what v1 cannot honestly browse: ZIP64, encrypted, a CD that runs
+ * past the end of the file, and indexes bigger than MAX_CD_BYTES.
  */
 export async function openArchive(auth: Auth, file: PutFile): Promise<ZipModel> {
   const url = streamURL(auth, file.id);
   let size = typeof file.size === "number" && Number.isFinite(file.size) && file.size > 0 ? file.size : NaN;
   if (!Number.isFinite(size)) {
-    size = await streamTotalSize(url); // shelf resumes don't remember the size — ask
+    size = await streamTotalSize(url); // a caller without a remembered size asks — never guess
   }
-  const start = Math.max(0, size - TAIL_BYTES);
-  const tail = await rangeBytes(url, start, size - 1);
-  const model = parseZip(tail, start); // start: the tail's position in the file (file-space CD offsets)
-  if (model.zip64) {
+
+  // Stage 1: the EOCD window (a zip comment may push the 22-byte EOCD up to
+  // 65 557 bytes back from the end, so 64 KB + slack is the guaranteed window).
+  const probeStart = Math.max(0, size - EOCD_WINDOW);
+  const probe = await rangeBytes(url, probeStart, size - 1);
+  const hint = findEocdHint(probe);
+  if (!hint) {
+    throw new ZipError("no-eocd", "Not a ZIP archive — the end-of-central-directory record was not found.");
+  }
+  if (hint.zip64) {
     throw new ZipError("zip64", "This archive uses ZIP64 (very large) — browsing it isn't supported yet.");
   }
+
+  // Stage 2: exactly the central directory the EOCD points at.
+  const cdFitsProbe = hint.cdOffset >= probeStart && hint.cdOffset + hint.cdSize <= probeStart + probe.length;
+  let model: ZipModel;
+  if (cdFitsProbe) {
+    model = parseZip(probe, probeStart);
+  } else {
+    if (hint.cdOffset + hint.cdSize > size) {
+      throw new ZipError("no-eocd", "Not a ZIP archive — its central directory runs past the end of the file.");
+    }
+    if (hint.cdSize > MAX_CD_BYTES) {
+      throw new ZipError("too-large", "This archive has too many entries to browse on the TV.");
+    }
+    const cd = await rangeBytes(url, hint.cdOffset, size - 1);
+    model = parseZip(cd, hint.cdOffset); // cdOffset: the fetch's position in the file
+  }
+
   if (model.entries.some((e) => e.encrypted)) {
     throw new ZipError("encrypted", "This archive is password-protected — PutPlay can't open it.");
   }

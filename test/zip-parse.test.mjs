@@ -175,6 +175,27 @@ test("parseZip: the same tail parsed at the WRONG offset is still refused", () =
   );
 });
 
+test("findEocdHint: the EOCD window yields the CD pointer in FILE space (small zip: the CD fits the window)", () => {
+  // Stage 1 of the two-stage open: a 64KB window at the end of a big file.
+  // The hint carries the EOCD's central-directory pointer (file space) —
+  // for a small index it sits INSIDE the window, so the caller needs no
+  // second request (the openArchive test pins that).
+  const file = paddedFile(400 * 1024);
+  const winStart = file.length - 65600;
+  const win = file.slice(winStart);
+  const hint = zip.findEocdHint(win);
+  assert.ok(hint, "the EOCD inside the 64KB window is found");
+  assert.equal(hint.zip64, false);
+  assert.equal(hint.cdEntries, 6, "zip-basic.zip has 6 entries");
+  assert.ok(hint.cdOffset >= winStart, "the small CD sits inside the window (no stage 2 needed)");
+  assert.ok(hint.cdOffset + hint.cdSize <= file.length, "…and its declared range stays inside the file");
+});
+
+test("findEocdHint: garbage has no hint (never a throw)", () => {
+  assert.equal(zip.findEocdHint(new Uint8Array(65600).fill(0xaa)), null);
+  assert.equal(zip.findEocdHint(new Uint8Array(22)), null);
+});
+
 test("parseZip: the real Preacher #01 tail from put.io's CDN (TV regression)", () => {
   // 256 KB tail of 'Preacher - Issue 01.cbz' (6,148,002 B) as served by
   // s87-cdn77.put.io on 2026-10-13 — the exact bytes the C1 rejected with
