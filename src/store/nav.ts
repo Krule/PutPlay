@@ -12,7 +12,7 @@ export interface NavState {
 }
 
 /** Screens the App can be showing. */
-export type AppScreen = "connect" | "library" | "player" | "image" | "archive" | "settings";
+export type AppScreen = "connect" | "library" | "player" | "image" | "archive" | "comic" | "settings";
 
 /**
  * EDGE-triggered screen routing for the nav counters (a pure decision so it

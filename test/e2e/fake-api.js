@@ -145,13 +145,38 @@
             start_from: 0
           },
           {
-            // ARCHIVE (viewer e2e): a real zip at the root — open it like a
-            // folder, browse pages/, open an image inside. /stream serves it
-            // WITH Range support (the parser depends on Range).
+            // ARCHIVE (viewer e2e): a plain zip at the root — ONE image, so
+            // the App's post-tail decision sends it to the archive browser,
+            // not the comic reader (>= 2 decodable images is the comic rule).
+            // /stream serves it WITH Range support (the parser depends on it).
             id: 15,
-            name: "comic.zip",
-            size: 672,
+            name: "archive.zip",
+            size: 495,
             content_type: "application/zip",
+            parent_id: null,
+            is_folder: 0,
+            start_from: 0
+          },
+          {
+            // COMIC (reader e2e): a real CBZ at the root. content_type is
+            // application/octet-stream on purpose — put.io does not know
+            // "CBZ", so the app's entry decision must be extension-based.
+            id: 16,
+            name: "story.cbz",
+            size: 3469,
+            content_type: "application/octet-stream",
+            parent_id: null,
+            is_folder: 0,
+            start_from: 0
+          },
+          {
+            // RAR comic (e2e refusal path): matched by name and refused with
+            // an honest toast — it is never fetched, so a placeholder size
+            // is all it needs.
+            id: 17,
+            name: "mystery.cbr",
+            size: 1234,
+            content_type: "application/octet-stream",
             parent_id: null,
             is_folder: 0,
             start_from: 0
@@ -246,15 +271,23 @@
       if (mid === 13 || mid === 14) {
         return origFetch("/test/e2e/wall-" + mid + ".png");
       }
-      if (mid === 15) {
-        // the archive e2e: honour Range (tail read + per-entry reads)
-        return origFetch("/test/e2e/comic.zip").then(function (r) {
+      // the archive/comic e2e: honour Range (tail read + per-entry reads),
+      // and count every request for the bandwidth-honesty assertions
+      if (mid === 15 || mid === 16) {
+        var zipPath = mid === 15 ? "/test/e2e/archive.zip" : "/test/e2e/story.cbz";
+        var zipType = mid === 15 ? "application/zip" : "application/octet-stream";
+        return origFetch(zipPath).then(function (r) {
           return r.arrayBuffer().then(function (buf) {
             var total = buf.byteLength;
             var range = init && init.headers ? init.headers.Range : null;
+            window.__ranges = window.__ranges || [];
+            window.__ranges.push({ url: zipPath, range: range, ts: Date.now() });
             var rm = range ? String(range).match(/^bytes=(\d+)-?(\d*)$/) : null;
             if (!rm) {
-              return new Response(buf, { status: 200, headers: { "Content-Length": String(total) } });
+              return new Response(buf, {
+                status: 200,
+                headers: { "Content-Length": String(total), "Content-Type": zipType }
+              });
             }
             var start = parseInt(rm[1], 10);
             var end = rm[2] ? parseInt(rm[2], 10) : total - 1;
@@ -264,7 +297,7 @@
               headers: {
                 "Content-Range": "bytes " + start + "-" + end + "/" + total,
                 "Content-Length": String(end - start + 1),
-                "Content-Type": "application/zip"
+                "Content-Type": zipType
               }
             });
           });

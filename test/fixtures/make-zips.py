@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Reproducible ZIP fixtures for the parser tests (test/fixtures/).
+"""Reproducible ZIP fixtures for the parser + comic-reader tests.
 
 Run:  python3 test/fixtures/make-zips.py
 All fixtures are byte-stable (fixed mtime, no timestamps in names).
+
+The comic fixtures mirror two real reference files from the user's library:
+  - comic-manga-style.zip  — flat, zero-padded `pNNN`, long names (Mushoku Tensei)
+  - comic-western-style.zip — pages in a subfolder, `COVER` + `page NN of N`,
+                             with a ComicInfo.xml (Preacher)
 """
 import os
 import struct
@@ -93,9 +98,59 @@ def main():
     with open(f"{HERE}/zip-zip64.zip", "wb") as f:
         f.write(b"\x00" * 10 + eocd64 + locator + eocd)
 
+    make_comics()
+
     for name in sorted(os.listdir(HERE)):
         if name.endswith(".zip"):
             print(f"{name:24s} {os.path.getsize(os.path.join(HERE, name))} bytes")
+
+
+def make_comics():
+    e2e_dir = os.path.join(HERE, "..", "e2e")
+    os.makedirs(e2e_dir, exist_ok=True)
+
+    def pg(i: int) -> bytes:
+        # one deterministic colour per page
+        return png_bytes(((i * 37) & 0xFF, (i * 71 + 40) & 0xFF, (i * 113 + 80) & 0xFF))
+
+    # 7. manga style: flat, zero-padded page numbers, long names, one spread
+    with zipfile.ZipFile(f"{HERE}/comic-manga-style.zip", "w") as zf:
+        names = ["p000 [Cover]", "p001", "p002-003", "p004", "p005",
+                 "p006", "p007", "p008", "p009", "p010 [Cover]"]
+        for n in names:
+            seed = sum(ord(c) for c in n) % 7  # deterministic (hash() is seed-randomized)
+            write_zinfo(zf, f"Tensei - v01 - {n} [danke] {{HQ}}.png", pg(seed))
+
+    # 8. western style: subfolder, COVER + "page NN of N" + ComicInfo.xml
+    xml = ("<?xml version=\"1.0\"?>\n<ComicInfo>\n  <Series>Preacher</Series>\n"
+           "  <PageCount>12</PageCount>\n</ComicInfo>\n")
+    with zipfile.ZipFile(f"{HERE}/comic-western-style.zip", "w") as zf:
+        write_zinfo(zf, "ComicInfo.xml", xml.encode(), stored=True)
+        write_zinfo(zf, "Preacher - Issue 01/Preacher - Issue 01 - COVER.png", pg(0))
+        for i in range(1, 12):
+            write_zinfo(zf, f"Preacher - Issue 01/Preacher - Issue 01 - page {i:02d} of 11.png", pg(i))
+
+    # 9. the lexicographic trap: 1.png … 12.png (lexicographic would read
+    #    1, 10, 11, 12, 2, 3 … — natural sort must not)
+    with zipfile.ZipFile(f"{HERE}/comic-natural.zip", "w") as zf:
+        for i in range(1, 13):
+            write_zinfo(zf, f"{i}.png", pg(i))
+
+    # 10. a corrupt page: 2.png is junk bytes under a decodable name — the
+    #     reader's per-page error state (D8) lives here, not in the model.
+    with zipfile.ZipFile(f"{HERE}/comic-undecodable.zip", "w") as zf:
+        write_zinfo(zf, "1.png", pg(1))
+        write_zinfo(zf, "2.png", b"\x00\x01BROKEN-NOT-A-PNG", stored=True)
+        write_zinfo(zf, "3.png", pg(3))
+
+    # 11. e2e: test/e2e/story.cbz — western-style, UNZERO-PAGED ("page 1 of 12"
+    #     … "page 12 of 12") so the browser-side ordering is e2e-verified too.
+    with zipfile.ZipFile(f"{e2e_dir}/story.cbz", "w") as zf:
+        write_zinfo(zf, "ComicInfo.xml", xml.encode(), stored=True)
+        write_zinfo(zf, "Story - Issue 01/Story - Issue 01 - COVER.png", pg(0))
+        for i in range(1, 13):
+            write_zinfo(zf, f"Story - Issue 01/Story - Issue 01 - page {i} of 12.png", pg(i))
+    print(f"{'story.cbz (e2e)':24s} {os.path.getsize(os.path.join(e2e_dir, 'story.cbz'))} bytes")
 
 
 if __name__ == "__main__":

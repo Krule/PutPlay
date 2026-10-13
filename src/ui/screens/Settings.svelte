@@ -26,6 +26,7 @@
   $: cfgSub = c?.subtitleLang ?? "";
   $: cfgScale = c?.subScale ?? 1;
   $: cfgFallback = c?.audioFallback ?? "ask";
+  $: cfgDir = c?.readingDirection ?? "ltr";
 
   const SOURCE_OPTIONS: { kind: ConfigState["source"]; label: string }[] = [
     { kind: "original", label: "Original" },
@@ -143,6 +144,7 @@
         subtitleLang: cfgSub,
         subScale: cfgScale,
         audioFallback: cfgFallback,
+        readingDirection: cfgDir,
       });
     }
     saveConfig().catch(() => undefined);
@@ -211,6 +213,16 @@
             <button class="chip" class:sel={cfgSource === o.kind} data-focus on:click={() => (cfgSource = o.kind)}>{o.label}</button>
           {/each}
         </div>
+      </div>
+
+      <div class="card">
+        <p class="card-title">Comics</p>
+        <p class="opt-label">Reading direction</p>
+        <div class="opt-row">
+          <button class="chip" class:sel={cfgDir === "ltr"} data-focus on:click={() => (cfgDir = "ltr")}>Left to right</button>
+          <button class="chip" class:sel={cfgDir === "rtl"} data-focus on:click={() => (cfgDir = "rtl")}>Right to left (manga)</button>
+        </div>
+        <p class="note">Applies to comics you open for the first time. Each comic remembers the direction you actually choose — Up while reading flips it, and the choice sticks to that book.</p>
       </div>
 
       <div class="card danger-zone">

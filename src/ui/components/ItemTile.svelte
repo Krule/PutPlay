@@ -20,7 +20,11 @@
 
   const isFolder = putioIsFolder(file);
   const isVideo = !isFolder && file.content_type ? file.content_type.startsWith("video/") : false;
-  const isArchive = !isFolder && file.content_type ? file.content_type.startsWith("application/") && !isVideo : false;
+  const isComic = !isFolder && /\.cbz$/i.test(file.name || "");
+  const isArchive =
+    !isFolder && !isComic && file.content_type
+      ? file.content_type.startsWith("application/") && !isVideo
+      : false;
 
   $: if (el) {
     if (active) el.dataset.state = "active";
@@ -43,11 +47,13 @@
 </script>
 
 <div class="tile" bind:this={el} data-focus data-state="">
-  <div class="thumb" class:folder={isFolder} class:video={isVideo} class:archive={isArchive}>
+  <div class="thumb" class:folder={isFolder} class:video={isVideo} class:archive={isArchive} class:comic={isComic}>
     {#if file.screenshot && !imgFailed}
       <img src={file.screenshot} alt="" loading="lazy" onerror={() => (imgFailed = true)} />
     {:else if isFolder}
       <span class="glyph">📁</span>
+    {:else if isComic}
+      <span class="glyph">📖</span>
     {:else if isArchive}
       <span class="glyph">🗜️</span>
     {:else if isVideo}
@@ -120,6 +126,9 @@
   }
   .thumb.archive {
     background: linear-gradient(160deg, var(--thumb-archive-1), var(--thumb-archive-2));
+  }
+  .thumb.comic {
+    background: linear-gradient(160deg, var(--thumb-comic-1), var(--thumb-comic-2));
   }
   .chip {
     position: absolute;

@@ -16,6 +16,11 @@ const DECODABLE_EXT_RE = new RegExp(
   "i"
 );
 
+/** Does this file name end in an extension Chromium 79 decodes in an <img>? */
+export function isDecodableImageName(name: string): boolean {
+  return DECODABLE_EXT_RE.test(name);
+}
+
 /** The put.io fields the decisions read (a subset of PutFile). */
 export interface ImageFileEntry {
   id: number;
@@ -35,9 +40,9 @@ export function isImageFile(f: ImageFileEntry): boolean {
   const name = f.name || "";
   const ct = (f.content_type || "").toLowerCase();
   if (ct) {
-    return ct.startsWith("image/") && DECODABLE_EXT_RE.test(name);
+    return ct.startsWith("image/") && isDecodableImageName(name);
   }
-  return DECODABLE_EXT_RE.test(name);
+  return isDecodableImageName(name);
 }
 
 

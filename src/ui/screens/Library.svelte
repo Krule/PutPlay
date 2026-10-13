@@ -9,6 +9,8 @@
   import { nav, requestSettings } from "../../store/nav";
   import { libraryOkAction } from "../../putio/library-ok";
   import { isImageFile } from "../../putio/image";
+  import { shelf, shelfSorted } from "../../store/comic";
+  import type { ComicProgress } from "../../putio/comic-progress";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
   import ItemTile from "../components/ItemTile.svelte";
@@ -41,6 +43,29 @@
 
   let gridEl: HTMLElement;
 
+  // the continue-reading shelf (root only): comics with a saved position.
+  // Subscribed like the library and auth stores (subscribe-in-onMount, local
+  // state) — never a $-binding, never a get() inside a reactive statement.
+  let shelfRows: ComicProgress[] = [];
+  let shelfEl: HTMLElement;
+
+  function onShelfOpen(p: ComicProgress) {
+    // The reader only needs id + name — no live PutFile required. If the
+    // file has vanished from put.io, the App's tail read fails and the
+    // honest toast keeps us in the library (the same path as a deleted tile).
+    dispatch("open-archive", { file: { id: p.file_id, name: p.name } });
+  }
+
+  // In the SCRIPT, not the template attribute: Svelte's template parser is
+  // plain-JS (svelte-preprocess only transforms the <script>), so a TS
+  // generic like .closest<HTMLElement> is an "Unexpected token" in markup.
+  function onShelfClick(e: MouseEvent) {
+    const rowEl = (e.target as HTMLElement).closest<HTMLElement>(".shelf-row");
+    if (!rowEl || !shelfEl) return;
+    const i = Number(rowEl.dataset.i || "0");
+    if (shelfRows[i]) onShelfOpen(shelfRows[i]);
+  }
+
   const isVideoFile = (f: PutFile) => !putioIsFolder(f) && /video/i.test(f.content_type || "");
   const isPlayable = (f: PutFile) =>
     isVideoFile(f) || /\.(mp4|mkv|avi|mov|m4v|webm|mp3|m4a|flac|ogg|wav|aac)$/i.test(f.name || "");
@@ -55,11 +80,16 @@
       // Decodable raster image → the fit-to-screen viewer (v1: no zoom).
       // Only provably displayable formats reach here (HEIC/SVG stay closed).
       dispatch("open-image", { file: f });
-    } else if (/\.zip$/i.test(f.name || "")) {
-      // ZIP is browsable (one range read of the tail lists it); the CBR/CBZ
-      // comic path rides on the same viewer later. RAR/7z stay honest.
+    } else if (/\.cbr|\.cbt|\.rar|\.7z$/i.test(f.name || "")) {
+      // Honest refusal: the RAR codec (pako is deflate-only) can't be read
+      // here, so a RAR comic is offered nowhere. Say what IS supported.
+      platform.toast("CBR (RAR) comics aren't supported yet — CBZ only");
+    } else if (/\.zip$/i.test(f.name || "") || /\.cbz$/i.test(f.name || "")) {
+      // ZIP/CBZ is open NOW: the App does the tail read and decides — a book
+      // (>= 2 decodable images) goes to the comic reader, a folder goes to
+      // the archive browser. RAR/7z stay honest.
       dispatch("open-archive", { file: f });
-    } else if (/\.(zip|rar|7z|tar|gz|iso)$/i.test(f.name || "")) {
+    } else if (/\.(tar|gz|iso)$/i.test(f.name || "")) {
       platform.toast("Archive — coming soon");
     } else {
       platform.toast("This file can't be played on the TV");
@@ -113,6 +143,7 @@
     wireRemote();
     const unsubLib = library.subscribe((v) => (s = v));
     const unsubAuth = auth.subscribe((v) => (a = v));
+    const unsubShelf = shelf.subscribe((rows) => (shelfRows = shelfSorted(rows)));
     let lastBack = 0;
     const unsubNav = nav.subscribe((v) => {
       if (v.backLevel !== lastBack) {
@@ -148,7 +179,11 @@
       unsubLib();
       unsubAuth();
       unsubNav();
+      unsubShelf();
       remote.clearHandlers(); // BUG 5: no stale handlers may leak into Settings
+      shelfEl?.querySelectorAll<HTMLElement>(".shelf-row").forEach((r) => {
+        if (r.dataset.__reg) remote.unregister(r);
+      });
       gridEl?.removeEventListener("scroll", onScroll);
       gridEl?.removeEventListener("scroll", syncTileStates);
     };
@@ -179,6 +214,17 @@
 
   $: sortLabel = sortBy === "name" ? "Name" : sortBy === "size" ? "Size" : "Date added";
   $: diskUsedPct = disk ? Math.round((disk.used / disk.size) * 100) : 0;
+
+  // shelf rows register themselves with the remote (D-pad focus) the way the
+  // header buttons do; the delegated click (above) serves mouse + clickActive
+  $: if (shelfEl) {
+    shelfEl.querySelectorAll<HTMLElement>(".shelf-row").forEach((r) => {
+      if (!r.dataset.__reg) {
+        r.dataset.__reg = "1";
+        remote.register(r);
+      }
+    });
+  }
 
   let sortBtn: HTMLButtonElement;
   let settingsBtn: HTMLButtonElement;
@@ -227,6 +273,20 @@
       </button>
     </div>
   </header>
+
+  <!-- continue-reading shelf (library root only) -->
+  {#if folderId === null && !loading && !error && shelfRows.length > 0}
+    <div class="shelf" bind:this={shelfEl} on:click={onShelfClick}>
+      <p class="shelf-title">Continue reading</p>
+      {#each shelfRows as row, i (row.file_id)}
+        <div class="shelf-row" data-focus data-i={i} role="button">
+          <span class="glyph">📖</span>
+          <span class="shelf-name">{row.name}</span>
+          <span class="shelf-pos">{row.page + 1} of {row.total}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- disk bar -->
   {#if disk}
@@ -388,6 +448,57 @@
     color: var(--text);
     font-weight: 700;
   }
+  /* -------- continue-reading shelf (library root only) -------- */
+  .shelf {
+    padding-bottom: 16px;
+  }
+  .shelf-title {
+    margin: 0 0 8px;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    color: var(--text-3);
+  }
+  .shelf-row {
+    display: flex;
+    align-items: center;
+    height: 72px;
+    padding: 0 16px;
+    background: var(--bg-raised);
+    border-radius: var(--r-md);
+    border: 3px solid transparent;
+    transition: transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .shelf-row + .shelf-row {
+    margin-top: 8px;
+  }
+  .shelf-row .glyph {
+    font-size: 32px;
+    margin-right: 16px;
+  }
+  .shelf-name {
+    flex: 1;
+    font-size: var(--fs-body);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .shelf-pos {
+    font-size: var(--fs-small);
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+    margin-left: 16px;
+  }
+  .shelf-row[data-state="active"] {
+    border-color: var(--accent);
+    box-shadow: var(--elev-md);
+    background: var(--surface-2);
+  }
+  .shelf-row[data-state="visited"] {
+    border-color: var(--accent-visited);
+  }
+
   .grid-wrap {
     flex: 1;
     min-height: 0;

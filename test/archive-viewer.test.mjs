@@ -53,8 +53,8 @@ test("library: .zip files open the archive; other archives keep the toast", () =
     "the zip branch must come before the 'coming soon' toast (zips are open NOW, rar/7z are not)"
   );
   assert.ok(
-    /\\\.zip/i.test(open),
-    "only .zip is offered — the scope decision (CBR/CBZ ride on it later)"
+    /\\\.zip/i.test(open) && /cbz/i.test(open),
+    ".zip AND .cbz are offered (a CBZ is a zip; the App branches comics off it)"
   );
 });
 
@@ -138,10 +138,12 @@ test("archive: no stale remote handlers leak (BUG 5 contract)", () => {
   assert.ok(/clearHandlers\(\)/.test(archive), "handlers must be cleared on unmount");
 });
 
-test("e2e fake: a zip file with Range support on /stream", () => {
+test("e2e fake: a NON-comic zip with Range support on /stream (the archive screen's entry)", () => {
+  // A zip with >= 2 decodable images is a comic (the App decides after the
+  // tail read) — so the archive e2e needs a zip with at most ONE image.
   assert.ok(
-    /comic\.zip/.test(fake),
-    "the fake library must list a .zip file (the e2e opens it)"
+    /archive\.zip/.test(fake),
+    "the fake library must list a plain archive (the e2e opens it)"
   );
   assert.ok(
     /Range/.test(fake),

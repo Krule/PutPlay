@@ -130,7 +130,7 @@ function rangeFetch(fileBytes) {
 }
 
 const AUTH = { oauthToken: "t", downloadToken: "d" };
-const FILE = { id: 15, name: "comic.zip", size: 0, content_type: "application/zip" };
+const FILE = { id: 15, name: "archive.zip", size: 0, content_type: "application/zip" };
 
 const PAYLOAD = new Uint8Array(Buffer.from("deflated page pixels 0123456789", "utf8"));
 const STORED = new Uint8Array(Buffer.from("plain stored text\n", "utf8"));
@@ -170,6 +170,34 @@ test("openArchive: a non-zip file is an honest ZipError", async () => {
   const restore = withFetch(rf.fetchImpl);
   try {
     await assert.rejects(zx.openArchive(AUTH, FILE), (e) => e.name === "ZipError");
+  } finally {
+    restore();
+  }
+});
+
+test("openArchive: a file without a remembered size probes the total, then reads the real tail", async () => {
+  // The continue-reading shelf reopens a comic from {id, name} alone — the
+  // reader only remembers what it read, not the file size. The total comes
+  // from the server's Content-Range, never from a guess.
+  const rf = rangeFetch(zipBytes);
+  const restore = withFetch(rf.fetchImpl);
+  try {
+    const sizeless = { id: 15, name: "story.cbz" }; // no .size on purpose
+    const model = await zx.openArchive(AUTH, sizeless);
+    assert.deepEqual(
+      model.entries.map((e) => e.name),
+      ["pages/p1.png", "notes.txt"],
+      "the entries come back fully parsed"
+    );
+    const ranges = rf.calls.map((c) => c.range);
+    assert.ok(ranges.length >= 2, "probe + tail, at least");
+    const last = ranges[ranges.length - 1].match(/^bytes=(\d+)-(\d+)$/);
+    assert.ok(last, "the tail request is a real byte range (no NaN)");
+    assert.equal(
+      parseInt(last[2], 10),
+      zipBytes.length - 1,
+      "…and it ends at the file's TRUE last byte, not a remembered one"
+    );
   } finally {
     restore();
   }

@@ -59,14 +59,38 @@ async function rangeBytes(url: string, start: number, end: number): Promise<Uint
 }
 
 /**
+ * A file's true total size, from the server itself: request one byte and
+ * read the denominator of the Content-Range ("bytes 0-0/3469"). Used when
+ * the caller has no remembered size (the continue-reading shelf reopens a
+ * comic from id + name alone). A server that cannot do Range cannot do this
+ * product at all — the refusal is the correct behaviour.
+ */
+async function streamTotalSize(url: string): Promise<number> {
+  const res = await fetch(url, { headers: { Range: "bytes=0-0" } });
+  if (!res.ok) {
+    throw new ZipError("http", `The server refused the download (HTTP ${res.status}).`);
+  }
+  const m = (res.headers.get("Content-Range") || "").match(/\/(\d+)\s*$/);
+  const total = m ? parseInt(m[1], 10) : NaN;
+  if (!Number.isFinite(total) || total < 22) {
+    throw new ZipError("no-eocd", "Not a ZIP archive — the end-of-central-directory record was not found.");
+  }
+  return total;
+}
+
+/**
  * Open an archive for browsing: fetch the tail, parse it, and refuse the
  * archives v1 cannot honestly browse (ZIP64, encrypted, multi-disk — the
  * parser already rejects the last).
  */
 export async function openArchive(auth: Auth, file: PutFile): Promise<ZipModel> {
   const url = streamURL(auth, file.id);
-  const start = Math.max(0, file.size - TAIL_BYTES);
-  const tail = await rangeBytes(url, start, Math.max(0, file.size - 1));
+  let size = typeof file.size === "number" && Number.isFinite(file.size) && file.size > 0 ? file.size : NaN;
+  if (!Number.isFinite(size)) {
+    size = await streamTotalSize(url); // shelf resumes don't remember the size — ask
+  }
+  const start = Math.max(0, size - TAIL_BYTES);
+  const tail = await rangeBytes(url, start, size - 1);
   const model = parseZip(tail);
   if (model.zip64) {
     throw new ZipError("zip64", "This archive uses ZIP64 (very large) — browsing it isn't supported yet.");

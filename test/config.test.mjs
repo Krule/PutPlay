@@ -204,3 +204,22 @@ test("pickAudioTrack: EAAAO exposure variants all resolve to the English track",
   assert.equal(pickAudioTrack(mk("ita", "eng"), "ita"), 0); // the other lang
   assert.equal(pickAudioTrack(mk("ita", "eng"), "fre"), -1); // absent language
 });
+
+// ---------------- readingDirection (comic reader) ----------------
+//
+// The GLOBAL default reading order for comics. It is a default, not a
+// verdict: each comic remembers the direction the user actually chose (the
+// progress store), and there is NO auto-detection — a 130-character romanized
+// manga title plus a German scan group proves no filename heuristic works.
+
+test("normalizeConfig: readingDirection defaults to 'ltr'", () => {
+  assert.equal(normalizeConfig({}).readingDirection, "ltr");
+  assert.equal(normalizeConfig(null).readingDirection, "ltr");
+});
+
+test("normalizeConfig: readingDirection keeps 'rtl', coerces garbage to 'ltr'", () => {
+  assert.equal(normalizeConfig({ readingDirection: "rtl" }).readingDirection, "rtl");
+  assert.equal(normalizeConfig({ readingDirection: "sideways" }).readingDirection, "ltr");
+  assert.equal(normalizeConfig({ readingDirection: "" }).readingDirection, "ltr");
+  assert.equal(normalizeConfig({ readingDirection: 42 }).readingDirection, "ltr");
+});

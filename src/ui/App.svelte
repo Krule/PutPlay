@@ -5,7 +5,12 @@
   import { auth, loadAuth, type AuthState } from "../store/auth";
   import { nav, requestBackLevel, routeNav } from "../store/nav";
   import { library, resetLibrary } from "../store/library";
-  import { loadConfig } from "../store/config";
+  import { config, loadConfig } from "../store/config";
+  import { openArchive } from "../putio/zip-extract";
+  import { buildComicModel, isComicZip } from "../putio/comic";
+  import type { ZipModel } from "../putio/zip";
+  import { clampResume } from "../putio/comic-progress";
+  import { setComic, resetComic, loadShelf, progressFor, clearShelf } from "../store/comic";
 
   const getLib = () => get(library);
   import type { PutFile } from "../putio/types";
@@ -14,19 +19,21 @@
   import Player from "./screens/Player.svelte";
   import Image from "./screens/Image.svelte";
   import Archive from "./screens/Archive.svelte";
+  import Comic from "./screens/Comic.svelte";
   import Settings from "./screens/Settings.svelte";
   import { buildLibraryTargets, type ViewerTarget } from "../putio/image";
-  import { resetArchive } from "../store/archive";
+  import { resetArchive, setArchive } from "../store/archive";
   import { currentAuth } from "../store/auth";
 
   let a: AuthState;
-  let screen: "connect" | "library" | "player" | "image" | "archive" | "settings" = "connect";
+  let screen: "connect" | "library" | "player" | "image" | "archive" | "comic" | "settings" = "connect";
   let playingFile: PutFile | null = null;
   let imageTargets: ViewerTarget[] = [];
   let imageInitial = 0;
   // where Back from the image lands: the library, or the archive it came from
   let imageReturn: "library" | "archive" = "library";
   let archiveFile: PutFile | null = null;
+  let comicFile: PutFile | null = null;
 
   /* ---------------- back key ----------------
    * Primary path: remote.ts delivers the Back key (keydown 461; appinfo.json
@@ -85,6 +92,12 @@
       screen = "library";
       return;
     }
+    if (screen === "comic") {
+      comicFile = null;
+      resetComic();
+      screen = "library";
+      return;
+    }
     if (screen === "settings") {
       screen = "library";
       return;
@@ -130,6 +143,9 @@
         imageTargets = [];
         archiveFile = null;
         resetArchive();
+        comicFile = null;
+        resetComic();
+        clearShelf(); // the shelf is personal data; it goes with the session
         // the store is module-level: without this, a fresh login would show
         // the previous account's folders (needsInitialList skips the fetch
         // when a cached listing exists)
@@ -152,6 +168,7 @@
 
     const ok = await loadAuth();
     loadConfig().catch(() => undefined);
+    loadShelf().catch(() => undefined);
     if (ok) screen = "library";
     else screen = "connect";
 
@@ -181,10 +198,40 @@
     platform.pushBackLevel();
   }
 
-  function onOpenArchive(e: CustomEvent<{ file: PutFile }>) {
-    archiveFile = e.detail.file;
-    screen = "archive";
-    platform.pushBackLevel();
+  async function onOpenArchive(e: CustomEvent<{ file: PutFile }>) {
+    const file = e.detail.file;
+    const au = currentAuth();
+    if (!au) return;
+    // The tail read (256 KB) is cheap — and the App pays for it, because the
+    // App decides what the file IS: a book goes to the reader, a folder goes
+    // to the browser. Both branches get the parsed model for free.
+    let model: ZipModel;
+    try {
+      model = await openArchive(au, file);
+    } catch (err) {
+      // truncated / zip64 / encrypted / unreachable — the ZipError's message
+      // is already the honest sentence; a network error gets one too
+      const msg = err instanceof Error && err.message ? err.message : "Couldn’t read that archive";
+      platform.toast(msg, 3200);
+      return; // stay in the library — a refusal, not a freeze
+    }
+    if (isComicZip(model.entries)) {
+      const book = buildComicModel(model.entries);
+      const remembered = progressFor(file.id);
+      // a per-comic choice beats the global Settings default; a remembered
+      // page is clamped against the book as it is NOW (re-scans happen)
+      const direction = remembered ? remembered.direction : get(config).readingDirection;
+      const index = remembered ? clampResume(remembered.page, book.pages.length) : 0;
+      setComic(file, book, index, direction);
+      comicFile = file;
+      screen = "comic";
+      platform.pushBackLevel();
+    } else {
+      setArchive(file, model, "");
+      archiveFile = file;
+      screen = "archive";
+      platform.pushBackLevel();
+    }
   }
 
   function onOpenArchiveImage(e: CustomEvent<{ targets: ViewerTarget[]; initial: number }>) {
@@ -208,6 +255,12 @@
   function onArchiveBack() {
     archiveFile = null;
     resetArchive();
+    screen = "library";
+  }
+
+  function onComicBack() {
+    comicFile = null;
+    resetComic();
     screen = "library";
   }
 
@@ -237,6 +290,8 @@
     <Player file={playingFile} on:back={onPlayerBack} />
   {:else if screen === "archive" && archiveFile}
     <Archive file={archiveFile} on:open-image={onOpenArchiveImage} on:back={onArchiveBack} />
+  {:else if screen === "comic" && comicFile}
+    <Comic on:back={onComicBack} />
   {:else if screen === "image" && imageTargets.length}
     <Image targets={imageTargets} initial={imageInitial} on:back={onImageBack} />
   {:else if screen === "settings"}
