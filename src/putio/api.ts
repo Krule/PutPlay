@@ -72,12 +72,6 @@ export async function getAccountInfo(auth: Auth): Promise<PutAccountInfo> {
   return d.info;
 }
 
-export function validateOAuth(token: string): Promise<any> {
-  return api<{ status: string }>("/account/info", {
-    auth: { oauthToken: token, downloadToken: null },
-  });
-}
-
 /* ---------------- files ---------------- */
 
 export interface ListParams {

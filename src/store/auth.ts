@@ -3,8 +3,8 @@ import type { Writable } from "svelte/store";
 
 export type AuthStore = Writable<AuthState>;
 import type { Auth } from "../putio/api";
-import { requestOOBCode, pollOOBCode, validateOAuth, getAccountInfo, PUTIO_WEB_APP_URL } from "../putio/api";
-import type { OOBCodeResponse, OOBPollResponse } from "../putio/types";
+import { requestOOBCode, pollOOBCode, getAccountInfo, PUTIO_WEB_APP_URL } from "../putio/api";
+import type { OOBCodeResponse, OOBPollResponse, PutAccountInfo } from "../putio/types";
 import { PutioError } from "../putio/api";
 import { nextPollStep } from "../putio/oob-poll";
 import { store } from "../webos/platform";
@@ -56,32 +56,52 @@ export function currentAuth(): Auth | null {
   return { oauthToken: s.oauthToken, downloadToken: s.downloadToken };
 }
 
+/**
+ * Adopt a validated account: publish the authed state (account details,
+ * subtitle languages) and persist the oauth token. The single shared step
+ * both entry paths (OOB approval and cold-start reload) funnel through, so
+ * the "set state + save token" logic lives in exactly one place.
+ */
+export async function adoptAccount(oauthToken: string, info: PutAccountInfo): Promise<void> {
+  set({
+    status: "authed",
+    oauthToken,
+    downloadToken: info.download_token || null,
+    accountEmail: info.mail || null,
+    accountName: info.family_owner || null,
+    disk: info.disk || null,
+    subtitleLanguages:
+      (info.settings?.subtitle_languages || []).length > 0
+        ? info.settings.subtitle_languages
+        : ["eng"],
+    oobCode: null,
+    oobQr: null,
+    oobError: null,
+    lastError: null,
+  });
+  await store.set("putio.oauthToken", oauthToken);
+}
+
+/**
+ * Complete an out-of-band approval: the poller handed us a fresh token we
+ * have not validated yet, so fetch the account info once (which also
+ * validates it) and adopt it. On failure fall back to unauthed + error.
+ */
 async function completeAuth(oauthToken: string): Promise<void> {
   try {
     const info = await getAccountInfo({ oauthToken, downloadToken: null });
-    set({
-      status: "authed",
-      oauthToken,
-      downloadToken: info.download_token || null,
-      accountEmail: info.mail || null,
-      accountName: info.family_owner || null,
-      disk: info.disk || null,
-      subtitleLanguages:
-        (info.settings?.subtitle_languages || []).length > 0
-          ? info.settings.subtitle_languages
-          : ["eng"],
-      oobCode: null,
-      oobQr: null,
-      oobError: null,
-      lastError: null,
-    });
-    await store.set("putio.oauthToken", oauthToken);
+    await adoptAccount(oauthToken, info);
   } catch (e: any) {
     set({ status: "unauthed", oauthToken: null, lastError: e.message });
   }
 }
 
-/** Load a stored token and validate it. */
+/**
+ * Load a stored token and adopt it. The single /account/info call does
+ * double duty: it validates the token (throws on 401) and returns the
+ * account info we adopt — one round-trip, not two. On failure the dead
+ * token is removed and the store ends unauthed.
+ */
 export async function loadAuth(): Promise<boolean> {
   const token = await store.get<string | null>("putio.oauthToken", null);
   if (!token) {
@@ -89,8 +109,8 @@ export async function loadAuth(): Promise<boolean> {
     return false;
   }
   try {
-    await validateOAuth(token);
-    await completeAuth(token);
+    const info = await getAccountInfo({ oauthToken: token, downloadToken: null });
+    await adoptAccount(token, info);
     return true;
   } catch {
     await store.remove("putio.oauthToken");

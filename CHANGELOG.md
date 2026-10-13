@@ -6,6 +6,12 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Changed
+- Sign-in on app launch now completes with a single account check instead of
+  two — the app started by validating the saved token and then fetching the
+  account info, which is the same put.io endpoint called twice. Startup makes
+  one fewer round-trip, which is most noticeable on slow connections.
+
 ## [1.0.4] - 2026-10-13
 
 ### Added
