@@ -127,6 +127,70 @@ test("parseZip: a truncated archive is an honest ZipError", () => {
   );
 });
 
+/* ---------------- large files: the tail is NOT the whole file --------------
+ * A file > 256 KB is fetched as a tail only. The EOCD's central-directory
+ * offset is FILE space; the scan position is TAIL space. Mixing the two
+ * coordinate systems rejects every real file over 256 KB (the C1 refused
+ * every comic with "Not a ZIP archive") — while every tiny test fixture
+ * (file == tail) passed.
+ */
+function paddedFile(padLen) {
+  // A VALID big zip: zip-basic's bytes at the end of padLen filler bytes,
+  // with every internal pointer (EOCD cdOffset + each CD entry's local
+  // header offset) shifted by padLen — exactly as if the archive had been
+  // written with a big chunk before its central directory.
+  const small = new Uint8Array(readFileSync(join(here, "fixtures", "zip-basic.zip")));
+  const dv = new DataView(small.buffer, small.byteOffset, small.byteLength);
+  const eocd = small.length - 22; // the fixture has no zip comment
+  const cdOff = dv.getUint32(eocd + 16, true);
+  const count = dv.getUint16(eocd + 10, true);
+  for (let i = 0, off = cdOff; i < count; i++, off += 46 + dv.getUint16(off + 28, true) + dv.getUint16(off + 30, true) + dv.getUint16(off + 32, true)) {
+    dv.setUint32(off + 42, dv.getUint32(off + 42, true) + padLen, true); // local header offset
+  }
+  dv.setUint32(eocd + 16, cdOff + padLen, true); // EOCD: where the CD really starts
+  const file = new Uint8Array(padLen + small.length);
+  file.fill(0xaa, 0, padLen); // a fill that can never forge an EOCD signature
+  file.set(small, padLen);
+  return file;
+}
+
+test("parseZip: a big file parsed from its tail alone (tailStart)", () => {
+  const file = paddedFile(400 * 1024);
+  const tailLen = 256 * 1024;
+  const tail = file.slice(file.length - tailLen);
+  const m = zip.parseZip(tail, file.length - tailLen);
+  const mWhole = zip.parseZip(file);
+  assert.deepEqual(m.entries.map((e) => e.name), mWhole.entries.map((e) => e.name));
+  assert.deepEqual(m.entries.map((e) => e.offset), mWhole.entries.map((e) => e.offset),
+    "entry offsets stay in FILE space — the extract layer range-reads from file start");
+});
+
+test("parseZip: the same tail parsed at the WRONG offset is still refused", () => {
+  const file = paddedFile(400 * 1024);
+  const tail = file.slice(file.length - 256 * 1024);
+  assert.throws(
+    () => zip.parseZip(tail, 0),
+    (err) => err instanceof Error && err.constructor.name === "ZipError",
+    "a tailStart that puts the CD outside the buffer must not silently parse"
+  );
+});
+
+test("parseZip: the real Preacher #01 tail from put.io's CDN (TV regression)", () => {
+  // 256 KB tail of 'Preacher - Issue 01.cbz' (6,148,002 B) as served by
+  // s87-cdn77.put.io on 2026-10-13 — the exact bytes the C1 rejected with
+  // "Not a ZIP archive — the end-of-central-directory record was not found."
+  const tail = fix("preacher01-tail.bin");
+  const m = zip.parseZip(tail, 6148002 - tail.length);
+  assert.equal(m.entries.length, 43);
+  assert.equal(m.zip64, false);
+  const names = m.entries.map((e) => e.name);
+  assert.ok(names.some((n) => n.endsWith("ComicInfo.xml")), "ComicInfo.xml is listed");
+  assert.ok(
+    names.filter((n) => /\.(jpg|png)$/i.test(n)).length >= 41,
+    "the pages are listed (41 = COVER + 40)"
+  );
+});
+
 test("parseZip: a ZIP64 tail is flagged (v1 refuses at the screen)", () => {
   const m = zip.parseZip(fix("zip-zip64.zip"));
   assert.ok(m.zip64, "the EOCD64 locator must set the zip64 flag");

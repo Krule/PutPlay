@@ -203,6 +203,47 @@ test("openArchive: a file without a remembered size probes the total, then reads
   }
 });
 
+test("openArchive + extractEntry: a file bigger than the tail lists AND extracts (real-TV regression)", async () => {
+  // The C1 said every comic was "Not a ZIP archive": openArchive fetched the
+  // tail but parseZip compared the CD's FILE-space offset against the
+  // tail-local scan position. Pad the zip past 256 KB (with every internal
+  // pointer shifted, so it stays a valid archive) so file space != tail
+  // space — the listing AND an extraction must both come back correct.
+  const padLen = 300 * 1024;
+  const shifted = new Uint8Array(zipBytes); // copy: the original stays unshifted
+  const dv = new DataView(shifted.buffer, shifted.byteOffset, shifted.byteLength);
+  const eocd = shifted.length - 22; // makeZip writes no zip comment
+  const cdOff = dv.getUint32(eocd + 16, true);
+  const count = dv.getUint16(eocd + 10, true);
+  for (let i = 0, off = cdOff; i < count; i++, off += 46 + dv.getUint16(off + 28, true) + dv.getUint16(off + 30, true) + dv.getUint16(off + 32, true)) {
+    dv.setUint32(off + 42, dv.getUint32(off + 42, true) + padLen, true); // local header offset
+  }
+  dv.setUint32(eocd + 16, cdOff + padLen, true); // EOCD: where the CD really starts
+  const bigFile = new Uint8Array(padLen + shifted.length);
+  bigFile.fill(0xaa, 0, padLen);
+  bigFile.set(shifted, padLen);
+  const rf = rangeFetch(bigFile);
+  const restore = withFetch(rf.fetchImpl);
+  const BIG = { id: 15, name: "big.zip", size: bigFile.length };
+  try {
+    const model = await zx.openArchive(AUTH, BIG);
+    assert.deepEqual(
+      model.entries.map((e) => e.name),
+      ["pages/p1.png", "notes.txt"],
+      "a >256KB archive must list from its tail"
+    );
+    assert.ok(
+      model.entries.every((e) => e.offset >= padLen),
+      "local header offsets are FILE space (the padding is in front of the data)"
+    );
+    const stored = model.entries.find((e) => e.name === "notes.txt");
+    const out = await zx.extractEntry(AUTH, BIG, stored);
+    assert.equal(Buffer.from(out.data).toString("utf8"), "plain stored text\n");
+  } finally {
+    restore();
+  }
+});
+
 /* ---------------- extractEntry ---------------- */
 async function openAndFind(rf, name) {
   const restore = withFetch(rf.fetchImpl);

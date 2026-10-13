@@ -72,20 +72,29 @@ function decodeName(bytes: Uint8Array, utf8: boolean): string {
 
 interface EocdCandidate {
   at: number;
+  /** CD start in FILE space (as the EOCD declares it). */
   cdOffset: number;
+  /** CD start in TAIL space (cdOffset - tailStart). */
+  cdLocal: number;
   cdSize: number;
   cdEntries: number;
   zip64: boolean;
 }
 
 /**
- * Validate ONE EOCD candidate (signature already matched at `at`):
- * its comment must fit to the end of the buffer, it must be single-disk,
- * and its central directory must start with the CD signature, end at/before
- * the EOCD, and have room for every entry it claims. ZIP64 candidates are
- * reported as such (the caller refuses to browse them in v1).
+ * Validate ONE EOCD candidate (signature already matched at `at`, a TAIL
+ * offset): its comment must fit to the end of the buffer, it must be
+ * single-disk, and its central directory must start with the CD signature,
+ * end at/before the EOCD, and have room for every entry it claims. ZIP64
+ * candidates are reported as such (the caller refuses to browse them in v1).
+ *
+ * Coordinate spaces: the EOCD declares cdOffset in FILE space, but `at` and
+ * everything readable through `dv` is TAIL space. `tailStart` (where the
+ * tail begins in the file) is the conversion. For small files the tail IS
+ * the file (tailStart 0) and both spaces coincide — which is why this bug
+ * was invisible on every fixture until a real >256 KB comic hit the C1.
  */
-function candidateAt(dv: DataView, at: number, len: number): EocdCandidate | null {
+function candidateAt(dv: DataView, at: number, len: number, tailStart: number): EocdCandidate | null {
   const commentLen = u16(dv, at + 20);
   if (at + 22 + commentLen > len) return null;
   if (u16(dv, at + 4) !== 0 || u16(dv, at + 6) !== 0) return null; // multi-disk: not v1
@@ -93,35 +102,43 @@ function candidateAt(dv: DataView, at: number, len: number): EocdCandidate | nul
   const cdOffset = u32(dv, at + 16);
   const cdSize = u32(dv, at + 12);
   const cdEntries = u16(dv, at + 10);
+  const cdLocal = cdOffset - tailStart;
 
   const zip64 =
     at >= 20 && u32(dv, at - 20) === EOCD64_LOCATOR_SIG
       ? true
       : cdOffset === EOCDFIELD_MAX || cdSize === EOCDFIELD_MAX || cdEntries === 0xffff;
-  if (zip64) return { at, cdOffset, cdSize, cdEntries, zip64: true };
+  if (zip64) return { at, cdOffset, cdLocal, cdSize, cdEntries, zip64: true };
 
-  if (cdOffset + cdSize > at + 22) return null; // CD must live before the EOCD
-  if (cdEntries > 0 && (u32(dv, cdOffset) !== CD_SIG || cdSize < cdEntries * 46)) return null;
+  // file-space sanity: the CD ends at/before the EOCD…
+  if (cdOffset + cdSize > tailStart + at + 22) return null;
+  // …and it must be WHOLLY inside the fetched tail…
+  if (cdLocal < 0 || cdLocal + cdSize > at + 22) return null;
+  // …and it must look like a central directory of the size it claims.
+  if (cdEntries > 0 && (u32(dv, cdLocal) !== CD_SIG || cdSize < cdEntries * 46)) return null;
   if (cdEntries === 0 && cdSize !== 0) return null;
-  return { at, cdOffset, cdSize, cdEntries, zip64: false };
+  return { at, cdOffset, cdLocal, cdSize, cdEntries, zip64: false };
 }
 
 /**
  * Parse the archive from its TAIL (the last bytes of the file; the whole
- * file when it is smaller than the tail). The EOCD is found by a validated
- * backward scan — matching the signature alone is not enough, tools append
- * junk after the real EOCD, so every candidate must pass candidateAt().
+ * file when it is smaller than the tail). `tailStart` is where the tail
+ * begins inside the file — required for any file bigger than the tail, or
+ * the CD's file-space offsets land outside the buffer (and the valid EOCD
+ * gets rejected as "not a ZIP"). The EOCD is found by a validated backward
+ * scan — matching the signature alone is not enough, tools append junk
+ * after the real EOCD, so every candidate must pass candidateAt().
  */
-export function parseZip(tail: Uint8Array): ZipModel {
+export function parseZip(tail: Uint8Array, tailStart: number = 0): ZipModel {
   const dv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   const from = Math.max(0, tail.length - 22 - MAX_COMMENT);
 
   for (let i = tail.length - 22; i >= from; i--) {
     if (u32(dv, i) !== EOCD_SIG) continue;
-    const c = candidateAt(dv, i, tail.length);
+    const c = candidateAt(dv, i, tail.length, tailStart);
     if (!c) continue;
     if (c.zip64) return { entries: [], zip64: true };
-    return { entries: parseCentralDirectory(dv, c.cdOffset, c.cdEntries), zip64: false };
+    return { entries: parseCentralDirectory(dv, c.cdLocal, c.cdEntries), zip64: false };
   }
 
   throw new ZipError("no-eocd", "Not a ZIP archive — the end-of-central-directory record was not found.");

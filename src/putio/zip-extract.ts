@@ -91,7 +91,7 @@ export async function openArchive(auth: Auth, file: PutFile): Promise<ZipModel> 
   }
   const start = Math.max(0, size - TAIL_BYTES);
   const tail = await rangeBytes(url, start, size - 1);
-  const model = parseZip(tail);
+  const model = parseZip(tail, start); // start: the tail's position in the file (file-space CD offsets)
   if (model.zip64) {
     throw new ZipError("zip64", "This archive uses ZIP64 (very large) — browsing it isn't supported yet.");
   }
