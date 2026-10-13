@@ -16,7 +16,7 @@
 //   - progress + direction persist per comic (the platform store — the same
 //     appData/localStorage bridge Settings uses), decoded with the honest
 //     comic-progress decoder.
-//   - Settings carries the global reading-direction default (ships LTR).
+//   - NO direction in Settings (removed 2026-10-13): the reader's Up-key legend is the control.
 //   - .cbz is an entry, not a "coming soon" (it IS a zip).
 //
 // Run: npm test
@@ -69,10 +69,10 @@ test("app: a failed tail read toasts and stays in the library", () => {
   assert.ok(open.includes("toast"), "…and explained in words, not with a freeze or a silent no-op");
 });
 
-test("app: a comic resumes from the shelf (clamped), else starts at page 1 with the Settings default", () => {
+test("app: a comic resumes from the saved page (clamped), else starts at page 1, LTR (direction lives in the reader now, not Settings)", () => {
   const open = bodyOf(app, "onOpenArchive", "App.svelte");
   assert.ok(open.includes("clampResume("), "a remembered page past the end of a re-scanned book must clamp");
-  assert.ok(/readingDirection/.test(open), "the global default direction comes from Settings");
+  assert.ok(!/readingDirection/.test(open), "no Settings default — a never-flipped comic is LTR");
 });
 
 test("app: Back from the comic lands in the library and the comic state is cleared", () => {
@@ -107,8 +107,48 @@ test("store/comic: the shelf persists via the platform store and decodes honestl
 
 /* ---------------- the reading screen ---------------- */
 
-test("comic screen: turning uses the direction-aware, no-wrap stepper", () => {
-  assert.ok(screen.includes("stepPage("), "←/→ must go through stepPage (manga-aware, honest stops)");
+test("comic screen: the book is read in SHEETS — cover alone, uniform pages paired, wide pages alone", () => {
+  assert.ok(screen.includes("buildSheets("), "sheets are built from the model (the pure core decides pairing)");
+  assert.ok(screen.includes("sheetForPage("), "a saved PAGE maps back to its sheet on resume");
+});
+
+test("comic screen: the sheet is CENTER-anchored (a contained sheet sits in the middle, not the right bezel)", () => {
+  // left = (viewW - wPx)/2 + panX, panX symmetric in [-maxX, +maxX]. The old
+  // edge-anchored (viewW - wPx) + panX pushed a fit page to the right edge —
+  // the C1's Preacher screenshot.
+  assert.ok(
+    /leftPx\s*=\s*\(viewW\s*-\s*wPx\)\s*\/\s*2\s*\+\s*panX/.test(screen),
+    "horizontal position is centered offset + symmetric pan"
+  );
+  assert.ok(
+    /topPx\s*=\s*\(viewH\s*-\s*hPx\)\s*\/\s*2\s*\+\s*panY/.test(screen),
+    "…and vertically"
+  );
+});
+
+test("comic screen: an RTL pair renders the earlier page on the RIGHT (manga order)", () => {
+  assert.ok(/class:rtl/.test(screen), "the pair container flips its row in rtl");
+  assert.ok(/row-reverse/.test(screen), "…by reversing the row, not by reordering the data");
+});
+
+test("comic screen: a persistent legend tells the user Up flips the direction", () => {
+  // The user removed the Settings choice — the in-reader legend is the only
+  // place the control is discoverable. It must be OUTSIDE the auto-hiding
+  // caption block (a legend that disappears is not a legend).
+  const legend = screen.match(/class="legend"[\s\S]{0,400}/);
+  assert.ok(legend, "a .legend element exists");
+  assert.ok(/flip/i.test(screen.slice(screen.search(/class="legend"/), screen.search(/class="legend"/) + 400)), "…and it says the Up key flips");
+  assert.ok(!/captionVisible/.test(screen.slice(screen.search(/class="legend"/) - 400, screen.search(/class="legend"/))), "the legend is not gated by the caption's auto-hide");
+});
+
+test("comic screen: the caption labels a pair as a range (2–3 of 13)", () => {
+  assert.ok(screen.includes("sheetPageLabel("), "the caption goes through the pure labeler");
+});
+
+test("comic screen: turning steps SHEETS (direction decides which arrow is forward)", () => {
+  const stepFn = bodyOf(screen, "step", "Comic.svelte");
+  assert.ok(/sheetIdx/.test(stepFn), "navigation moves sheet to sheet");
+  assert.ok(/dir/.test(stepFn) && /(right|left)/.test(stepFn), "the arrow-to-forward mapping is direction-aware");
 });
 
 test("comic screen: OK cycles the relative zoom ladder", () => {
@@ -123,12 +163,15 @@ test("comic screen: panning is clamped to the image", () => {
 test("comic screen: Up flips the direction and the flip is remembered per comic", () => {
   const onUp = bodyOf(screen, "flipDirection", "Comic.svelte");
   assert.ok(/rtl/.test(onUp) && /ltr/.test(onUp), "the flip exchanges ltr and rtl");
-  assert.ok(onUp.includes("upsertProgress("), "the choice persists for THIS comic (not the global default)");
+  assert.ok(
+    onUp.includes("saveProgress(") && screen.includes("upsertProgress("),
+    "the choice persists for THIS comic via the single upsert entry point"
+  );
 });
 
-test("comic screen: the next page is prefetched while the current one displays", () => {
+test("comic screen: the next SHEET is prefetched while the current one displays", () => {
   const pre = bodyOf(screen, "prefetch", "Comic.svelte");
-  assert.ok(pre.includes("stepPage("), "prefetch must know the direction to fetch the RIGHT next page");
+  assert.ok(/sheet/.test(pre), "prefetch follows the sheet (its 1–2 pages), direction-aware");
   assert.ok(pre.includes("pageData("), "prefetch is a real extraction, not a lie");
   assert.ok(screen.includes("extractEntry("), "…and the extraction is the range-read + inflate path");
 });
@@ -165,10 +208,9 @@ test("comic screen: the session hydrates from the comic store (App made the deci
 
 /* ---------------- settings + library entry ---------------- */
 
-test("settings: the global reading direction (ships LTR)", () => {
-  assert.ok(settings.includes("readingDirection"), "Settings carries the default direction");
-  assert.ok(/rtl/i.test(settings), "…and offers RTL (manga)");
-  assert.ok(settings.includes("saveConfig"), "…and persists it like every other setting");
+test("settings: NO reading direction (user removed it — the Up-key legend in the reader is the control)", () => {
+  assert.ok(!/readingDirection/.test(settings), "the direction card is gone from Settings");
+  assert.ok(!/rtl/i.test(settings), "…and so is any RTL choice surface");
 });
 
 test("library: .cbz opens like .zip (a CBZ IS a zip)", () => {
@@ -202,27 +244,20 @@ test("library: a CBR (RAR comic) gets an honest refusal, not a crash or a silent
   assert.ok(/CBZ only|CBZ-only|only CBZ/i.test(open), "the refusal says what IS supported");
 });
 
-test("library: the continue-reading shelf lists saved positions and reopens them", () => {
-  assert.ok(/shelf/.test(lib), "Library reads the comic shelf store");
-  assert.ok(/Continue reading/i.test(lib), "the shelf has a real name (not 'recent', not an eyebrow)");
-  const shelfBlock = lib.slice(lib.search(/Continue reading/i), lib.search(/Continue reading/i) + 800);
+test("library: NO continue-reading shelf (user removed it 2026-10-13 — it belongs on a future Home screen, alongside video continue, not in the file grid)", () => {
   assert.ok(
-    /\{\s*\w+\.?\w*\s*\+\s*1\s*\} of \{\s*\w+\.?\w*\s*\}/.test(shelfBlock),
-    "a row shows its position (N of M)"
+    !/Continue reading/i.test(lib),
+    "the shelf section must be gone from the library"
   );
-  // tapping a shelf row opens that comic (resume) — the row needs no live
-  // PutFile: the reader only uses id + name
   assert.ok(
-    /open-archive/.test(lib.slice(lib.search(/shelf/), lib.search(/shelf/) + 3000)),
-    "a shelf tap dispatches open-archive with the stored id + name"
+    !/shelf-row|shelfRows/.test(lib),
+    "…and so must its rows, state, and wiring"
   );
 });
 
-test("library: the shelf only shows at the root (a subfolder lists that folder)", () => {
-  const idx = lib.search(/Continue reading/i);
-  const guard = lib.slice(Math.max(0, idx - 600), idx);
+test("app: the position store is still loaded (reopening a comic resumes from the saved page — the shelf UI is gone, the memory is not)", () => {
   assert.ok(
-    /folderId === null|atRoot|isRoot/.test(guard),
-    "the shelf section is guarded to the library root"
+    /loadShelf\(\)/.test(app),
+    "progress loads on boot so progressFor can resume a comic"
   );
 });

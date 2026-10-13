@@ -180,6 +180,19 @@
             parent_id: null,
             is_folder: 0,
             start_from: 0
+          },
+          {
+            // SPREAD-MODE comic (e2e, v1.1): 6 uniform portrait pages + one
+            // big 2:1 'scanned spread' (page 3). The sheet model must cut
+            // this into [0], [1,2], [3], [4,5]. content_type is octet-
+            // stream like every real CBZ on put.io (extension-based entry).
+            id: 18,
+            name: "spread.cbz",
+            size: 15529,
+            content_type: "application/octet-stream",
+            parent_id: null,
+            is_folder: 0,
+            start_from: 0
           }
         ])
     )
@@ -273,8 +286,8 @@
       }
       // the archive/comic e2e: honour Range (tail read + per-entry reads),
       // and count every request for the bandwidth-honesty assertions
-      if (mid === 15 || mid === 16) {
-        var zipPath = mid === 15 ? "/test/e2e/archive.zip" : "/test/e2e/story.cbz";
+      if (mid === 15 || mid === 16 || mid === 18) {
+        var zipPath = mid === 15 ? "/test/e2e/archive.zip" : mid === 18 ? "/test/e2e/spread.cbz" : "/test/e2e/story.cbz";
         var zipType = mid === 15 ? "application/zip" : "application/octet-stream";
         return origFetch(zipPath).then(function (r) {
           return r.arrayBuffer().then(function (buf) {

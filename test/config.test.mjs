@@ -205,21 +205,16 @@ test("pickAudioTrack: EAAAO exposure variants all resolve to the English track",
   assert.equal(pickAudioTrack(mk("ita", "eng"), "fre"), -1); // absent language
 });
 
-// ---------------- readingDirection (comic reader) ----------------
+// ---------------- readingDirection: REMOVED (2026-10-13, TV feedback) ----------------
 //
-// The GLOBAL default reading order for comics. It is a default, not a
-// verdict: each comic remembers the direction the user actually chose (the
-// progress store), and there is NO auto-detection — a 130-character romanized
-// manga title plus a German scan group proves no filename heuristic works.
+// The user doesn't want a direction choice in Settings — the reader's
+// Up-key legend is the control, the direction is per-comic (the progress
+// store), and a never-flipped comic is LTR. normalizeConfig must not
+// resurrect the field from an older install's saved config.
 
-test("normalizeConfig: readingDirection defaults to 'ltr'", () => {
-  assert.equal(normalizeConfig({}).readingDirection, "ltr");
-  assert.equal(normalizeConfig(null).readingDirection, "ltr");
-});
-
-test("normalizeConfig: readingDirection keeps 'rtl', coerces garbage to 'ltr'", () => {
-  assert.equal(normalizeConfig({ readingDirection: "rtl" }).readingDirection, "rtl");
-  assert.equal(normalizeConfig({ readingDirection: "sideways" }).readingDirection, "ltr");
-  assert.equal(normalizeConfig({ readingDirection: "" }).readingDirection, "ltr");
-  assert.equal(normalizeConfig({ readingDirection: 42 }).readingDirection, "ltr");
+test("normalizeConfig: readingDirection is gone (it was removed from the settings UI)", () => {
+  const fresh = normalizeConfig({});
+  assert.ok(!("readingDirection" in fresh), "the shape no longer carries it");
+  const oldInstall = normalizeConfig({ readingDirection: "rtl" });
+  assert.ok(!("readingDirection" in oldInstall), "…and a stale saved value is dropped, not resurrected");
 });

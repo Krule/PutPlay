@@ -17,8 +17,6 @@ export interface ConfigState {
   subtitleLang: string;
   subScale: number;
   audioFallback: "ask" | "auto-hls";
-  /** Global DEFAULT reading order for comics (each comic remembers its own). */
-  readingDirection: "ltr" | "rtl";
 }
 
 export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: number } = {
@@ -27,7 +25,6 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   subtitleLang: "",
   subScale: 1,
   audioFallback: "ask",
-  readingDirection: "ltr",
   subScaleMin: 0.8,
   subScaleMax: 2,
 };
@@ -60,14 +57,12 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
   const audioFallback = (AUDIO_FALLBACKS as readonly string[]).includes(p.audioFallback || "")
     ? (p.audioFallback as ConfigState["audioFallback"])
     : d.audioFallback;
-  const readingDirection = p.readingDirection === "rtl" ? "rtl" : d.readingDirection;
   return {
     source,
     audioLang: (p.audioLang ?? "").trim(),
     subtitleLang: (p.subtitleLang ?? "").trim(),
     subScale: Math.min(d.subScaleMax, Math.max(d.subScaleMin, scale)),
     audioFallback,
-    readingDirection,
   };
 }
 

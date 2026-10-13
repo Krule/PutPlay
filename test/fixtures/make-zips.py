@@ -42,6 +42,28 @@ def write_zinfo(zf: zipfile.ZipFile, name: str, data: bytes, stored: bool = Fals
     zf.writestr(zi, data)
 
 
+def png_pattern(size=(96, 48)) -> bytes:
+    """A deterministic gradient PNG (incompressible enough to be BIG — used
+    for the wide/spread page of spread.cbz: the sheet model keys 'wide' off
+    uncompressed size, and this must weigh > 1.6x the uniform pages)."""
+    import zlib
+
+    w, h = size
+    raw = b""
+    for y in range(h):
+        raw += b"\x00"
+        for x in range(w):
+            raw += bytes(((x * 3 + y) % 256, (x + y * 5) % 256, (x * y) % 256))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        c = struct.pack(">I", len(data)) + tag + data
+        return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
 def main():
     os.makedirs(HERE, exist_ok=True)
 
@@ -151,6 +173,20 @@ def make_comics():
         for i in range(1, 13):
             write_zinfo(zf, f"Story - Issue 01/Story - Issue 01 - page {i} of 12.png", pg(i))
     print(f"{'story.cbz (e2e)':24s} {os.path.getsize(os.path.join(e2e_dir, 'story.cbz'))} bytes")
+
+    # 12. e2e: test/e2e/spread.cbz — SPREAD MODE (v1.1): 6 uniform portrait
+    #     pages, EXCEPT page 3 which is a big 2:1 'scanned spread'. The pure
+    #     sheet model (size >= 1.6x median) must cut the book into
+    #     [0], [1,2], [3], [4,5] — cover alone, pairs, the wide page alone.
+    uniform = (lambda c: png_bytes(c, size=(32, 48)))
+    with zipfile.ZipFile(f"{e2e_dir}/spread.cbz", "w") as zf:
+        write_zinfo(zf, "Spread - Issue 01/Spread - Issue 01 - COVER.png", uniform((0x2A, 0x6F, 0xB0)))
+        write_zinfo(zf, "Spread - Issue 01/Spread - Issue 01 - page 1 of 6.png", uniform((0x8A, 0x3D, 0x33)))
+        write_zinfo(zf, "Spread - Issue 01/Spread - Issue 01 - page 2 of 6.png", uniform((0x2F, 0x8F, 0x5B)))
+        write_zinfo(zf, "Spread - Issue 01/Spread - Issue 01 - page 3 of 6.png", png_pattern((96, 48)))
+        write_zinfo(zf, "Spread - Issue 01/Spread - Issue 01 - page 4 of 6.png", uniform((0xC2, 0x8A, 0x2C)))
+        write_zinfo(zf, "Spread - Issue 01/Spread - Issue 01 - page 5 of 6.png", uniform((0x44, 0x55, 0x66)))
+    print(f"{'spread.cbz (e2e)':24s} {os.path.getsize(os.path.join(e2e_dir, 'spread.cbz'))} bytes")
 
 
 if __name__ == "__main__":

@@ -161,8 +161,75 @@ export function panBounds(
   viewH: number,
   scale: number,
 ): { maxX: number; maxY: number } {
+  // CENTER-anchored: the sheet renders at (view - sheetPx)/2 + pan, so the
+  // pan range is symmetric — ±half of the overflow. (Edge-anchoring pushed
+  // a contained sheet to the right bezel: the C1's Preacher screenshot.)
   return {
-    maxX: Math.max(0, imgW * scale - viewW - 1e-9),
-    maxY: Math.max(0, imgH * scale - viewH - 1e-9),
+    maxX: Math.max(0, (imgW * scale - viewW) / 2 - 1e-9),
+    maxY: Math.max(0, (imgH * scale - viewH) / 2 - 1e-9),
   };
+}
+
+/* ---------------- sheets: spread mode (v1.1) ----------------
+ *
+ * A single portrait page fit to 16:9 is a sliver in a black sea. The
+ * reader works in SHEETS: the cover (first page) alone, then consecutive
+ * uniform pages side by side (a spread), and any WIDE page — a
+ * pre-scanned spread, or one of the occasional odd-shaped pages — alone.
+ * "Wide" is decided by uncompressed size against the book's MEDIAN page
+ * size (the data already in the central directory): no per-page dimension
+ * fetches at open. Real data: Preacher #01 → 0 wide (1 + 20 pairs);
+ * Mushoku v01 → exactly 4 wide, all of them the scanned spreads.
+ */
+
+export interface Sheet {
+  /** Page indices (0-based) in reading order; 1 (cover/odd) or 2 (spread). */
+  pages: number[];
+}
+
+/** A page is wide when it weighs ≥ 1.6× the book's median page. */
+const WIDE_RATIO = 1.6;
+
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+export function buildSheets(pageCount: number, sizes: number[]): Sheet[] {
+  const n = Math.min(pageCount, sizes.length);
+  if (n <= 0) return [];
+  const wideAt = median(sizes.slice(0, n)) * WIDE_RATIO;
+  const isWide = (i: number): boolean => wideAt > 0 && sizes[i] >= wideAt;
+
+  const sheets: Sheet[] = [{ pages: [0] }]; // the cover is always alone
+  let i = 1;
+  while (i < n) {
+    if (isWide(i)) {
+      sheets.push({ pages: [i] }); // a spread (or odd-shaped page) stands alone
+      i += 1;
+    } else if (i + 1 < n && !isWide(i + 1)) {
+      sheets.push({ pages: [i, i + 1] }); // a normal spread: two uniform pages
+      i += 2;
+    } else {
+      sheets.push({ pages: [i] }); // a normal page next to a wide one (or the last)
+      i += 1;
+    }
+  }
+  return sheets;
+}
+
+/** Which sheet shows page `page` (either member of a pair finds it). */
+export function sheetForPage(sheets: Sheet[], page: number): number {
+  for (let s = 0; s < sheets.length; s++) {
+    if (sheets[s].pages.indexOf(page) >= 0) return s;
+  }
+  return Math.max(0, sheets.length - 1); // out of range: the last sheet, honestly
+}
+
+/** "1", "2–3" (1-based; a pair is an en-dash range) — the caption's "of N" is the screen's. */
+export function sheetPageLabel(sheet: Sheet, _total: number): string {
+  if (sheet.pages.length === 1) return String(sheet.pages[0] + 1);
+  return sheet.pages[0] + 1 + "\u2013" + (sheet.pages[1] + 1);
 }

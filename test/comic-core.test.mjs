@@ -230,10 +230,14 @@ test("panBounds: no pan when the image fits the view", () => {
   assert.deepEqual(comic.panBounds(100, 50, 1920, 1080, 0.5), { maxX: 0, maxY: 0 });
 });
 
-test("panBounds: clamped to the image at every zoom level", () => {
+test("panBounds: clamped to the image at every zoom level (center-anchored: symmetric half-range)", () => {
+  // The sheet starts CENTERED: left = (viewW - wPx)/2 + panX, so the pan
+  // range is symmetric — ±half of the overflow. (The old edge-anchored
+  // full-range model pushed a contained sheet to the screen's right edge:
+  // the C1 screenshot showed a Preacher page hugging the right bezel.)
   const b = comic.panBounds(2138, 3056, 1920, 1080, 1.5);
-  assert.ok(Math.abs(b.maxX - (2138 * 1.5 - 1920)) < 1e-6);
-  assert.ok(Math.abs(b.maxY - (3056 * 1.5 - 1080)) < 1e-6, "both axes overflow at 1.5x");
+  assert.ok(Math.abs(b.maxX - (2138 * 1.5 - 1920) / 2) < 1e-6, "max pan = half the horizontal overflow");
+  assert.ok(Math.abs(b.maxY - (3056 * 1.5 - 1080) / 2) < 1e-6, "both axes overflow at 1.5x");
 });
 
 test("panBounds: a tall, width-limited page at 2x pans vertically, not horizontally", () => {
@@ -283,4 +287,110 @@ test("progress: clampResume — a remembered page survives a shorter book", () =
   assert.equal(progress.clampResume(25, 10), 9, "the book shrank: the last page is the honest answer");
   assert.equal(progress.clampResume(-3, 10), 0);
   assert.equal(progress.clampResume(0, 0), 0, "an empty book has no page, and that is fine");
+});
+
+/* ---------------- sheets (spread mode, v1.1 TV feedback 2026-10-13) ------------
+ * A 675px portrait page fit to 16:9 is a sliver in a black sea — the user
+ * reads a comic in TWO-PAGE SHEETS: the cover (first page) alone, then
+ * consecutive uniform pages side by side, and any WIDE page (a pre-scanned
+ * spread, or one of the occasional odd-shaped pages) alone. Width is
+ * decided by UNCOMPRESSED SIZE against the book's median — no per-page
+ * dimension fetches at open, and the real data says it works:
+ *   Preacher #01: 41 uniform pages -> 0 wide  -> 1 + 20 pair-sheets
+ *   Mushoku v01 : 178 pages        -> 4 wide  -> exactly the named spreads
+ */
+function realSizes(fixture, totalBytes) {
+  const tail = new Uint8Array(readFileSync(join(here, "fixtures", fixture)));
+  const m = zip.parseZip(tail, totalBytes - tail.length);
+  return m.entries
+    .filter((e) => !e.name.endsWith("/") && /\.(jpg|jpeg|png)$/i.test(e.name))
+    .map((e) => e.size);
+}
+
+const PREACHER = realSizes("preacher01-tail.bin", 6148002);
+const S = (...pages) => ({ pages });
+const MUSHOKU = realSizes("mushoku01-tail.bin", 350896678);
+
+test("sheets: a uniform western comic (Preacher shape) is cover + pairs", () => {
+  assert.equal(PREACHER.length, 41, "the real book has 41 pages");
+  const sheets = comic.buildSheets(PREACHER.length, PREACHER);
+  assert.equal(sheets.length, 21, "1 cover sheet + 20 pair sheets");
+  assert.deepEqual(sheets[0], S(0), "the cover (first page) is always alone");
+  assert.deepEqual(sheets[1], S(1, 2));
+  assert.deepEqual(sheets[20], S(39, 40));
+  const flat = sheets.flatMap((s) => s.pages);
+  assert.deepEqual(flat, PREACHER.map((_, i) => i), "every page lands in exactly one sheet, in order");
+});
+
+test("sheets: Mushoku's real sizes isolate exactly the 4 scanned spreads", () => {
+  const tail = new Uint8Array(readFileSync(join(here, "fixtures", "mushoku01-tail.bin")));
+  const m = zip.parseZip(tail, 350896678 - tail.length);
+  const img = m.entries.filter((e) => !e.name.endsWith("/") && /\.(jpg|jpeg|png)$/i.test(e.name));
+  // The scan's own naming marks a spread as pNNN-MMM (two page numbers):
+  // the size heuristic must find exactly those, and nothing else.
+  const namedWide = [];
+  img.forEach((e, i) => {
+    if (/p\d{3}-\d{3}/.test(e.name)) namedWide.push(i);
+  });
+  assert.equal(namedWide.length, 4, "the book has 4 named spreads");
+
+  const sheets = comic.buildSheets(MUSHOKU.length, MUSHOKU);
+  const solo = sheets.filter((s) => s.pages.length === 1).map((s) => s.pages[0]);
+
+  // The hard invariants — the user's rule: spreads alone, never paired.
+  assert.ok(namedWide.every((i) => solo.includes(i)), "every scanned spread is a solo sheet");
+  assert.ok(solo.includes(0), "the cover is alone");
+  assert.ok(
+    sheets.every((s) => s.pages.length === 1 || !s.pages.some((p) => namedWide.includes(p))),
+    "no sheet ever contains a wide page with a neighbour"
+  );
+  // …and the solos are structurally bounded: cover + spreads + a page that
+  // happens to sit directly before a spread (its partner IS the spread).
+  const allowedSolo = new Set([0, ...namedWide]);
+  namedWide.forEach((w) => allowedSolo.add(w - 1));
+  assert.ok(solo.every((i) => allowedSolo.has(i)), `solos are only the allowed ones (${solo})`);
+  assert.deepEqual(
+    sheets.flatMap((s) => s.pages),
+    MUSHOKU.map((_, i) => i),
+    "every page lands in exactly one sheet, in order"
+  );
+});
+
+test("sheets: a wide page after the cover stands alone; the pages around it pair", () => {
+  const n = 1000;
+  const sizes = [n, n, 10 * n, n, n, 10 * n, n, n];
+  assert.deepEqual(comic.buildSheets(8, sizes), [S(0), S(1), S(2), S(3, 4), S(5), S(6, 7)]);
+});
+
+test("sheets: a normal page sitting next to a wide one is alone (never paired with a spread)", () => {
+  const n = 1000;
+  assert.deepEqual(comic.buildSheets(5, [n, n, 10 * n, n, n]), [S(0), S(1), S(2), S(3, 4)]);
+});
+
+test("sheets: counts — 1, 2, 3, and an odd tail", () => {
+  assert.deepEqual(comic.buildSheets(1, [1]), [S(0)]);
+  assert.deepEqual(comic.buildSheets(2, [1, 1]), [S(0), S(1)]);
+  assert.deepEqual(comic.buildSheets(3, [1, 1, 1]), [S(0), S(1, 2)]);
+  assert.deepEqual(comic.buildSheets(5, [1, 1, 1, 1, 1]), [S(0), S(1, 2), S(3, 4)]);
+});
+
+test("sheets: uniformity is relative — all-equal is a normal book, and one big page is the odd one out", () => {
+  const n = 1000;
+  assert.deepEqual(comic.buildSheets(4, [n, n, n, n]), [S(0), S(1, 2), S(3)], "all-equal: ordinary pairing");
+  assert.deepEqual(comic.buildSheets(4, [n, n, 10 * n, n]), [S(0), S(1), S(2), S(3)], "the big page and its neighbour stand alone");
+});
+
+test("sheetForPage: a page maps to its sheet (either member of a pair finds it)", () => {
+  const sheets = comic.buildSheets(5, [1, 1, 1, 1, 1]);
+  assert.equal(comic.sheetForPage(sheets, 0), 0);
+  assert.equal(comic.sheetForPage(sheets, 1), 1);
+  assert.equal(comic.sheetForPage(sheets, 2), 1, "the second member of a pair is the same sheet");
+  assert.equal(comic.sheetForPage(sheets, 4), 2);
+});
+
+test("sheetPageLabel: solo is a number, a pair is a 1-based en-dash range", () => {
+  const sheets = comic.buildSheets(6, [1, 1, 1, 1, 1, 1]);
+  assert.equal(comic.sheetPageLabel(sheets[0], 6), "1");
+  assert.equal(comic.sheetPageLabel(sheets[1], 6), "2\u20133");
+  assert.equal(comic.sheetPageLabel(sheets[2], 6), "4\u20135");
 });
