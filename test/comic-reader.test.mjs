@@ -266,3 +266,11 @@ test("comic screen: zoomed pan goes through the pure nudge (TV look-direction co
   const pan = bodyOf(screen, "nudgePan", "Comic.svelte");
   assert.ok(pan.includes("nudge("), "the D-pad step is the pure, tested nudge — the C1 found the drag mapping inverted");
 });
+
+test("comic screen: a turn is persisted when it HAPPENS, not when the sheet finishes loading (Back mid-load must not lose the turn)", () => {
+  const stepFn = bodyOf(screen, "step", "Comic.svelte");
+  assert.ok(
+    /upsertProgress\(/.test(stepFn),
+    "the new sheet's page is saved at turn time — the sheet rewrite regressed this (the page-mode code saved in step()); a Back during a slow 6MB page load must not lose the turn"
+  );
+});

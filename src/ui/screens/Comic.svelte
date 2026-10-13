@@ -243,6 +243,14 @@
     if (!forward && !backward) return;
     const next = forward ? sheetIdx + 1 : sheetIdx - 1;
     if (next < 0 || next >= sheets.length) return; // the honest stop at either end
+    // Persist the turn NOW, not when the sheet finishes loading: a Back
+    // during a slow 6 MB page load must not lose the turn (the page-mode
+    // code saved in step(); the sheet rewrite regressed it — caught by
+    // audit 2026-10-13). loadSheet's ready-path save writes the same value
+    // again, harmlessly.
+    if (file && model) {
+      upsertProgress(file, file.name, readPage(sheets[next]), model.pages.length, dir);
+    }
     syncStore();
     loadSheet(next);
   }
