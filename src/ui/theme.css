@@ -21,7 +21,7 @@
   --accent: #4da3ff;
   --accent-2: #b3e2ff;
   --accent-hover: #c6e8ff;
-  --accent-press: #3584d6;
+  --accent-press: #2a6db0; /* deep enough that the white press glyph clears APCA Lc>=75 (WCAG 5.37) */
   --accent-dim-solid: #18283b;
   /* visited focus ring (accent at 28%) — single system value for every
    * "you've been here" border (tiles + generic focus states) */
