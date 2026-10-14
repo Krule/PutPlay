@@ -292,18 +292,19 @@ test("the App routes audio to the music service and stops music for video (sourc
   assert.ok(/stopMusic\(\)/.test(app), "App stops the music when a video starts (one output)");
 });
 
-test("reading screens scope the remote to the shell (corner row reachable, library not)", () => {
+test("reading screens scope the remote to the shell, excluding the docked player", () => {
   // The arrows PAN/step the content here, so the scope can't be the whole
   // app — but it CAN'T be the reader root either: the owner needs the
-  // music's corner row (and a docked video's controls) usable while
-  // reading. The app shell is the exact right scope: on these screens the
-  // only things mounted in it are the reader and the persistent corner
-  // row, and the row dims to 0.25 while reading so it reads as atmosphere.
+  // music's corner row usable while reading. The app shell is the right
+  // scope, WITH the docked player excluded: a docked video's buttons stay
+  // mouse-clickable (magic remote) but must never catch a D-pad move from
+  // the reader — the "video shows button focus but enter does nothing" bug.
   for (const screen of ["src/ui/screens/Comic.svelte", "src/ui/screens/Image.svelte"]) {
     const src = read(screen);
-    assert.ok(/setFocusScope\(/.test(src), `${screen} must set a focus scope`);
-    assert.ok(/\.app-shell/.test(src),
-      `${screen} must scope to the app shell (the corner row stays reachable while reading)`);
+    assert.ok(
+      /setFocusScope\(document\.querySelector\("\.app-shell"\),\s*"\.player\.docked"\)/.test(src),
+      `${screen} must scope to the shell AND exclude the docked player`
+    );
     assert.ok(
       /setFocusScope\(null\)/.test(src),
       `${screen} must lift the focus scope on unmount`
@@ -312,6 +313,26 @@ test("reading screens scope the remote to the shell (corner row reachable, libra
   // the library stays UNSCOPED — D-pad down from the last row reaches the strip
   assert.ok(!/setFocusScope\(/.test(read("src/ui/screens/Library.svelte")),
     "the library must not scope focus (the strip is reachable there by design)");
+});
+
+test("reading screens RE-ASSERT their remote handlers from the video session", () => {
+  // The Player's contract (Player.svelte): on dock it stops re-asserting and
+  // the background screen re-asserts from its subscription. The library does
+  // this; the reader screens must too — a one-shot setHandlers on mount dies
+  // after a restore-to-full → close cycle: the Player's stale full-mode
+  // handlers stay put and Back goes dead (found on the TV).
+  for (const screen of ["src/ui/screens/Comic.svelte", "src/ui/screens/Image.svelte"]) {
+    const src = read(screen);
+    assert.ok(
+      /from "\.\.\/\.\.\/store\/video"/.test(src),
+      `${screen} must subscribe to the video session`
+    );
+    const guard = /\$:\s*if\s*\(\s*!\$videoStore\s*\|\|\s*\$videoStore\.mode !== "full"\s*\)/.exec(src);
+    assert.ok(guard, `${screen} must guard remote ownership on the video session`);
+    const block = src.slice(guard.index, guard.index + 400);
+    assert.ok(/remote\.setHandlers\(/.test(block), "the guard must re-assert the screen's handlers");
+    assert.ok(/setFocusScope\(/.test(block), "the guard must re-assert the scope (with the dock exclusion)");
+  }
 });
 
 // ---------------- 7. the decode-capability record ----------------

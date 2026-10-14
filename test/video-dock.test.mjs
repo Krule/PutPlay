@@ -287,3 +287,28 @@ test("the background stays mounted under the full player (Back-after-restore)", 
   assert.doesNotMatch(app, /\{#if !\(\$video && \$video\.mode === "full"\)/,
     "the background must not be conditional on the player's mode");
 });
+
+test("focus scope can exclude a subtree (the docked player while a reading screen is up)", () => {
+  // A docked player's buttons stay mouse-clickable (magic remote), but must
+  // never catch a D-pad move from the comic/image: the reading screen owns
+  // the arrows. The exclusion is a LIVE SELECTOR, not an element reference —
+  // the docked player appears and disappears under the reading screen.
+  const src = read("src/webos/remote.ts");
+  assert.match(src, /setFocusScope\(root: HTMLElement \| null,\s*excludeSelector\?: string \| null\)/,
+    "setFocusScope must accept an exclusion selector");
+  const cands = src.slice(src.indexOf("private candidates"));
+  assert.ok(cands.includes("this.exclude"), "candidates() must consult the scope exclusion");
+  assert.match(cands, /closest\(this\.exclude\)/, "the exclusion must be evaluated live per candidate");
+});
+
+test("a mouse-click on a scope-excluded element acts but does not steal spatial focus", () => {
+  // The docked player's buttons are clicked with the magic remote while a
+  // reading screen is up: the click must run the button's action (DOM click
+  // does that natively) but must NOT mark the element as the spatially
+  // focused one — with the dock excluded from candidates there would be no
+  // D-pad move that could ever bring focus back.
+  const src = read("src/webos/remote.ts");
+  const act = src.slice(src.indexOf("activate(el: HTMLElement"));
+  assert.match(act, /closest\(this\.exclude\)/, "activate must consult the scope exclusion");
+  assert.match(act, /if\s*\(\s*!\s*outsideScope\s*\)\s*this\.setActive/, "only in-scope elements may take the spatial focus");
+});

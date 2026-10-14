@@ -165,9 +165,18 @@ export class Remote {
    * null to restore whole-screen navigation.
    */
   private scope: HTMLElement | null = null;
+  /**
+   * Scope-level exclusion, as a LIVE SELECTOR (not an element): elements
+   * inside a matched subtree stay mouse-clickable (magic remote) but never
+   * catch a D-pad move. The docked video player while a reading screen is
+   * up is the case for it — the subtree appears and disappears, so a
+   * reference would go stale.
+   */
+  private exclude: string | null = null;
 
-  setFocusScope(root: HTMLElement | null): void {
+  setFocusScope(root: HTMLElement | null, excludeSelector?: string | null): void {
     this.scope = root && root.isConnected ? root : null;
+    this.exclude = excludeSelector ?? null;
   }
 
   /* ---------- focus movement ---------- */
@@ -185,7 +194,9 @@ export class Remote {
         el.getAttribute("data-focus-disabled") !== "true" &&
         el.offsetParent !== null &&
         el.getBoundingClientRect().width > 0 &&
-        (!this.scope || this.scope.contains(el))
+        (!this.scope || this.scope.contains(el)) &&
+        // scope-level exclusion (the docked player while reading): mouse-only
+        (!this.exclude || !el.closest(this.exclude))
     );
   }
 
@@ -306,7 +317,14 @@ export class Remote {
   }
 
   activate(el: HTMLElement, fromClick: boolean): void {
-    this.setActive(el, !fromClick);
+    // A mouse-clicked element OUTSIDE the current scope (the docked player
+    // while a reading screen is up) still runs its own click handler, but it
+    // must not steal the SPATIAL focus: with the dock excluded there is no
+    // D-pad move that could ever bring focus back, and a stranded ring on a
+    // dock button read on the TV as "the reader is broken".
+    const outsideScope =
+      !!this.exclude && el.isConnected && !!el.closest(this.exclude);
+    if (!outsideScope) this.setActive(el, !fromClick);
     if (fromClick) {
       // A real mouse click is already flowing to the element's own action listener
       // (the tile/crumb/menu-item dispatches its event there). Don't re-click or it

@@ -4,6 +4,7 @@
   import { stepIndex, type ViewerTarget } from "../../putio/image";
   import { cycleZoom, zoomScale, panBounds, nudge, type ZoomLevel } from "../../putio/zoom";
   import { fmtBytes } from "../../putio/api";
+  import { video as videoStore } from "../../store/video";
 
   export let targets: ViewerTarget[];
   export let initial: number;
@@ -159,18 +160,27 @@
     // at fit, up/down is an honest no-op (there is nothing above/below)
   }
 
-  onMount(() => {
+  // Remote ownership follows the video session — the Player's contract: in
+  // FULL the Player owns the remote; on dock or close it stops re-asserting
+  // and THIS screen takes Back/OK/arrows back from its subscription. A one-
+  // shot setHandlers on mount dies after a restore-to-full → close cycle
+  // (the magic remote drives the dock while viewing): the Player's stale
+  // full-mode handlers stay put and Back goes dead — found on the TV.
+  // The scope covers the app shell (viewer + the persistent music row, which
+  // dims to 0.25 while viewing) and EXCLUDES the docked player: its buttons
+  // stay mouse-only (magic remote) while the arrows belong to the image.
+  $: if (!$videoStore || $videoStore.mode !== "full") {
     remote.setHandlers({
       onBack,
       onOK,
       onNavigate,
     });
-    // the arrows PAN (zoomed) or step images (fit) here — scope the spatial
-    // remote to the APP SHELL (viewer + persistent corner row), not the
-    // viewer alone: the music row must stay usable while viewing — it dims
-    // to 0.25 so it reads as atmosphere, not chrome. The library's grid
-    // isn't mounted on this screen, so the D-pad can't wander there.
-    remote.setFocusScope(document.querySelector(".app-shell"));
+    remote.setFocusScope(document.querySelector(".app-shell"), ".player.docked");
+  }
+
+  onMount(() => {
+    // remote ownership + scope live in the reactive statement above — they
+    // must re-run when the video session docks or closes under this screen
     loadImage();
     wake();
     return () => {

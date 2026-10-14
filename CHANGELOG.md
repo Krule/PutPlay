@@ -21,6 +21,15 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   own — it no longer covers the page.
 
 ### Fixed
+- While reading a comic or image with a video docked: the D-pad no longer
+  wanders into the dock's buttons (they showed a focus ring but Enter did
+  nothing there). The dock stays clickable with the magic remote — its
+  buttons just can't steal the reader's arrows any more, and a mouse click
+  on them no longer leaves a stray focus ring behind.
+- Back works again from the reader after you have driven the docked video
+  (restore-to-full, close, …): the reader now takes the remote's handlers
+  back whenever the video leaves full, instead of being stranded on the
+  player's stale ones.
 - The docked video's mini window sits in the bottom-right corner again
   (it was pinned top-left), and micro no longer paints the whole screen
   black — it folds to just the icon row in that same corner.
