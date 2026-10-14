@@ -282,6 +282,7 @@ button:disabled,
   padding: 0 16px;
   background: var(--surface-2);
   border-radius: var(--r-lg);
+  box-shadow: var(--elev-md);
 }
 /* the strip's micro: the icon row in the video dock's corner, the dock's
    look. (0,2,0) so it out-specifies the .dock base (0,1,0) wherever it
@@ -296,8 +297,10 @@ button:disabled,
   box-shadow: var(--elev-lg);
   overflow: hidden;
 }
-  box-shadow: var(--elev-md);
-}
+/* while reading (comic/image) the row recedes to atmosphere; focusing it
+   brings it back (focus-within is Chrome 17 — safe) */
+.np-micro.dimmed { opacity: 0.25; }
+.np-micro.dimmed:focus-within { opacity: 1; }
 .np > :not(:first-child) { margin-left: 16px; }
 .np-art {
   width: 72px;

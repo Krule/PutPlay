@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /**
- * Build: Svelte 4 precompile → esbuild (iife, es2019) → js/bundle.js
+ * Build: Svelte 4 precompile → esbuild (iife, chrome79) → js/bundle.js
  * Svelte CSS is inlined at precompile time, so no CSS step is needed.
+ * The target lives in build/options.mjs (webOS 6 = Chromium 79) — do not
+ * raise it without re-running the TV: a newer target makes the CSS
+ * minifier emit shorthands (inset) the TV silently ignores.
  */
 import * as esbuild from "esbuild";
+import { browserTarget } from "./options.mjs";
 import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";import { join, extname, resolve, dirname } from "node:path";
@@ -95,7 +99,7 @@ function build() {
       bundle: true,
       format: "iife",
       platform: "browser",
-      target: ["es2019"],
+      target: browserTarget,
       sourcemap: false,
       minify: true,
       logLevel: "warning",
@@ -127,7 +131,7 @@ if (isWatch) {
     bundle: true,
     format: "iife",
     platform: "browser",
-    target: ["es2019"],
+    target: browserTarget,
     sourcemap: false,
     minify: false,
     logLevel: "warning",

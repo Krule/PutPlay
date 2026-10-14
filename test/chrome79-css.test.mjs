@@ -169,3 +169,30 @@ test(":focus-visible rules are desktop-only (in @supports, never mixed)", () => 
     "A selector list containing an unknown pseudo-class is discarded ENTIRELY on Chromium 79:\n" + bad.join("\n")
   );
 });
+
+/* ---------------- 4. the built artifact (minifier shorthand merges) ---------------- */
+// Source-clean ≠ artifact-safe: esbuild's CSS MINIFIER folds longhands into
+// shorthands when the target knows them (top/right/bottom/left → `inset`,
+// Chrome 87+). Chromium 79 silently ignores `inset` — every inset vanishes
+// and the layout breaks with no console error. That exact bug shipped
+// twice (the player rendered off-screen on the TV while every desktop test
+// passed). The build must target the TV's Chromium, and the minified output
+// must stay longhand.
+const { transform } = await import("esbuild");
+const { browserTarget } = await import("../build/options.mjs");
+
+test("minified CSS stays Chrome-79 safe (no shorthand the TV can't read)", async () => {
+  const bad = [];
+  for (const { file, css } of sheets) {
+    if (!file.endsWith(".css")) continue; // only global sheets go through esbuild's CSS minifier
+    const out = await transform(css, { loader: "css", minify: true, target: browserTarget });
+    const merged = [...new Set([...out.code.matchAll(/(^|[;{])(inset|size)\s*:/g)].map((m) => m[2]))];
+    if (merged.length) bad.push(`${file} → minifier emitted ${merged.join(", ")} (Chrome 87+/108+)`);
+  }
+  assert.equal(
+    bad.length,
+    0,
+    "The minifier folded longhands into shorthands Chromium 79 can't parse — the TV silently drops the declarations. Point the build target at the TV (build/options.mjs):\n" +
+      bad.join("\n")
+  );
+});

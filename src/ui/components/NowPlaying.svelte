@@ -13,6 +13,9 @@
   // the pan area — the strip's buttons stay out of those focus scopes).
   const remote = getRemote();
   export let presentation: "strip" | "micro" = "strip";
+  /** While a reading screen (comic/image) is up, the corner row recedes to
+   *  0.25 opacity so it reads as atmosphere; :focus-within brings it back. */
+  export let dimmed = false;
   let stripEl: HTMLElement;
   let microEl: HTMLElement;
   let panelEl: HTMLElement;
@@ -80,7 +83,7 @@
   <!-- the micro: the icon row in the video dock's corner — the dock's own
        visual language (.dock/.dock-btn), so the two sessions read as one
        system. Transport keeps working from here (audio continues). -->
-  <div class="dock np-micro" bind:this={microEl}>
+  <div class="dock np-micro" class:dimmed={dimmed} bind:this={microEl}>
     <button class="dock-btn" bind:this={prevBtn} data-focus aria-label="Previous track" on:click={prevMusic}>«</button>
     <button class="dock-btn play" data-focus aria-label={m?.ms.paused ? "Play" : "Pause"} on:click={toggleMusic}>{m?.ms.paused ? "▶" : "❚❚"}</button>
     <button class="dock-btn" bind:this={nextBtn} data-focus aria-label="Next track" on:click={nextMusic}>»</button>

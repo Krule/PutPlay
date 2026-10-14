@@ -292,15 +292,18 @@ test("the App routes audio to the music service and stops music for video (sourc
   assert.ok(/stopMusic\(\)/.test(app), "App stops the music when a video starts (one output)");
 });
 
-test("immersive screens trap focus to themselves (the strip must not catch D-pad arrows there)", () => {
-  // on the comic and image screens the arrows PAN the content — a strip
-  // button reachable from there steals every downward move. The screens
-  // scope the spatial remote to their own root (the strip sits at the App
-  // level, outside any screen root, so the scope excludes it) and lift the
-  // scope again on unmount (the library keeps the strip reachable).
+test("reading screens scope the remote to the shell (corner row reachable, library not)", () => {
+  // The arrows PAN/step the content here, so the scope can't be the whole
+  // app — but it CAN'T be the reader root either: the owner needs the
+  // music's corner row (and a docked video's controls) usable while
+  // reading. The app shell is the exact right scope: on these screens the
+  // only things mounted in it are the reader and the persistent corner
+  // row, and the row dims to 0.25 while reading so it reads as atmosphere.
   for (const screen of ["src/ui/screens/Comic.svelte", "src/ui/screens/Image.svelte"]) {
     const src = read(screen);
     assert.ok(/setFocusScope\(/.test(src), `${screen} must set a focus scope`);
+    assert.ok(/\.app-shell/.test(src),
+      `${screen} must scope to the app shell (the corner row stays reachable while reading)`);
     assert.ok(
       /setFocusScope\(null\)/.test(src),
       `${screen} must lift the focus scope on unmount`
@@ -374,4 +377,16 @@ test("reading screens present the music as micro (the strip must not cover the p
   assert.match(app, /presentation=\{npPresentation\}/, "the presentation is passed to the strip");
   const np = read("src/ui/components/NowPlaying.svelte");
   assert.match(np, /export let presentation/, "the strip renders its presentation as a prop (the App decides)");
+});
+
+test("the corner row recedes while reading (0.25, brightens on focus)", () => {
+  const css = read("src/ui/theme.css");
+  assert.match(css, /\.np-micro\.dimmed\s*\{[^}]*opacity:\s*0?\.25/, "dimmed to 0.25 while reading");
+  assert.match(css, /\.np-micro\.dimmed:focus-within\s*\{[^}]*opacity:\s*1/, "focus brings it back");
+  const app = read("src/ui/App.svelte");
+  assert.match(app, /dimmed=\{screen === "comic" \|\| screen === "image"\}/,
+    "the App dims exactly on the reading screens");
+  const np = read("src/ui/components/NowPlaying.svelte");
+  assert.match(np, /export let dimmed/, "the dimming is a prop (the App decides)");
+  assert.match(np, /class:dimmed=/, "the micro row carries the dimmed class");
 });

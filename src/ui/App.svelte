@@ -395,7 +395,7 @@
   {/if}
 
   {#if $music}
-    <NowPlaying presentation={npPresentation} />
+    <NowPlaying presentation={npPresentation} dimmed={screen === "comic" || screen === "image"} />
   {/if}
   <video class="music-el" bind:this={musicEl} aria-hidden="true"></video>
 </div>

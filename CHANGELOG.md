@@ -26,6 +26,17 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   black — it folds to just the icon row in that same corner.
 - Back works again after restoring the docked player to full (one
   restore→Back cycle used to leave it dead).
+- The player rendered off-screen on the TV (a bottom strip instead of the
+  full screen): the build's CSS minifier was folding top/right/bottom/left
+  into the `inset` shorthand, which the TV's Chromium 79 silently ignores.
+  The build now targets the TV's Chromium (build/options.mjs) and the test
+  suite re-minifies the stylesheet with that target — any shorthand the TV
+  can't read fails the build. This was the real cause of the first
+  positioning round as well.
+- The music row's controls work from the comic reader now (restore, play,
+  next — the reader's D-pad scope includes the corner row, and the library
+  stays out of reach), and while reading the row recedes to 25% opacity,
+  brightening when you focus it.
 
 ## [1.1.0] - 2026-10-14
 

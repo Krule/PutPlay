@@ -368,10 +368,12 @@
 
   onMount(() => {
     remote.setHandlers({ onBack, onOK, onNavigate });
-    // the arrows PAN the page here — scope the spatial remote to this
-    // screen so the app-level now-playing strip (outside this root) can
-    // never catch a D-pad move. The library keeps the strip reachable.
-    remote.setFocusScope(readerEl);
+    // The arrows PAN/step here — scope the spatial remote to the APP SHELL
+    // (reader + persistent corner row), not the reader alone: the music row
+    // (and a docked video's controls) must stay usable while reading — it
+    // dims to 0.25 so it reads as atmosphere, not chrome. The library's
+    // grid isn't mounted on this screen, so the D-pad can't wander there.
+    remote.setFocusScope(document.querySelector(".app-shell"));
     wake();
     if (file && model && sheets.length > 0) loadSheet(sheetIdx);
     else dispatch("back"); // defensive: the App should never route here empty

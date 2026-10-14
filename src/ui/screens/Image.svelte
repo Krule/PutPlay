@@ -166,9 +166,11 @@
       onNavigate,
     });
     // the arrows PAN (zoomed) or step images (fit) here — scope the spatial
-    // remote to this screen so the app-level now-playing strip can never
-    // catch a D-pad move. The library keeps the strip reachable.
-    remote.setFocusScope(viewerEl);
+    // remote to the APP SHELL (viewer + persistent corner row), not the
+    // viewer alone: the music row must stay usable while viewing — it dims
+    // to 0.25 so it reads as atmosphere, not chrome. The library's grid
+    // isn't mounted on this screen, so the D-pad can't wander there.
+    remote.setFocusScope(document.querySelector(".app-shell"));
     loadImage();
     wake();
     return () => {
