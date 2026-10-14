@@ -7,6 +7,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Fixed
+- Pressing Down to switch focus off the corner (music row or docked
+  video) now actually turns it back down on the TV: releasing focus also
+  hands back the DOM focus, which was keeping the corner at full opacity
+  with a focused-looking button even though the spatial focus was gone.
+  Same for the release when you walk off the corner's edge.
 - While reading, the corner (the music row, or a docked video in mini/
   micro) no longer holds the arrows: walking off its edge releases the
   focus, and Down — a dead key at fit size — now switches focus between

@@ -309,3 +309,16 @@ test("walking off a corner surface's edge releases its focus (the reader's arrow
   assert.ok(!/excludeSelector/.test(src), "the scope exclusion was removed (corner surfaces are in-scope now)");
   assert.ok(!/outsideScope/.test(src), "activate's exclusion special-case was removed");
 });
+
+test("releasing spatial focus also releases the DOM focus (:focus ring + :focus-within)", () => {
+  // Found on the TV: the down-toggle (and edge-walk release) cleared the
+  // spatial state but left the corner button DOM-focused — the button:focus
+  // ring (Chrome 79's focus path) and :focus-within (the corner's opacity
+  // rule) kept the corner lit at 100% "with a focused button" even though
+  // the spatial focus was gone. blur() must hand the DOM focus back too.
+  const src = read("src/webos/remote.ts");
+  const i = src.indexOf("blur(): void");
+  assert.ok(i !== -1, "blur() must exist");
+  const body = src.slice(i, i + 400);
+  assert.match(body, /\.blur\(\)/, "blur() must also blur the DOM element");
+});

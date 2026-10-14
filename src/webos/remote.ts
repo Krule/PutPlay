@@ -304,6 +304,11 @@ export class Remote {
   blur(): void {
     if (this.active) {
       this.active.dataset.state = "";
+      // hand the DOM focus back as well: button:focus is Chrome 79's ring
+      // and :focus-within keeps the corner lit at 100% while a button
+      // inside it holds the DOM focus — clearing only the spatial state
+      // left the corner looking focused (found on the TV).
+      this.active.blur();
       this.active = null;
     }
   }
