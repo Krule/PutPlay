@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-14
+
 ### Added
 - Docked video player: pressing Back in the full player no longer stops the
   film — it docks to a small window over your library and keeps playing.
@@ -127,8 +129,6 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   rest fits (freshest-first), and the in-memory map is never trimmed, so
   the session still shows every cover. A cached cover that won't decode is
   re-fetched from the network instead of showing broken pixels.
-
-### Fixed
 - Archives with a central directory larger than 256 KB were refused as
   "not a ZIP" (the tail chunk missed the index). The two-stage open
   reads the index wherever it is — verified on an 8000-entry archive.
