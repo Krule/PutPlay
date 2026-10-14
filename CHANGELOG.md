@@ -4,7 +4,7 @@ All notable changes to PutPlay are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/1.1.0/); versions follow the git tag (`vX.Y.Z`).
 Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
-## [Unreleased]
+## [1.1.0] - 2026-10-14
 
 ### Added
 - Music playback: open a music file in the library and it plays under a
@@ -14,10 +14,6 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   rewind keys drive it. The TV's own decoder is the judge: a format it
   can't play is said so directly and remembered, so the same file never
   gets retried blindly.
-
-## [1.1.0] - 2026-10-13
-
-### Added
 - Comic reader: open a .cbz from the library and it reads like a book —
   the put.io file is never downloaded, only the pages you look at (range
   reads + in-memory inflate, verified on a 351 MB scan: zero full-file
@@ -52,6 +48,9 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   fetched falls back to the glyph — never an empty tile.
 
 ### Changed
+- One engine, one output: starting a video stops the music, and starting
+  the music stops the video — the TV has one sound path, and the app
+  doesn't fight over it.
 - Sign-in on app launch now completes with a single account check instead
   of two — the app started by validating the saved token and then
   fetching the account info, which is the same put.io endpoint called
