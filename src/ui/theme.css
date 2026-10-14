@@ -282,6 +282,20 @@ button:disabled,
   padding: 0 16px;
   background: var(--surface-2);
   border-radius: var(--r-lg);
+}
+/* the strip's micro: the icon row in the video dock's corner, the dock's
+   look. (0,2,0) so it out-specifies the .dock base (0,1,0) wherever it
+   appears in the file. */
+.dock.np-micro {
+  position: fixed;
+  left: auto;
+  right: 48px;
+  bottom: 48px;
+  z-index: 40;
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-lg);
+  overflow: hidden;
+}
   box-shadow: var(--elev-md);
 }
 .np > :not(:first-child) { margin-left: 16px; }
@@ -388,7 +402,23 @@ button:disabled,
    The SAME element + engine as the full player, smaller chrome (plan §9.1).
    Mini keeps the picture; micro keeps the audio and the icons only. The
    markup lives in Player.svelte; the chrome is shared app-level, like the
-   now-playing strip. */
+   now-playing strip.
+
+   The frame's GEOMETRY lives here, not in the Player's scoped <style>: a
+   scoped .player rule has equal (0,2,0) weight and is injected later, so it
+   wins ties by source order — that pinned the dock top-left (top:0/left:0)
+   and made micro full-screen black. One ladder, one order:
+   .player (0,1,0) < .player.docked (0,2,0) < .player.docked.micro (0,3,0).
+   */
+.player {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--black);
+  z-index: 50; /* the full player covers the background it stays mounted under */
+}
 .player.docked {
   position: absolute;
   top: auto;
@@ -405,7 +435,7 @@ button:disabled,
 .player.docked .video {
   object-fit: contain;
 }
-.player.micro {
+.player.docked.micro {
   width: auto;
   height: auto;
 }
@@ -413,6 +443,11 @@ button:disabled,
    which is injected later in the cascade with equal (0,3,0) weight */
 .player.docked.micro .video {
   display: none; /* audio keeps playing; only the icons remain */
+}
+/* the row goes in-flow: the frame sheds its 400x225 box and shrinks to the
+   icons, keeping the .docked corner (bottom-right) */
+.player.docked.micro .dock {
+  position: static;
 }
 .dock {
   position: absolute;
@@ -424,9 +459,6 @@ button:disabled,
   padding: 8px;
   background: var(--surface-2);
   z-index: 10;
-}
-.player.micro .dock {
-  position: static;
 }
 .dock-btn {
   width: 48px;

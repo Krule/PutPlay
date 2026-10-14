@@ -250,3 +250,40 @@ test("the dock is styled with theme.css (shared chrome, auditable)", () => {
   assert.match(css, /\.dock-btn/);
   assert.match(css, /\.player\.docked\.micro \.video\s*\{[^}]*display:\s*none/, "micro hides the video (out-specifying the scoped .video rule)");
 });
+
+test("the docked frame is positioned by the shared theme, not the Player's scoped rule", () => {
+  // The scoped .player rule (injected into <head> AFTER theme.css, equal
+  // (0,2,0) weight) won the cascade on top/left/right/bottom: the mini sat
+  // top-left and micro (all four insets 0, auto size) went full-screen black.
+  // The frame base lives in theme.css with a clean ladder:
+  // .player (0,1,0) < .player.docked (0,2,0) < .player.docked.micro (0,3,0).
+  const css = read("src/ui/theme.css");
+  assert.match(css, /\.player\s*\{[^}]*position:\s*absolute/s, "the frame base is in the shared theme");
+  assert.match(css, /\.player\s*\{[^}]*z-index:\s*50/s, "the full player covers the background it stays mounted under");
+  const docked = css.match(/\.player\.docked\s*\{[^}]*\}/s);
+  assert.ok(docked, ".player.docked exists");
+  for (const decl of ["top: auto", "left: auto", "right: 48px", "bottom: 48px", "width: 400px"]) {
+    assert.ok(docked[0].includes(decl), `.player.docked must declare ${decl}`);
+  }
+  const style = read("src/ui/screens/Player.svelte").split("<style>")[1] || "";
+  assert.doesNotMatch(style, /\.player\s*\{[^}]*position/s,
+    "the Player's scoped style must not position the frame (a tie it wins by source order)");
+});
+
+test("micro sizes the frame to its icon row, bottom-right (not full-screen)", () => {
+  const css = read("src/ui/theme.css");
+  assert.match(css, /\.player\.docked\.micro\s*\{[^}]*width:\s*auto/s, "the frame sheds the 400x225 box");
+  assert.match(css, /\.player\.docked\.micro\s*\{[^}]*height:\s*auto/s);
+  assert.match(css, /\.player\.docked\.micro \.dock\s*\{[^}]*position:\s*static/s,
+    "the row is in-flow so the frame shrinks to it and keeps the .docked corner");
+});
+
+test("the background stays mounted under the full player (Back-after-restore)", () => {
+  // Unmounting the background on full raced the Player's re-assert: the
+  // Library's onDestroy cleared the remote handlers the Player had just set,
+  // and Back died until the next re-assert. The full player COVERS the
+  // background (z-index 50) instead of replacing it.
+  const app = read("src/ui/App.svelte");
+  assert.doesNotMatch(app, /\{#if !\(\$video && \$video\.mode === "full"\)/,
+    "the background must not be conditional on the player's mode");
+});

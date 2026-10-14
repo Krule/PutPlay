@@ -54,6 +54,17 @@
   let archiveFile: PutFile | null = null;
   let comicFile: PutFile | null = null;
 
+  // The strip's presentation: the user's mode (strip|micro) — except on the
+  // reading screens, where the full-width strip would cover the page. There
+  // the session always presents as the small corner row: the D-pad is busy
+  // panning/navigating (the strip's buttons stay out of those scopes), and
+  // the remote's transport keys still drive the music.
+  $: npPresentation = $music
+    ? screen === "comic" || screen === "image"
+      ? "micro"
+      : $music.mode
+    : "strip";
+
   /* ---------------- back key ----------------
    * Primary path: remote.ts delivers the Back key (keydown 461; appinfo.json
    * disableBackHistoryAPI makes the platform pass it to us) to the active
@@ -361,22 +372,22 @@
   {#if screen === "connect"}
     <Connect state={auth} />
   {:else}
-    <!-- the background screen. The full player covers it entirely; the
-         docked player (mini/micro) overlays it in the corner while it keeps
-         playing. Both are rendered from the session store, never from a
-         "player" screen (plan §9.1). -->
-    {#if !($video && $video.mode === "full")}
-      {#if screen === "library"}
-        <Library on:open={onOpen} on:open-image={onOpenImage} on:open-archive={onOpenArchive} on:root={onLibraryRoot} />
-      {:else if screen === "archive" && archiveFile}
-        <Archive file={archiveFile} on:open-image={onOpenArchiveImage} on:back={onArchiveBack} />
-      {:else if screen === "comic" && comicFile}
-        <Comic on:back={onComicBack} />
-      {:else if screen === "image" && imageTargets.length}
-        <Image targets={imageTargets} initial={imageInitial} on:back={onImageBack} />
-      {:else if screen === "settings"}
-        <Settings on:back={onSettingsBack} />
-      {/if}
+    <!-- the background screen. It stays mounted for the whole session —
+         the full player COVERS it (z-index), the docked player (mini/micro)
+         overlays it in the corner. Both render from the session store,
+         never from a "player" screen (plan §9.1). Unmounting it on full
+         raced the Player's remote re-assert: the Library's destroy cleared
+         the handlers the Player had just set, and Back died. -->
+    {#if screen === "library"}
+      <Library on:open={onOpen} on:open-image={onOpenImage} on:open-archive={onOpenArchive} on:root={onLibraryRoot} />
+    {:else if screen === "archive" && archiveFile}
+      <Archive file={archiveFile} on:open-image={onOpenArchiveImage} on:back={onArchiveBack} />
+    {:else if screen === "comic" && comicFile}
+      <Comic on:back={onComicBack} />
+    {:else if screen === "image" && imageTargets.length}
+      <Image targets={imageTargets} initial={imageInitial} on:back={onImageBack} />
+    {:else if screen === "settings"}
+      <Settings on:back={onSettingsBack} />
     {/if}
     {#if $video}
       <Player file={$video.file} mode={$video.mode} />
@@ -384,7 +395,7 @@
   {/if}
 
   {#if $music}
-    <NowPlaying />
+    <NowPlaying presentation={npPresentation} />
   {/if}
   <video class="music-el" bind:this={musicEl} aria-hidden="true"></video>
 </div>

@@ -31,6 +31,9 @@ export interface MusicState {
   index: number;
   /** The expanded now-playing panel is open (the strip stays either way). */
   expanded: boolean;
+  /** The strip's presentation — the user's choice (ladder parity with the
+   *  docked video). The reading screens override it to "micro" (App). */
+  mode: "strip" | "micro";
   /** The folder's cover (a cover.jpg/png sibling) stream URL, or null. */
   cover: string | null;
   /** The engine's media state (position, duration, buffering, error…). */
@@ -102,7 +105,7 @@ function openTrack(file: PutFile, auth: Auth): void {
 export function startMusic(file: PutFile, queue: PutFile[], index: number, auth: Auth, cover: string | null = null): void {
   if (!el) return;
   sessionAuth = auth;
-  music.set({ file, queue, index, expanded: false, cover, ms: { buffering: true } });
+  music.set({ file, queue, index, expanded: false, mode: "strip", cover, ms: { buffering: true } });
   openTrack(file, auth);
 }
 
@@ -149,6 +152,12 @@ export function seekMusic(delta: number): void {
 
 export function setExpanded(v: boolean): void {
   music.update((m) => (m ? { ...m, expanded: v } : m));
+}
+
+/** The strip's presentation: the full bar, or the icon-only corner row
+ *  (ladder parity with the docked video: strip ↔ micro). */
+export function setMusicMode(mode: "strip" | "micro"): void {
+  music.update((m) => (m ? { ...m, mode } : m));
 }
 
 /* ---------------- the TV's decode-capability record ----------------

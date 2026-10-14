@@ -15,6 +15,17 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 - Videos advance on their own: when one ends, the next video in the same
   folder starts. Turn it off in Settings → Playback ("Play next in folder",
   on by default).
+- The now-playing strip gets the same ladder: a collapse button folds it
+  to an icon row in the corner (and back). While you're reading a comic or
+  looking at a picture, the music presents as that small corner row on its
+  own — it no longer covers the page.
+
+### Fixed
+- The docked video's mini window sits in the bottom-right corner again
+  (it was pinned top-left), and micro no longer paints the whole screen
+  black — it folds to just the icon row in that same corner.
+- Back works again after restoring the docked player to full (one
+  restore→Back cycle used to leave it dead).
 
 ## [1.1.0] - 2026-10-14
 

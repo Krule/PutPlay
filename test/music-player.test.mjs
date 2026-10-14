@@ -345,3 +345,33 @@ test("the audio classification is honest about what it means", () => {
     "the family is the extension — the probe key the TV's decoder answers to");
   assert.equal(audioFamily({ content_type: "audio/unknown", name: "x.unknown" }), "unknown");
 });
+
+// ---------------- 9. the strip's micro (ladder parity with the docked video) ----------------
+
+test("the strip collapses to a micro row (ladder parity with the docked video)", () => {
+  const store = read("src/store/music.ts");
+  assert.match(store, /mode:\s*"strip"\s*\|\s*"micro"/, "the session carries its presentation");
+  assert.match(store, /export function setMusicMode/, "the mode is settable");
+  const np = read("src/ui/components/NowPlaying.svelte");
+  assert.match(np, /aria-label="Make it micro"/, "the strip has the collapse control");
+  assert.match(np, /aria-label="Restore to strip"/, "the micro row restores the strip");
+  assert.match(np, /class="dock np-micro"/, "the micro row reuses the dock's visual language");
+  const css = read("src/ui/theme.css");
+  const micro = css.match(/\.np-micro\s*\{[^}]*\}/s);
+  assert.ok(micro, ".np-micro exists in the shared theme");
+  assert.ok(micro[0].includes("right: 48px"), "micro sits in the video dock's corner (right)");
+  assert.ok(micro[0].includes("bottom: 48px"), "…and the bottom");
+});
+
+test("reading screens present the music as micro (the strip must not cover the page)", () => {
+  // On the comic and image screens the D-pad pans/navigates the content, so
+  // the strip's buttons stay out of that scope (the focus gate above). The
+  // coverage problem is solved in the presentation instead: the App renders
+  // the session as the small corner row while a reading screen is up, and as
+  // the user's chosen mode everywhere else.
+  const app = read("src/ui/App.svelte");
+  assert.match(app, /screen === "comic" \|\| screen === "image"/, "the reading screens are the exception");
+  assert.match(app, /presentation=\{npPresentation\}/, "the presentation is passed to the strip");
+  const np = read("src/ui/components/NowPlaying.svelte");
+  assert.match(np, /export let presentation/, "the strip renders its presentation as a prop (the App decides)");
+});

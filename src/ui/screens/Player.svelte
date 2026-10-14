@@ -1063,14 +1063,9 @@
 </div>
 
 <style>
-  .player {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    background: var(--black);
-  }
+  /* The frame's geometry (position, insets, size, background, z-index) is
+     owned by theme.css (.player ladder) — a scoped rule here would tie at
+     (0,2,0) and win by source order (the top-left/blank-screen bug). */
   .video {
     width: 100%;
     height: 100%;
