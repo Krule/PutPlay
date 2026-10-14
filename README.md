@@ -44,9 +44,17 @@ So I outlined this project, put together some resources, some rules and some lim
 
 ## Screens
 
+![Sign in](docs/screenshots/connect.png)
+
+Sign-in is a device code — enter it on your phone, or scan the QR.
+
 ![Library with a comic cover thumb](docs/screenshots/library.png)
 
 The library — a `.cbz` tile shows its real cover, cached locally.
+
+![Player](docs/screenshots/player.png)
+
+The player — the file as uploaded, with source, audio, and subtitle controls. (Frame: Big Buck Bunny, Blender Foundation, CC-BY 3.0.)
 
 ![Comic reader spread](docs/screenshots/comic.png)
 
@@ -59,6 +67,10 @@ The image viewer — *The Starry Night*, fit to the glass.
 ![Now-playing strip](docs/screenshots/music.png)
 
 Music under a now-playing strip — the library stays fully usable.
+
+![Account and settings](docs/screenshots/settings.png)
+
+Account & settings — source, audio, and subtitle preferences, saved per account.
 
 More in [`docs/screenshots/`](docs/screenshots/); the demo content behind
 the shots is open content — see
