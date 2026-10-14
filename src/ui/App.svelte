@@ -390,7 +390,7 @@
       <Settings on:back={onSettingsBack} />
     {/if}
     {#if $video}
-      <Player file={$video.file} mode={$video.mode} />
+      <Player file={$video.file} mode={$video.mode} dimmed={screen === "comic" || screen === "image"} />
     {/if}
   {/if}
 

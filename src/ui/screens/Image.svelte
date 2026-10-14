@@ -126,10 +126,10 @@
 
   function onOK() {
     wake();
-    // the now-playing strip owns its focused controls — a strip button under
-    // the image must click, not zoom
+    // the corner surfaces own their focused controls — a row or dock button
+    // under the image must click, not zoom
     const ae = remote.activeEl;
-    if (ae && ae.closest("#np")) {
+    if (ae && (ae.closest(".np-micro") || ae.closest("#np") || ae.closest(".player.docked"))) {
       remote.clickActive();
       return;
     }
@@ -157,7 +157,39 @@
     }
     if (dir === "left") step(-1);
     else if (dir === "right") step(1);
-    // at fit, up/down is an honest no-op (there is nothing above/below)
+    else if (dir === "down") {
+      toggleCornerFocus();
+      // the toggle owns this press — a spatial move would re-pick the
+      // corner (it is the nearest down-edge candidate) and undo it
+      return true;
+    }
+  }
+
+  /** Down (at fit) toggles the spatial focus onto the corner surface — the
+   *  music row or the docked video, only one exists at a time (they are
+   *  mutually exclusive) — and back: page -> corner (primary control is
+   *  play/pause), corner -> page. The deliberate in/out (the magic remote's
+   *  pointer always works too); walking off the surface's edge also
+   *  releases (remote.releaseCornerWalk), so stepping never stays stuck
+   *  behind a ring. */
+  function toggleCornerFocus() {
+    const surface =
+      document.querySelector<HTMLElement>(".np-micro") ||
+      document.querySelector<HTMLElement>("#np") ||
+      document.querySelector<HTMLElement>(".player.docked");
+    if (!surface) return; // no corner surface — down stays a no-op
+    const active = remote.activeEl;
+    if (active && active.isConnected && surface.contains(active)) {
+      remote.blur();
+      return;
+    }
+    const btns = Array.from(surface.querySelectorAll<HTMLElement>("[data-focus]"));
+    const primary =
+      btns.find((b) => {
+        const l = b.getAttribute("aria-label") || "";
+        return l === "Play" || l === "Pause";
+      }) || btns[1] || btns[0];
+    if (primary) remote.focusEl(primary);
   }
 
   // Remote ownership follows the video session — the Player's contract: in
@@ -166,16 +198,18 @@
   // shot setHandlers on mount dies after a restore-to-full → close cycle
   // (the magic remote drives the dock while viewing): the Player's stale
   // full-mode handlers stay put and Back goes dead — found on the TV.
-  // The scope covers the app shell (viewer + the persistent music row, which
-  // dims to 0.25 while viewing) and EXCLUDES the docked player: its buttons
-  // stay mouse-only (magic remote) while the arrows belong to the image.
+  // The scope is the app shell — viewer AND the corner surfaces (music
+  // row, docked video), which follow the same focus rules as any corner
+  // control: reachable, release on edge-walk, down-toggle (see
+  // toggleCornerFocus). The library's grid isn't mounted here, so the
+  // D-pad can't wander there.
   $: if (!$videoStore || $videoStore.mode !== "full") {
     remote.setHandlers({
       onBack,
       onOK,
       onNavigate,
     });
-    remote.setFocusScope(document.querySelector(".app-shell"), ".player.docked");
+    remote.setFocusScope(document.querySelector(".app-shell"));
   }
 
   onMount(() => {

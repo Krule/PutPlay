@@ -6,6 +6,19 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Fixed
+- While reading, the corner (the music row, or a docked video in mini/
+  micro) no longer holds the arrows: walking off its edge releases the
+  focus, and Down — a dead key at fit size — now switches focus between
+  the page and the corner. That is the deliberate in and out of the
+  corner; the magic remote's pointer works as before.
+- Enter on a focused corner control now does the control's job from the
+  comic reader: the docked video's buttons used to do nothing on Enter,
+  and the music row's zoomed the page instead.
+- The docked video's micro (the icon row) now recedes to 25% opacity
+  over comics and pictures, like the music row, and brightens when you
+  focus it. The mini keeps the video fully visible.
+
 ## [1.1.1] - 2026-10-14
 
 ### Added

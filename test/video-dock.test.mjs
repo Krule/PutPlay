@@ -288,27 +288,24 @@ test("the background stays mounted under the full player (Back-after-restore)", 
     "the background must not be conditional on the player's mode");
 });
 
-test("focus scope can exclude a subtree (the docked player while a reading screen is up)", () => {
-  // A docked player's buttons stay mouse-clickable (magic remote), but must
-  // never catch a D-pad move from the comic/image: the reading screen owns
-  // the arrows. The exclusion is a LIVE SELECTOR, not an element reference —
-  // the docked player appears and disappears under the reading screen.
+test("walking off a corner surface's edge releases its focus (the reader's arrows are never held)", () => {
+  // Over a reading screen the corner surfaces (the music row, the docked
+  // video) join the D-pad graph like any controls — but they must NOT HOLD
+  // the focus: an arrow press that can't move within the surface (walking
+  // off its edge) releases it, so page-turning never stays stuck behind a
+  // ring. The release is scoped to the corner surfaces only.
   const src = read("src/webos/remote.ts");
-  assert.match(src, /setFocusScope\(root: HTMLElement \| null,\s*excludeSelector\?: string \| null\)/,
-    "setFocusScope must accept an exclusion selector");
-  const cands = src.slice(src.indexOf("private candidates"));
-  assert.ok(cands.includes("this.exclude"), "candidates() must consult the scope exclusion");
-  assert.match(cands, /closest\(this\.exclude\)/, "the exclusion must be evaluated live per candidate");
-});
-
-test("a mouse-click on a scope-excluded element acts but does not steal spatial focus", () => {
-  // The docked player's buttons are clicked with the magic remote while a
-  // reading screen is up: the click must run the button's action (DOM click
-  // does that natively) but must NOT mark the element as the spatially
-  // focused one — with the dock excluded from candidates there would be no
-  // D-pad move that could ever bring focus back.
-  const src = read("src/webos/remote.ts");
-  const act = src.slice(src.indexOf("activate(el: HTMLElement"));
-  assert.match(act, /closest\(this\.exclude\)/, "activate must consult the scope exclusion");
-  assert.match(act, /if\s*\(\s*!\s*outsideScope\s*\)\s*this\.setActive/, "only in-scope elements may take the spatial focus");
+  const relIdx = src.indexOf("releaseCornerWalk");
+  assert.ok(relIdx !== -1, "the release helper must exist");
+  const release = src.slice(relIdx, relIdx + 500);
+  assert.match(release, /np-micro/, "the release must cover the music row");
+  assert.match(release, /player\.docked/, "the release must cover the docked video");
+  assert.match(release, /blur\(\)/, "the release must clear the spatial focus");
+  const move = src.slice(src.indexOf("move(dir: Dir)"), src.indexOf("focusFirst"));
+  const calls = (move.match(/releaseCornerWalk\(cur\)/g) || []).length;
+  assert.ok(calls >= 2, "both no-target exits of move() must release");
+  // the old exclusion feature is gone (replaced by this release + the
+  // down-toggle): an excluded element can no longer exist
+  assert.ok(!/excludeSelector/.test(src), "the scope exclusion was removed (corner surfaces are in-scope now)");
+  assert.ok(!/outsideScope/.test(src), "activate's exclusion special-case was removed");
 });

@@ -301,6 +301,10 @@ button:disabled,
    brings it back (focus-within is Chrome 17 — safe) */
 .np-micro.dimmed { opacity: 0.25; }
 .np-micro.dimmed:focus-within { opacity: 1; }
+/* the docked video's MICRO follows the same rule (the icon row; the mini
+   keeps the video fully visible) */
+.player.docked.micro.dimmed { opacity: 0.25; }
+.player.docked.micro.dimmed:focus-within { opacity: 1; }
 .np > :not(:first-child) { margin-left: 16px; }
 .np-art {
   width: 72px;

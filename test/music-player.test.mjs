@@ -292,18 +292,17 @@ test("the App routes audio to the music service and stops music for video (sourc
   assert.ok(/stopMusic\(\)/.test(app), "App stops the music when a video starts (one output)");
 });
 
-test("reading screens scope the remote to the shell, excluding the docked player", () => {
+test("reading screens scope the remote to the shell (corner surfaces in, library not)", () => {
   // The arrows PAN/step the content here, so the scope can't be the whole
-  // app — but it CAN'T be the reader root either: the owner needs the
-  // music's corner row usable while reading. The app shell is the right
-  // scope, WITH the docked player excluded: a docked video's buttons stay
-  // mouse-clickable (magic remote) but must never catch a D-pad move from
-  // the reader — the "video shows button focus but enter does nothing" bug.
+  // app — but the corner surfaces (music row, docked video) ARE in scope:
+  // they follow the same focus rules as any corner control (reachable,
+  // release on edge-walk, down-toggle). No exclusion selector — that was
+  // the round-3 half-fix, replaced by the release rules.
   for (const screen of ["src/ui/screens/Comic.svelte", "src/ui/screens/Image.svelte"]) {
     const src = read(screen);
     assert.ok(
-      /setFocusScope\(document\.querySelector\("\.app-shell"\),\s*"\.player\.docked"\)/.test(src),
-      `${screen} must scope to the shell AND exclude the docked player`
+      /setFocusScope\(document\.querySelector\("\.app-shell"\)\)/.test(src),
+      `${screen} must scope to the shell (no exclusion)`
     );
     assert.ok(
       /setFocusScope\(null\)/.test(src),
@@ -313,6 +312,36 @@ test("reading screens scope the remote to the shell, excluding the docked player
   // the library stays UNSCOPED — D-pad down from the last row reaches the strip
   assert.ok(!/setFocusScope\(/.test(read("src/ui/screens/Library.svelte")),
     "the library must not scope focus (the strip is reachable there by design)");
+});
+
+test("down (at fit) toggles the corner surface's focus in reading screens", () => {
+  // The owner's ask: the corner (music row / docked video) must be able to
+  // LOSE focus while pages turn, and Down — an honest no-op at fit — is the
+  // deliberate switch: page -> corner (primary control = play/pause),
+  // corner -> page.
+  for (const screen of ["src/ui/screens/Comic.svelte", "src/ui/screens/Image.svelte"]) {
+    const src = read(screen);
+    assert.ok(/function toggleCornerFocus/.test(src), `${screen}: the toggle must exist`);
+    assert.match(src, /(d|dir) === "down"\)?\s*\{\s*\n\s*toggleCornerFocus\(\)/, `${screen}: down (fit) must call the toggle`);
+    const okIdx = src.indexOf("function onOK");
+    assert.ok(okIdx !== -1, `${screen}: onOK must exist`);
+    const okBody = src.slice(okIdx, okIdx + 700);
+    assert.ok(/player\.docked/.test(okBody), `${screen}: onOK must cover the docked video's controls`);
+    assert.ok(/clickActive/.test(okBody), `${screen}: onOK must activate the focused corner control`);
+  }
+});
+
+test("the docked video's micro recedes while reading (0.25, brightens on focus)", () => {
+  const css = read("src/ui/theme.css");
+  assert.match(css, /\.player\.docked\.micro\.dimmed\s*\{[^}]*opacity:\s*0?\.25/);
+  assert.match(css, /\.player\.docked\.micro\.dimmed:focus-within\s*\{[^}]*opacity:\s*1/);
+  const app = read("src/ui/App.svelte");
+  assert.match(app, /<Player[^>]*dimmed=\{screen === "comic" \|\| screen === "image"\}/s,
+    "the App dims the Player exactly on the reading screens");
+  const player = read("src/ui/screens/Player.svelte");
+  assert.match(player, /export let dimmed/);
+  assert.match(player, /class:dimmed=\{[^}]*dimmed[^}]*micro[^}]*\}/,
+    "the dimming applies to the micro form (the icon row), not the video frame");
 });
 
 test("reading screens RE-ASSERT their remote handlers from the video session", () => {

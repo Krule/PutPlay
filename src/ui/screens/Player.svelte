@@ -52,6 +52,10 @@
    *  the SAME node across all modes — docking is a chrome change, never an
    *  engine change (plan §9.1). */
   export let mode: "full" | "mini" | "micro" = "full";
+  /** While a reading screen (comic/image) is up, the MICRO form (the icon
+   *  row) recedes to 0.25 like the music row; :focus-within brings it
+   *  back. The mini keeps the video fully visible. */
+  export let dimmed = false;
 
   const remote = getRemote();
   $: session = $videoStore;
@@ -830,7 +834,7 @@
   );
 </script>
 
-<div class="player" class:full={mode === "full"} class:docked={mode !== "full"} class:micro={mode === "micro"} on:mousemove={wake}>
+<div class="player" class:full={mode === "full"} class:docked={mode !== "full"} class:micro={mode === "micro"} class:dimmed={dimmed && mode === "micro"} on:mousemove={wake}>
   <video
     bind:this={videoEl}
     class="video"

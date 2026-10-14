@@ -18,7 +18,7 @@ export interface RemoteHandlers {
   onFastForward?: () => void;
   onSearch?: () => void;
   onFocusChange?: (el: HTMLElement) => void;
-  onNavigate?: (dir: Dir) => void;
+  onNavigate?: (dir: Dir) => boolean | void;
 }
 
 const FOCUSABLE_ATTR = "data-focus";
@@ -165,18 +165,9 @@ export class Remote {
    * null to restore whole-screen navigation.
    */
   private scope: HTMLElement | null = null;
-  /**
-   * Scope-level exclusion, as a LIVE SELECTOR (not an element): elements
-   * inside a matched subtree stay mouse-clickable (magic remote) but never
-   * catch a D-pad move. The docked video player while a reading screen is
-   * up is the case for it — the subtree appears and disappears, so a
-   * reference would go stale.
-   */
-  private exclude: string | null = null;
 
-  setFocusScope(root: HTMLElement | null, excludeSelector?: string | null): void {
+  setFocusScope(root: HTMLElement | null): void {
     this.scope = root && root.isConnected ? root : null;
-    this.exclude = excludeSelector ?? null;
   }
 
   /* ---------- focus movement ---------- */
@@ -194,10 +185,19 @@ export class Remote {
         el.getAttribute("data-focus-disabled") !== "true" &&
         el.offsetParent !== null &&
         el.getBoundingClientRect().width > 0 &&
-        (!this.scope || this.scope.contains(el)) &&
-        // scope-level exclusion (the docked player while reading): mouse-only
-        (!this.exclude || !el.closest(this.exclude))
+        (!this.scope || this.scope.contains(el))
     );
+  }
+
+  /**
+   * A corner surface (the music row, the docked video) must not HOLD the
+   * focus over a reading screen: an arrow press that can't move within it
+   * — walking off its edge — releases the spatial focus, so page-turning
+   * stops fighting a stuck ring. Scoped to the corner surfaces only; every
+   * other screen keeps the usual "focus stays on the edge" behavior.
+   */
+  private releaseCornerWalk(el: HTMLElement | null): void {
+    if (el && el.isConnected && el.closest(".np-micro, .player.docked")) this.blur();
   }
 
   setActive(el: HTMLElement, fromNav = true): void {
@@ -245,7 +245,10 @@ export class Remote {
           return cy > dy + 4 && cx > cr.left - cr.width * 0.95 && cx < cr.right + cr.width * 0.95;
       }
     });
-    if (!target) return false;
+    if (!target) {
+      this.releaseCornerWalk(cur);
+      return false;
+    }
 
     // score by perpendicular distance + primary distance
     const scored = cands
@@ -276,6 +279,7 @@ export class Remote {
       this.setActive(scored[0].el);
       return true;
     }
+    this.releaseCornerWalk(cur);
     return false;
   }
 
@@ -317,14 +321,7 @@ export class Remote {
   }
 
   activate(el: HTMLElement, fromClick: boolean): void {
-    // A mouse-clicked element OUTSIDE the current scope (the docked player
-    // while a reading screen is up) still runs its own click handler, but it
-    // must not steal the SPATIAL focus: with the dock excluded there is no
-    // D-pad move that could ever bring focus back, and a stranded ring on a
-    // dock button read on the TV as "the reader is broken".
-    const outsideScope =
-      !!this.exclude && el.isConnected && !!el.closest(this.exclude);
-    if (!outsideScope) this.setActive(el, !fromClick);
+    this.setActive(el, !fromClick);
     if (fromClick) {
       // A real mouse click is already flowing to the element's own action listener
       // (the tile/crumb/menu-item dispatches its event there). Don't re-click or it
@@ -364,8 +361,12 @@ export class Remote {
       case "right":
       case "down":
         e.preventDefault();
-        this.handlers.onNavigate?.(action as Dir);
-        this.move(action as Dir);
+        // A screen's onNavigate may CONSUME the press (return true) — then
+        // the spatial engine stays out of it. The reading screens use this
+        // for their down-toggle: the corner surface is the nearest
+        // down-edge candidate, so a spatial move would undo the toggle.
+        const consumed = this.handlers.onNavigate?.(action as Dir) === true;
+        if (!consumed) this.move(action as Dir);
         break;
       case "back":
         e.preventDefault();
