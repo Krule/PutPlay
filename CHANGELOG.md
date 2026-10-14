@@ -6,11 +6,99 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Music playback: open a music file in the library and it plays under a
+  slim now-playing strip — browse folders, open pictures, and read comics
+  while it keeps running. Prev/next walk the folder's tracks, a finished
+  track advances on its own, and the TV remote's play/pause/stop and
+  rewind keys drive it. The TV's own decoder is the judge: a format it
+  can't play is said so directly and remembered, so the same file never
+  gets retried blindly.
+
+## [1.1.0] - 2026-10-13
+
+### Added
+- Comic reader: open a .cbz from the library and it reads like a book —
+  the put.io file is never downloaded, only the pages you look at (range
+  reads + in-memory inflate, verified on a 351 MB scan: zero full-file
+  traffic). Pages sort like a print run (cover first, 2 before 10), Up
+  flips the reading direction (persisted per comic, so a manga stays a
+  manga), Back remembers your page and the book opens back where you
+  left it. OK steps fit → 2× → 4× relative to the page's own fit — a
+  675-px and a 2138-px scan feel identical — and the arrows pan when
+  zoomed. CBR stays an honest "can't open"; a single-picture zip still
+  goes to the archive viewer.
+- Spread mode: the reader works in SHEETS, not single pages — the cover
+  alone, then uniform pages side by side, and any wide page (a real
+  spread) on its own. A portrait page on a 16:9 screen used to be a
+  sliver in a black sea; now it fills the glass. RTL books render the
+  pair right-to-left (the earlier page on the right). A legend in the
+  reader always says which direction you're in and how to flip it.
+- Image viewer zoom: pictures get the reader's proven interaction — OK
+  steps fit → 2× → 4×, the arrows pan when zoomed, browsing resets to
+  fit. The zoom math now lives in one shared module (putio/zoom.ts), so
+  a picture and a spread behave exactly the same.
+- Reader page cache: the ten most recently read pages stay cached (LRU,
+  blob revocation on eviction) and survive screen switches — back to the
+  grid, re-open the book, every read page is instant. The prefetch
+  follows the direction you're HEADING: turning back reads behind you,
+  so a back-traversal after a forward one costs no network at all.
+- Comic cover thumbs: a .cbz tile shows its cover (page 0 of the reading
+  order) instead of a bare glyph. The cover is a down-scaled JPEG saved
+  locally — a saved thumb costs zero network on the next launch. Thumbs
+  expire after a month, the store is capped, storage that refuses is a
+  quiet fallback (the thumb still shows, it just won't persist), and
+  sign-out clears the previous account's artwork. A cover that can't be
+  fetched falls back to the glyph — never an empty tile.
+
 ### Changed
-- Sign-in on app launch now completes with a single account check instead of
-  two — the app started by validating the saved token and then fetching the
-  account info, which is the same put.io endpoint called twice. Startup makes
-  one fewer round-trip, which is most noticeable on slow connections.
+- Sign-in on app launch now completes with a single account check instead
+  of two — the app started by validating the saved token and then
+  fetching the account info, which is the same put.io endpoint called
+  twice. Startup makes one fewer round-trip, which is most noticeable on
+  slow connections.
+- Opening an archive is two-stage: a 64 KB probe finds the index
+  (central directory) location first, and the index itself is fetched
+  exactly — never a flat 256 KB chunk. Small archives open in one
+  request; huge ones pay only for their index.
+- OLED screensaver opt-in: the app declares itself a still-image app with
+  the 30-minute, key-reset timeout (webOS `screenSaverProperties` type 2)
+  — a page you keep turning stays at full brightness, and the display only
+  goes dark after a half hour away. (A TV-level power-off dragged in by a
+  connected device — SimpLink/CEC, or an energy-saving timer — is a TV
+  setting; no app API can reach it.)
+
+### Fixed
+- Reading a big comic stalled between pages. Three measured causes, all on
+  the fetch path: the next sheet was only fetched AFTER the current one
+  finished (so on 2 MB pages it never finished in time), every page paid
+  for TWO round trips (a 30-byte header read, then the data), and a
+  direction flip mid-prefetch double-fetched the same page. The next sheet
+  now starts downloading the moment a load begins, each page arrives in a
+  single range read (one exact fallback read only when a non-conforming
+  local header disagrees with the index), and in-flight requests are
+  deduplicated. Bench: the slowest turn 3.0 s → 1.5 s, every other turn
+  ~20 ms, requests per book halved.
+- Cover thumbs: once the TV's local storage filled up, later covers
+  silently stopped persisting — and the app then forgot what it had cached
+  too. Persisting now degrades instead: the oldest covers yield until the
+  rest fits (freshest-first), and the in-memory map is never trimmed, so
+  the session still shows every cover. A cached cover that won't decode is
+  re-fetched from the network instead of showing broken pixels.
+
+### Fixed
+- Archives with a central directory larger than 256 KB were refused as
+  "not a ZIP" (the tail chunk missed the index). The two-stage open
+  reads the index wherever it is — verified on an 8000-entry archive.
+- Zoomed pan was inverted on the C1 ("up went down, left went right"): it
+  used drag-style movement, but a TV D-pad names where you want to LOOK.
+  Up now reveals the top, Left the left — in the comic reader and the
+  image viewer.
+- A turn happened before the page's bytes arrived, so pressing Back
+  during a slow load lost the turn. The position is persisted when the
+  turn happens, not when the load finishes.
+- A superseded image load leaked its blob URL in the image viewer; it is
+  revoked now.
 
 ## [1.0.4] - 2026-10-13
 
