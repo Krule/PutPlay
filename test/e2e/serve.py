@@ -22,6 +22,13 @@ class RangeHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
 
+    def send_response(self, code, message=None):
+        # no-store: the harness rebuilds the bundle in place; a heuristic
+        # browser cache (no Cache-Control from SimpleHTTPRequestHandler)
+        # otherwise serves stale CSS/JS across reloads
+        super().send_response(code, message)
+        self.send_header("Cache-Control", "no-store")
+
     def send_head(self):
         path = self.translate_path(self.path)
         if not os.path.isfile(path):

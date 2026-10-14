@@ -9,6 +9,9 @@
  *  - audioFallback: what to do when the original file can't switch audio
  *    ("ask" = honest refusal + the row offers the put.io stream;
  *    "auto-hls" = go straight to the put.io rendition of the chosen language)
+ *  - playNext: when a video ends, auto-advance to the next video in the
+ *    same folder (the docked player's queue walk). Music auto-next is
+ *    always on — this gate is the video's (owner: configurable, default on).
  */
 
 export interface ConfigState {
@@ -17,6 +20,7 @@ export interface ConfigState {
   subtitleLang: string;
   subScale: number;
   audioFallback: "ask" | "auto-hls";
+  playNext: boolean;
 }
 
 export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: number } = {
@@ -25,6 +29,7 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   subtitleLang: "",
   subScale: 1,
   audioFallback: "ask",
+  playNext: true,
   subScaleMin: 0.8,
   subScaleMax: 2,
 };
@@ -57,12 +62,14 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
   const audioFallback = (AUDIO_FALLBACKS as readonly string[]).includes(p.audioFallback || "")
     ? (p.audioFallback as ConfigState["audioFallback"])
     : d.audioFallback;
+  const playNext = typeof p.playNext === "boolean" ? p.playNext : d.playNext;
   return {
     source,
     audioLang: (p.audioLang ?? "").trim(),
     subtitleLang: (p.subtitleLang ?? "").trim(),
     subScale: Math.min(d.subScaleMax, Math.max(d.subScaleMin, scale)),
     audioFallback,
+    playNext,
   };
 }
 

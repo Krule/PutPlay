@@ -11,6 +11,7 @@
   import { isImageFile } from "../../putio/image";
   import { isAudioFile, audioFamily } from "../../putio/audio-capable";
   import { music, audioUnsupported } from "../../store/music";
+  import { video as videoStore } from "../../store/video";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
   import ItemTile from "../components/ItemTile.svelte";
@@ -34,7 +35,13 @@
   $: subtitleLanguages = a.subtitleLanguages;
   // the now-playing track's tile gets the playing mark (music lives at the
   // App level; the Library only renders its one visible consequence)
-  $: playingId = $music ? $music.file.id : null;
+  // the tile mark: the music session's track, or the DOCKED video's file
+  // (full mode = the player covers the grid, nothing to mark)
+  $: playingId = $music
+    ? $music.file.id
+    : $videoStore && $videoStore.mode !== "full"
+    ? $videoStore.file.id
+    : null;
 
   const remote = getRemote();
 
@@ -123,6 +130,13 @@
     wireRemote();
     const unsubLib = library.subscribe((v) => (s = v));
     const unsubAuth = auth.subscribe((v) => (a = v));
+    // The docked video (mini/micro) means the Library is the effective
+    // screen again: reclaim the remote. We subscribe BEFORE the Player
+    // (it mounts later), so on a mode change our re-assert runs first and
+    // the Player wins only in full — exactly the ownership rule (plan §9.1).
+    const unsubVideo = videoStore.subscribe((v) => {
+      if (!v || v.mode !== "full") wireRemote();
+    });
     let lastBack = 0;
     const unsubNav = nav.subscribe((v) => {
       if (v.backLevel !== lastBack) {
@@ -158,6 +172,7 @@
       unsubLib();
       unsubAuth();
       unsubNav();
+      unsubVideo();
       remote.clearHandlers(); // BUG 5: no stale handlers may leak into Settings
       gridEl?.removeEventListener("scroll", onScroll);
       gridEl?.removeEventListener("scroll", syncTileStates);

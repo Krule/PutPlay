@@ -26,6 +26,7 @@
   $: cfgSub = c?.subtitleLang ?? "";
   $: cfgScale = c?.subScale ?? 1;
   $: cfgFallback = c?.audioFallback ?? "ask";
+  $: cfgPlayNext = c?.playNext ?? true;
 
   const SOURCE_OPTIONS: { kind: ConfigState["source"]; label: string }[] = [
     { kind: "original", label: "Original" },
@@ -143,6 +144,7 @@
         subtitleLang: cfgSub,
         subScale: cfgScale,
         audioFallback: cfgFallback,
+        playNext: cfgPlayNext,
       });
     }
     saveConfig().catch(() => undefined);
@@ -211,6 +213,12 @@
             <button class="chip" class:sel={cfgSource === o.kind} data-focus on:click={() => (cfgSource = o.kind)}>{o.label}</button>
           {/each}
         </div>
+        <p class="opt-label">Play next in folder</p>
+        <div class="opt-row">
+          <button class="chip" class:sel={cfgPlayNext} data-focus on:click={() => (cfgPlayNext = true)}>On</button>
+          <button class="chip" class:sel={!cfgPlayNext} data-focus on:click={() => (cfgPlayNext = false)}>Off</button>
+        </div>
+        <p class="note">When a video ends, the next video in the same folder starts automatically. Music always plays on through.</p>
       </div>
 
       <div class="card danger-zone">

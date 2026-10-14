@@ -29,13 +29,15 @@ real put.io /stream endpoint honours Range, so the app itself is unaffected;
   OOB endpoints are faked: the device-code flow auto-starts on arrival and
   lands on the pending screen with code `TEST1234`; the poll never approves,
   so it stays in "waiting".
-- `/test/e2e/music-e2e.html?seedtoken` — **music flow**: 3 FLAC tracks + a
-  Music folder (3 tracks + cover.jpg) + a story.cbz. The fake is inlined via
-  a plain script tag (daemon-agnostic — no `--init-script` needed, and it
-  works in Safari). Streams rewrite to `testvid.mp4` (it carries real audio);
-  the cover rewrites to a local PNG. Verifications: the now-playing strip
-  (states + queue controls), music surviving comic/image navigation, and the
-  focus trap (strip buttons unreachable from the D-pad on immersive screens).
+- `/test/e2e/music-e2e.html?seedtoken` — **music + docked-video flow**: 2 MP4
+  videos, 3 FLAC tracks + a Music folder (3 tracks + cover.jpg) + a
+  story.cbz. The fake is inlined via a plain script tag (daemon-agnostic —
+  no `--init-script` needed, and it works in Safari). Streams rewrite to
+  `testvid.mp4` (it carries real audio); the cover rewrites to a local PNG.
+  Verifications: the now-playing strip (states + queue controls), the
+  docked video (Back from full docks to mini — it keeps playing; micro is
+  icons-only; restore/close), and the focus trap (strip/dock buttons
+  unreachable from the D-pad on the comic/image screens).
 
 ## Verifications covered
 

@@ -4,6 +4,18 @@ All notable changes to PutPlay are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/1.1.0/); versions follow the git tag (`vX.Y.Z`).
 Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
+## [Unreleased]
+
+### Added
+- Docked video player: pressing Back in the full player no longer stops the
+  film — it docks to a small window over your library and keeps playing.
+  Back (or the restore button) brings it back to full exactly where you were;
+  a shrink button folds it to an icon row that plays audio only; and ✕ stops
+  it, saving the position so the video reopens where you left off.
+- Videos advance on their own: when one ends, the next video in the same
+  folder starts. Turn it off in Settings → Playback ("Play next in folder",
+  on by default).
+
 ## [1.1.0] - 2026-10-14
 
 ### Added

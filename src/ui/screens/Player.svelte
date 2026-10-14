@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, createEventDispatcher } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { getRemote } from "../../webos/remote";
   import { platform } from "../../webos/platform";
@@ -31,6 +31,13 @@
   import { playerOkAction } from "../../putio/player-ok";
   import { pickerDefaultIndex, rowFocusState } from "../../putio/picker-default";
   import { config, pickSubtitleTrack, saveConfig, SUB_SCALE_OPTIONS } from "../../store/config";
+  import {
+    video as videoStore,
+    setVideoMode,
+    endVideoSession,
+    advanceVideo,
+    stepVideo,
+  } from "../../store/video";
 
   export let file: {
     id: number;
@@ -41,8 +48,29 @@
     size?: number;
   };
 
-  const dispatch = createEventDispatcher();
+  /** Which chrome the session is in. The <video> element and the engine are
+   *  the SAME node across all modes — docking is a chrome change, never an
+   *  engine change (plan §9.1). */
+  export let mode: "full" | "mini" | "micro" = "full";
+
   const remote = getRemote();
+  $: session = $videoStore;
+  // manual-queue edges: the dock's prev/next disable at the ends (music parity)
+  $: atFirst = session ? session.index <= 0 : true;
+  $: atLast = session ? session.index >= session.queue.length - 1 : true;
+  // the file the engine is currently built for — a session file change
+  // (auto-next / manual step) rebuilds the engine on the SAME element
+  let engineFileId: number | null = null;
+  let videoSub: (() => void) | null = null;
+  let dockEl: HTMLElement | null = null;
+  let dockPrev: HTMLButtonElement | null = null;
+  let dockNext: HTMLButtonElement | null = null;
+  $: if (dockEl) remote.registerAll(dockEl);
+  $: if (dockPrev) remote.setDisabled(dockPrev, atFirst);
+  $: if (dockNext) remote.setDisabled(dockNext, atLast);
+  // FULL only: the body class swaps the app-shell layout behind the takeover
+  $: if (typeof document !== "undefined")
+    document.body.classList.toggle("player-mode", mode === "full");
 
   let videoEl: HTMLVideoElement;
   let engine: MediaEngine | null = null;
@@ -107,7 +135,6 @@
   ];
 
   let resumePrompt: { from: number } | null = null;
-  let confirmLeave = false;
 
   // ---------------- engine wiring ----------------
 
@@ -191,9 +218,24 @@
     if (p.stalls !== undefined) stalls = p.stalls;
   }
 
-  function initEngine() {
+  function initEngine(suppressResume: boolean) {
     const au = currentAuth();
     if (!au || !videoEl) return;
+    // A session file change (auto-next / manual step) rebuilds the engine on
+    // the SAME element: tear the old one down first, and reset only the
+    // per-file UI state (position/tracks arrive fresh from the new engine).
+    if (engine) {
+      engine.destroy();
+      engine = null;
+      for (const s of subtitles) if (s.blobURL) URL.revokeObjectURL(s.blobURL);
+      subtitles = [];
+      activeSub = -1;
+      hlsSub = -1;
+      subCues = [];
+      subText = "";
+      startedPlaying = false;
+    }
+    engineFileId = file.id;
     cfg = get(config);
     // does the user's preferred source have the file in a state to use?
     // ("put.io MP4" preference falls back to original when not converted)
@@ -219,10 +261,17 @@
       },
       onEnded: () => {
         showControls = true;
+        // "Play next in folder" (default on): the session file changes and
+        // the reactive below rebuilds the engine on the next video. End of
+        // queue (or the setting off) → the honest finished state.
+        if (get(config).playNext && session && session.index < session.queue.length - 1) {
+          advanceVideo();
+          return;
+        }
         platform.toast("Finished — press Back to return to your library");
       },
       // BUG 1: if we'll show the resume prompt, the engine must NOT auto-seek
-      suppressAutoResume: shouldShowResumePrompt(file.start_from),
+      suppressAutoResume: suppressResume,
     });
     engine.setAudioPreference(cfg?.audioLang || null);
 
@@ -230,7 +279,25 @@
     engine.setSource(prefSource, undefined, true); // silent: don't pop the source overlay on entry
   }
 
+  /**
+   * The engine follows the session file. The session's FIRST file may raise
+   * the resume prompt (BUG 1: the engine is then built with suppressAutoResume
+   * so it can't race the user's choice). Later files are a deliberate queue
+   * walk — no prompt; the engine's own auto-resume applies (music parity).
+   */
+  $: if (videoEl && file && file.id !== engineFileId) {
+    const first = engineFileId === null;
+    resumePrompt = first && shouldShowResumePrompt(file.start_from) ? { from: file.start_from } : null;
+    initEngine(!!resumePrompt);
+    ensureSubtitles();
+  }
+
+  /** Back in FULL docks: lossless and reversible, so no confirmation — the
+   *  media keeps playing in the mini dock and the background screen comes
+   *  forward. Docked (mini/micro), the background screen owns Back entirely
+   *  (it re-asserts the remote when we stop re-asserting below). */
   function onBack() {
+    if (mode !== "full") return;
     if (resumePrompt) {
       resumePrompt = null;
       engine?.play(); // dismissing the prompt = "just play" (scrim-click parity)
@@ -240,27 +307,14 @@
       closeOverlays();
       return;
     }
-    if (confirmLeave) {
-      confirmLeave = false;
-      engine?.saveResume();
-      dispatch("back");
-      return;
-    }
-    confirmLeave = true;
-    wake();
+    setVideoMode("mini");
   }
 
-  function stayInPlayback() {
-    confirmLeave = false;
-    engine?.play().catch(() => undefined);
-    wake();
-  }
-
-  /** Explicit "Yes" from the leave-confirmation dialog — always leaves. */
-  function leavePlayback() {
-    confirmLeave = false;
+  /** Close (the ✕ in the dock): the only thing that stops the media. The
+   *  position is saved first — reopening resumes where we left off. */
+  function closeVideo() {
     engine?.saveResume();
-    dispatch("back");
+    endVideoSession();
   }
 
   function onColor(c: "blue" | "green" | "red" | "yellow") {
@@ -290,7 +344,7 @@
     wake();
   }
   function onStop() {
-    dispatch("back");
+    closeVideo();
   }
 
   // Controls stay up while the user is looking at something (paused, error,
@@ -524,13 +578,10 @@
   const onVis = () => { if (!document.hidden) kick(); };
 
   onMount(() => {
-    document.body.classList.add("player-mode");
     window.addEventListener("focus", kick);
     document.addEventListener("visibilitychange", onVis);
     unsub = auth.subscribe((v) => (a = v));
     a = get(auth);
-
-    initEngine();
 
     // keep config-derived values live (the store loads asynchronously)
     cfgSub = config.subscribe((v) => {
@@ -541,13 +592,21 @@
     engine?.setAudioPreference(v.audioLang || null);
   });
 
-    // resume from put.io? (BUG 1: the prompt is ours — the engine was built
-    // with suppressAutoResume so it can't race the user's choice; the choice
-    // lands through applyInitialSeek, which defers 0-seeks to metadata)
-    if (shouldShowResumePrompt(file.start_from)) {
-      resumePrompt = { from: file.start_from };
-    }
+    wireRemote();
+    // Remote ownership follows the mode: in FULL the Player owns the remote
+    // (as it always has). When we dock we simply stop re-asserting — the
+    // background screen re-asserts its own handlers from its subscription to
+    // the same session store and takes over Back/D-pad/OK. The dock's buttons
+    // join the spatial graph like the music strip's, and the background's
+    // "activate the focused control" OK drives them.
+    videoSub = videoStore.subscribe((v) => {
+      if (v && v.mode === "full") wireRemote();
+    });
+  });
 
+  /** The Player's remote contract (full mode). Extracted so the mode
+   *  subscription can re-assert it when the user restores to full. */
+  function wireRemote() {
     remote.setHandlers({
       onBack,
       onColor,
@@ -570,10 +629,7 @@
         }
       },
     });
-
-    ensureSubtitles();
-
-  });
+  }
 
   function resume() {
     if (resumePrompt && engine) {
@@ -600,7 +656,10 @@
     document.removeEventListener("visibilitychange", onVis);
     unsub?.();
     cfgSub?.();
-    remote.clearHandlers();
+    videoSub?.();
+    // NO remote.clearHandlers() here: the unmount means the session ended,
+    // and the background screen already re-asserted its handlers from its
+    // subscription to the session store — clearing now would wipe them.
     if (hideTimer) clearTimeout(hideTimer);
     engine?.destroy();
     engine = null;
@@ -643,7 +702,6 @@
   let audioPanelEl: HTMLDivElement;
   let subsPanelEl: HTMLDivElement;
   let resumePanelEl: HTMLDivElement;
-  let leavePanelEl: HTMLDivElement;
   function onBarClick(e: MouseEvent) {
     if (!barEl || !duration) return;
     const r = barEl.getBoundingClientRect();
@@ -655,14 +713,10 @@
   // Panels stopPropagation, so a click that lands here is genuinely outside.
   function onPanelScrimClick(e: MouseEvent, panelEl: HTMLElement | null) {
     if (!clickIsOutsideClickTarget(e, panelEl)) return;
-    const leaving = !!(resumePrompt || confirmLeave);
     closeOverlays();
     if (resumePrompt) {
       resumePrompt = null;
       engine?.play(); // dismissing the resume prompt = "just play"
-    }
-    if (leaving) {
-      engine?.saveResume();
     }
   }
 
@@ -761,7 +815,6 @@
   // (the safe default of the double-Back guard — Back is already the leave
   // path), Retry; closing any of them restores focus to play
   $: panelFocus(resumePanelEl, "resume", "play", "first");
-  $: panelFocus(leavePanelEl, "leave", "play", "safe");
   $: panelFocus(errPanelEl, "err", "play", "first");
   // track lists can change or arrive while a panel is open — the new rows are
   // committed to the DOM after this flush's reactive phase, so re-scan on the
@@ -773,11 +826,11 @@
   // topmost one (later template branch = higher z); null restores the
   // control bar. Reads the bind refs, so it re-runs post-commit on open/close.
   $: remote.setFocusScope(
-    leavePanelEl || resumePanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
+    resumePanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
   );
 </script>
 
-<div class="player" on:mousemove={wake}>
+<div class="player" class:full={mode === "full"} class:docked={mode !== "full"} class:micro={mode === "micro"} on:mousemove={wake}>
   <video
     bind:this={videoEl}
     class="video"
@@ -793,10 +846,11 @@
   ></video>
 
 
-  {#if activeSub >= 0 && source !== "hls" && subText}
+  {#if mode === "full" && activeSub >= 0 && source !== "hls" && subText}
     <div class="subs" class:show={!!subText} style="font-size:{subFontSize}px">{subText}</div>
   {/if}
 
+  {#if mode === "full"}
   <!-- ================= bottom control bar ================= -->
   <div class="controls" bind:this={controlsEl} class:visible={showControls || pinned} class:dim={paused ? "" : "dim"}>
     <div class="title-line">
@@ -853,7 +907,7 @@
           <button class="btn primary" data-focus on:click={() => { error = null; engine?.setSource(source); }}>
             Retry
           </button>
-          <button class="btn ghost" data-focus on:click={() => dispatch("back")}>Back to library</button>
+          <button class="btn ghost" data-focus on:click={closeVideo}>Back to library</button>
         </div>
       </div>
     </div>
@@ -980,19 +1034,6 @@
         </div>
       </div>
     </div>
-  {:else if confirmLeave}
-    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, leavePanelEl)}>
-      <div class="panel pick-panel resume-panel" bind:this={leavePanelEl} on:click={(e) => e.stopPropagation()}>
-        <p class="pick-title">Leave playback?</p>
-        <p class="muted pad" style="text-align:center">
-          Your position is saved — you'll resume where you left off.
-        </p>
-        <div class="row center">
-          <button class="btn primary" data-focus on:click={leavePlayback}>Yes, back to library</button>
-          <button class="btn ghost" data-focus on:click={stayInPlayback}>No, keep playing</button>
-        </div>
-      </div>
-    </div>
   {/if}
 
   <!-- color legend: physical keys on the remote -->
@@ -1002,6 +1043,23 @@
     <div class="cl"><span class="dot c3"></span>Audio</div>
     <div class="cl"><span class="dot c1"></span>Play</div>
   </div>
+  {/if}
+
+  {#if mode !== "full"}
+  <!-- ================= the dock (mini / micro) ================= -->
+  <div class="dock" id="vdock" bind:this={dockEl}>
+    <button class="dock-btn" bind:this={dockPrev} data-focus aria-label="Previous video" on:click={() => stepVideo(-1)}>«</button>
+    <button class="dock-btn play" data-focus aria-label={paused ? "Play" : "Pause"} on:click={() => engine?.togglePlayPause()}>{paused ? "▶" : "❚❚"}</button>
+    <button class="dock-btn" bind:this={dockNext} data-focus aria-label="Next video" on:click={() => stepVideo(1)}>»</button>
+    {#if mode === "mini"}
+      <button class="dock-btn" data-focus aria-label="Restore to full" on:click={() => setVideoMode("full")}>⛶</button>
+      <button class="dock-btn" data-focus aria-label="Make it micro" on:click={() => setVideoMode("micro")}>◱</button>
+    {:else}
+      <button class="dock-btn" data-focus aria-label="Restore to mini" on:click={() => setVideoMode("mini")}>▭</button>
+    {/if}
+    <button class="dock-btn close" data-focus aria-label="Close player" on:click={closeVideo}>✕</button>
+  </div>
+  {/if}
 </div>
 
 <style>
@@ -1019,6 +1077,7 @@
     display: block;
     background: var(--black);
   }
+
   /* Native textTracks (HLS source): the browser's default cue rendering is
      an opaque black box. Override it to a transparent, shadowed caption in
      the app font. Chrome 79 (webOS 6) supports ::cue. :global() keeps the

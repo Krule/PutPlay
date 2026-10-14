@@ -13,7 +13,7 @@
   import { setComic, resetComic, loadShelf, progressFor, clearShelf, pageCache } from "../store/comic";
   import { clearThumbs } from "../store/thumb-store";
   import { isAudioFile, audioFamily } from "../putio/audio-capable";
-  import { buildMusicQueue } from "../putio/queue";
+  import { buildMusicQueue, buildVideoQueue } from "../putio/queue";
   import { streamURL } from "../putio/api";
   import {
     music,
@@ -26,6 +26,7 @@
     loadCaps,
     audioUnsupported,
   } from "../store/music";
+  import { video, startVideoSession, setVideoMode, endVideoSession } from "../store/video";
   import NowPlaying from "./components/NowPlaying.svelte";
 
   const getLib = () => get(library);
@@ -42,8 +43,7 @@
   import { currentAuth } from "../store/auth";
 
   let a: AuthState;
-  let screen: "connect" | "library" | "player" | "image" | "archive" | "comic" | "settings" = "connect";
-  let playingFile: PutFile | null = null;
+  let screen: "connect" | "library" | "image" | "archive" | "comic" | "settings" = "connect";
   // the persistent (hidden) media element the music service owns — it lives
   // at the App shell so no screen unmount can ever stop the music
   let musicEl: HTMLVideoElement;
@@ -101,9 +101,12 @@
       setExpanded(false);
       return;
     }
-    if (screen === "player") {
-      playingFile = null;
-      screen = "library";
+    // the video session (plan §9.1): in FULL, Back docks to mini — it never
+    // stops the media. Docked (mini/micro) the background screen owns Back,
+    // so fall through to its routing below.
+    const vs = get(video);
+    if (vs && vs.mode === "full") {
+      setVideoMode("mini");
       return;
     }
     if (screen === "image") {
@@ -180,7 +183,7 @@
       a = v;
       if (v.status === "authed" && screen === "connect") screen = "library";
       if (v.status === "unauthed" && screen !== "connect") {
-        playingFile = null;
+        endVideoSession(); // …and the session's video (the Player unmounts and tears its engine down)
         imageTargets = [];
         archiveFile = null;
         resetArchive();
@@ -246,14 +249,18 @@
       }
       const au = currentAuth();
       if (!au) return;
+      endVideoSession(); // one engine, one output: music starts, the video session ends
       const q = buildMusicQueue(getLib().files, file);
       startMusic(file, q.queue, q.index, au, folderCover(getLib().files, au));
       return;
     }
     // one engine, one output: a video starts, the music stops
     stopMusic();
-    playingFile = file;
-    screen = "player";
+    // VIDEO is a session (plan §9.1): the Player renders from the session
+    // store (full mode). The background screen stays where the user was —
+    // Back from the full player docks, it does not leave.
+    const q = buildVideoQueue(getLib().files, file);
+    startVideoSession(file, q.queue, q.index);
     platform.pushBackLevel();
   }
 
@@ -316,11 +323,6 @@
     platform.pushBackLevel();
   }
 
-  function onPlayerBack() {
-    playingFile = null;
-    screen = "library";
-  }
-
   function onImageBack() {
     imageTargets = [];
     screen = imageReturn;
@@ -358,18 +360,27 @@
 <div class="app-shell">
   {#if screen === "connect"}
     <Connect state={auth} />
-  {:else if screen === "library"}
-    <Library on:open={onOpen} on:open-image={onOpenImage} on:open-archive={onOpenArchive} on:root={onLibraryRoot} />
-  {:else if screen === "player" && playingFile}
-    <Player file={playingFile} on:back={onPlayerBack} />
-  {:else if screen === "archive" && archiveFile}
-    <Archive file={archiveFile} on:open-image={onOpenArchiveImage} on:back={onArchiveBack} />
-  {:else if screen === "comic" && comicFile}
-    <Comic on:back={onComicBack} />
-  {:else if screen === "image" && imageTargets.length}
-    <Image targets={imageTargets} initial={imageInitial} on:back={onImageBack} />
-  {:else if screen === "settings"}
-    <Settings on:back={onSettingsBack} />
+  {:else}
+    <!-- the background screen. The full player covers it entirely; the
+         docked player (mini/micro) overlays it in the corner while it keeps
+         playing. Both are rendered from the session store, never from a
+         "player" screen (plan §9.1). -->
+    {#if !($video && $video.mode === "full")}
+      {#if screen === "library"}
+        <Library on:open={onOpen} on:open-image={onOpenImage} on:open-archive={onOpenArchive} on:root={onLibraryRoot} />
+      {:else if screen === "archive" && archiveFile}
+        <Archive file={archiveFile} on:open-image={onOpenArchiveImage} on:back={onArchiveBack} />
+      {:else if screen === "comic" && comicFile}
+        <Comic on:back={onComicBack} />
+      {:else if screen === "image" && imageTargets.length}
+        <Image targets={imageTargets} initial={imageInitial} on:back={onImageBack} />
+      {:else if screen === "settings"}
+        <Settings on:back={onSettingsBack} />
+      {/if}
+    {/if}
+    {#if $video}
+      <Player file={$video.file} mode={$video.mode} />
+    {/if}
   {/if}
 
   {#if $music}

@@ -384,6 +384,74 @@ button:disabled,
 .np-glyph.big { font-size: var(--fs-display); }
 .np-prog.big { margin-top: 16px; height: 8px; }
 
+/* ---------- the docked video player (mini / micro) ----------
+   The SAME element + engine as the full player, smaller chrome (plan §9.1).
+   Mini keeps the picture; micro keeps the audio and the icons only. The
+   markup lives in Player.svelte; the chrome is shared app-level, like the
+   now-playing strip. */
+.player.docked {
+  position: absolute;
+  top: auto;
+  left: auto;
+  width: 400px;
+  height: 225px;
+  right: 48px;
+  bottom: 48px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-lg);
+  overflow: hidden;
+  z-index: 40;
+}
+.player.docked .video {
+  object-fit: contain;
+}
+.player.micro {
+  width: auto;
+  height: auto;
+}
+/* .docked.micro (0,4,0): must out-specify the Player's scoped .video rule,
+   which is injected later in the cascade with equal (0,3,0) weight */
+.player.docked.micro .video {
+  display: none; /* audio keeps playing; only the icons remain */
+}
+.dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background: var(--surface-2);
+  z-index: 10;
+}
+.player.micro .dock {
+  position: static;
+}
+.dock-btn {
+  width: 48px;
+  height: 48px;
+  margin-right: 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dock-btn:last-child {
+  margin-right: 0;
+}
+.dock-btn.play {
+  width: 56px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.dock-btn.close {
+  background: transparent;
+}
+
 /* ---------- keyframes ---------- */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(14px); }

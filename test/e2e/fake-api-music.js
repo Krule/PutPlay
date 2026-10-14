@@ -46,6 +46,8 @@
   var files = [
     { id: 50, name: "Music", size: 0, content_type: "application/x-directory", parent_id: null, is_folder: 1, start_from: 0 },
     { id: 120, name: "story.cbz", size: 0, content_type: "application/zip", parent_id: null, is_folder: 0, start_from: 0 },
+    { id: 130, name: "01 - Pilot.mp4", size: 110388, content_type: "video/mp4", parent_id: null, is_folder: 0, start_from: 0 },
+    { id: 131, name: "02 - Second Episode.mp4", size: 110388, content_type: "video/mp4", parent_id: null, is_folder: 0, start_from: 0 },
     audio(101, "01 - First.flac", null),
     audio(102, "02 - Second.flac", null),
     audio(103, "03 - Third.flac", null),
