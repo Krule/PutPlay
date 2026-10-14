@@ -1,6 +1,6 @@
 {
   "id": "ba.ovo.putplay",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "vendor": "Personal Dev",
   "type": "web",
   "main": "index.html",
@@ -14,5 +14,8 @@
   "requiredPermissions": [
     "internet",
     "fullscreen"
-  ]
+  ],
+  "screenSaverProperties": {
+    "preferredType": 2
+  }
 }

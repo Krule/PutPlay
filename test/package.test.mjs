@@ -98,3 +98,22 @@ test("ipk ships the sign-in logo (icon.svg) byte-identical", { timeout: 120_000 
     "ipk icon.svg differs from the source"
   );
 });
+
+/* ---------------- OLED screensaver (the C1's power-off report) -----------
+ * webOS OLEDs run a screensaver a few minutes after the last user action.
+ * A comic page can sit on screen for minutes at a time — the official
+ * manifest opt-in (screenSaverProperties, type 2: 30-minute timeout,
+ * reset by key input) is the documented app-side answer. Type 2, not 3:
+ * a reader who keeps turning pages keeps full brightness; type 3 dims
+ * and never resets. (The FULL power-off the C1 saw is the TV-side
+ * CEC/energy setting — no app API can reach it.)
+ */
+test("appinfo.json: the OLED screensaver is opted into as type 2 (key-reset, 30 min)", () => {
+  const ai = JSON.parse(readFileSync(join(root, "appinfo.json"), "utf8"));
+  assert.deepEqual(
+    ai.screenSaverProperties,
+    { preferredType: 2 },
+    "type 2: brightness + timer reset on key input (the reader's case); NOT type 3 (gallery dim, no reset)"
+  );
+  assert.ok(!("useGalleryMode" in ai), "gallery mode is the type-3 switch — a comic reader is not a gallery");
+});
