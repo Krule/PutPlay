@@ -52,6 +52,8 @@
   $: topPx = (viewH - hPx) / 2 + panY;
 
   let errorEl: HTMLElement | null = null;
+  // the screen root — the focus scope keeps D-pad moves inside the viewer
+  let viewerEl: HTMLElement | null = null;
 
   $: active = targets[at];
 
@@ -123,6 +125,13 @@
 
   function onOK() {
     wake();
+    // the now-playing strip owns its focused controls — a strip button under
+    // the image must click, not zoom
+    const ae = remote.activeEl;
+    if (ae && ae.closest("#np")) {
+      remote.clickActive();
+      return;
+    }
     if (state !== "ready" || !dims) return; // nothing on screen to zoom
     zoom = cycleZoom(zoom);
     panX = 0;
@@ -156,10 +165,15 @@
       onOK,
       onNavigate,
     });
+    // the arrows PAN (zoomed) or step images (fit) here — scope the spatial
+    // remote to this screen so the app-level now-playing strip can never
+    // catch a D-pad move. The library keeps the strip reachable.
+    remote.setFocusScope(viewerEl);
     loadImage();
     wake();
     return () => {
       remote.clearHandlers(); // BUG 5 contract: no stale handlers leak
+      remote.setFocusScope(null); // lift the trap for the screen below
       if (hideTimer) clearTimeout(hideTimer);
       freeUrl();
     };
@@ -171,7 +185,7 @@
   $: if (errorEl) remote.focusEl(errorEl);
 </script>
 
-<div class="viewer" class:ready={state === "ready"} bind:clientWidth={viewW} bind:clientHeight={viewH}>
+<div class="viewer" class:ready={state === "ready"} bind:this={viewerEl} bind:clientWidth={viewW} bind:clientHeight={viewH}>
   {#if state !== "error" && src}
     <img
       class="shot"

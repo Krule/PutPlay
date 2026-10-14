@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>PutPlay — music e2e</title>
+  <link rel="stylesheet" href="/js/bundle.css" />
+  <!-- The fake must run BEFORE the app bundle: it seeds the token and
+       intercepts fetch. A plain inline script tag is daemon-agnostic
+       (unlike agent-browser --init-script), and works in Safari too. -->
+  <script src="/test/e2e/fake-api-music.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/js/bundle.js"></script>
+</body>
+</html>

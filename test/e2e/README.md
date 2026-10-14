@@ -8,10 +8,17 @@ is faked.
 
 ```bash
 npm run build
-python3 -m http.server 8642          # serve the repo root
+python3 test/e2e/serve.py            # Range-capable static server, port 8642
 agent-browser open "http://localhost:8642/?seedtoken" \
   --init-script test/e2e/fake-api.js
 ```
+
+**Use `test/e2e/serve.py`, not `python3 -m http.server`**: the stdlib server
+has no Range support (always 200, whole file), and WebKit strictly requires
+206 responses to stream and seek progressive media — on the plain server a
+video downloads fully before playing (Firefox is lenient and hides it). The
+real put.io /stream endpoint honours Range, so the app itself is unaffected;
+`serve.py` makes the harness match.
 
 ## Flows
 
@@ -22,6 +29,13 @@ agent-browser open "http://localhost:8642/?seedtoken" \
   OOB endpoints are faked: the device-code flow auto-starts on arrival and
   lands on the pending screen with code `TEST1234`; the poll never approves,
   so it stays in "waiting".
+- `/test/e2e/music-e2e.html?seedtoken` — **music flow**: 3 FLAC tracks + a
+  Music folder (3 tracks + cover.jpg) + a story.cbz. The fake is inlined via
+  a plain script tag (daemon-agnostic — no `--init-script` needed, and it
+  works in Safari). Streams rewrite to `testvid.mp4` (it carries real audio);
+  the cover rewrites to a local PNG. Verifications: the now-playing strip
+  (states + queue controls), music surviving comic/image navigation, and the
+  focus trap (strip buttons unreachable from the D-pad on immersive screens).
 
 ## Verifications covered
 

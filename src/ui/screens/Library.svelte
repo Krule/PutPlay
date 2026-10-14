@@ -9,6 +9,8 @@
   import { nav, requestSettings } from "../../store/nav";
   import { libraryOkAction } from "../../putio/library-ok";
   import { isImageFile } from "../../putio/image";
+  import { isAudioFile, audioFamily } from "../../putio/audio-capable";
+  import { music, audioUnsupported } from "../../store/music";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
   import ItemTile from "../components/ItemTile.svelte";
@@ -30,6 +32,9 @@
   $: accountEmail = a.accountEmail;
   $: disk = a.disk;
   $: subtitleLanguages = a.subtitleLanguages;
+  // the now-playing track's tile gets the playing mark (music lives at the
+  // App level; the Library only renders its one visible consequence)
+  $: playingId = $music ? $music.file.id : null;
 
   const remote = getRemote();
 
@@ -263,6 +268,8 @@
           <ItemTile
             file={f}
             index={i}
+            playing={playingId === f.id}
+            blocked={isAudioFile(f) && audioUnsupported(audioFamily(f))}
             on:open={(e) => {
               const f = e.detail.file;
               library.update((st) => ({ ...st, selected: f }));

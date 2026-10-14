@@ -12,6 +12,21 @@
   import { clampResume } from "../putio/comic-progress";
   import { setComic, resetComic, loadShelf, progressFor, clearShelf, pageCache } from "../store/comic";
   import { clearThumbs } from "../store/thumb-store";
+  import { isAudioFile, audioFamily } from "../putio/audio-capable";
+  import { buildMusicQueue } from "../putio/queue";
+  import { streamURL } from "../putio/api";
+  import {
+    music,
+    startMusic,
+    stopMusic,
+    toggleMusic,
+    seekMusic,
+    setExpanded,
+    registerMusicElement,
+    loadCaps,
+    audioUnsupported,
+  } from "../store/music";
+  import NowPlaying from "./components/NowPlaying.svelte";
 
   const getLib = () => get(library);
   import type { PutFile } from "../putio/types";
@@ -29,6 +44,9 @@
   let a: AuthState;
   let screen: "connect" | "library" | "player" | "image" | "archive" | "comic" | "settings" = "connect";
   let playingFile: PutFile | null = null;
+  // the persistent (hidden) media element the music service owns — it lives
+  // at the App shell so no screen unmount can ever stop the music
+  let musicEl: HTMLVideoElement;
   let imageTargets: ViewerTarget[] = [];
   let imageInitial = 0;
   // where Back from the image lands: the library, or the archive it came from
@@ -77,6 +95,12 @@
     if (now - lastBackAt < 500) return; // keydown + popstate pair
     lastBackAt = now;
 
+    // the expanded now-playing panel is a sub-level: Back collapses it
+    // (never stops the music — that is the close button's job)
+    if (get(music)?.expanded) {
+      setExpanded(false);
+      return;
+    }
     if (screen === "player") {
       playingFile = null;
       screen = "library";
@@ -133,6 +157,22 @@
     window.addEventListener("popstate", onPopstate);
     document.body.classList.add("app");
     platform.ensureBackLevel();
+    registerMusicElement(musicEl);
+    void loadCaps();
+
+    // Transport keys drive the music while it runs (the remote hands them to
+    // the active screen's handlers, which don't know about music — App does).
+    // Inert whenever no session runs: video and music share one output, so a
+    // Player-screen session can never be music.
+    const onMusicKey = (e: Event) => {
+      if (!get(music)) return;
+      const code = (e as KeyboardEvent).keyCode as number;
+      if (code === 415 || code === 19) toggleMusic();
+      else if (code === 413) stopMusic();
+      else if (code === 412) seekMusic(-15);
+      else if (code === 417) seekMusic(15);
+    };
+    window.addEventListener("keydown", onMusicKey);
 
     a = get(auth);
 
@@ -149,6 +189,7 @@
         clearShelf(); // the shelf is personal data; it goes with the session
         pageCache.clear(); // …and the cached page blobs are that account's book
         clearThumbs(); // …and the persisted cover thumbs are that account's art
+        stopMusic(); // …and the session's music (the TV's caps record stays — it's the TV's, not the account's)
         // the store is module-level: without this, a fresh login would show
         // the previous account's folders (needsInitialList skips the fetch
         // when a cached listing exists)
@@ -180,11 +221,38 @@
       unsubNav();
       platform.offBack(onGlobalBack);
       window.removeEventListener("popstate", onPopstate);
+      window.removeEventListener("keydown", onMusicKey);
     };
   });
 
+  /** The folder's cover (cover.jpg/png/folder.jpg), if the listing has one. */
+  function folderCover(files: PutFile[], auth: { oauthToken: string; downloadToken: string | null }): string | null {
+    const cover = files.find((f) => /^(cover|folder)\.(jpe?g|png)$/i.test(f.name || ""));
+    return cover ? streamURL(auth, cover.id) : null;
+  }
+
   function onOpen(e: CustomEvent<{ file: PutFile }>) {
-    playingFile = e.detail.file;
+    const file = e.detail.file;
+    // MUSIC is not a screen: it starts the persistent session and the user
+    // stays where they are (folders, images and comics all keep working
+    // under the now-playing strip). Video keeps the full-screen Player.
+    if (isAudioFile(file)) {
+      const fam = audioFamily(file);
+      if (audioUnsupported(fam)) {
+        // this TV vetoed the family on a real attempt — say so before the
+        // user wastes a stream start
+        platform.toast(`This TV can't play .${fam} files`);
+        return;
+      }
+      const au = currentAuth();
+      if (!au) return;
+      const q = buildMusicQueue(getLib().files, file);
+      startMusic(file, q.queue, q.index, au, folderCover(getLib().files, au));
+      return;
+    }
+    // one engine, one output: a video starts, the music stops
+    stopMusic();
+    playingFile = file;
     screen = "player";
     platform.pushBackLevel();
   }
@@ -303,6 +371,11 @@
   {:else if screen === "settings"}
     <Settings on:back={onSettingsBack} />
   {/if}
+
+  {#if $music}
+    <NowPlaying />
+  {/if}
+  <video class="music-el" bind:this={musicEl} aria-hidden="true"></video>
 </div>
 
 <style>
@@ -314,5 +387,18 @@
     left: 0;
     overflow: hidden;
     background: var(--bg);
+  }
+  /* the music's media element: present in the render tree (the webOS
+     pipeline wants it), invisible to the eye and the pointer. 1px rather
+     than display:none — a display:none element can have its pipeline
+     suspended by the webview. */
+  .music-el {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
   }
 </style>
