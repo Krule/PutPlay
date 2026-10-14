@@ -325,8 +325,8 @@ test("extractEntry: a deflated entry inflates byte-exact", async () => {
   try {
     const out = await zx.extractEntry(AUTH, FILE, entry);
     assert.equal(Buffer.from(out.data).toString("utf8"), Buffer.from(PAYLOAD).toString("utf8"));
-    // exactly two range reads: the local header, then the compressed data
-    assert.equal(rf.calls.length - before, 2, "header read + data read, nothing more");
+    // ONE range read: local header + data together (the C1's slow-turn fix)
+    assert.equal(rf.calls.length - before, 1, "header + data in a single read, nothing more");
   } finally {
     restore();
   }
@@ -377,6 +377,76 @@ test("openArchive: a password-protected archive is refused as a whole", async ()
   const restore = withFetch(rf.fetchImpl);
   try {
     await assert.rejects(zx.openArchive(AUTH, FILE), (e) => e.name === "ZipError" && /password|protect/i.test(e.message));
+  } finally {
+    restore();
+  }
+});
+
+/* ---------------- one range read per entry (the C1's slow-turn fix) ------
+ * extractEntry used to pay TWO round trips per page: the 30-byte local
+ * header, then the data. On 2 MB pages that doubled the turn latency.
+ * The CD already knows the name/extra lengths, so header+data arrive in
+ * ONE read for every conforming archive; a wider-than-CD local header
+ * falls back to the exact second read (rare, honest).
+ */
+test("extractEntry: a conforming entry costs exactly ONE range request", async () => {
+  const rf = rangeFetch(zipBytes);
+  const restore = withFetch(rf.fetchImpl);
+  try {
+    const model = await zx.openArchive(AUTH, FILE);
+    const entry = model.entries.find((e) => e.name === "pages/p1.png");
+    const out = await zx.extractEntry(AUTH, FILE, entry);
+    assert.equal(Buffer.from(out.data).toString("utf8"), Buffer.from(PAYLOAD).toString("utf8"));
+    // openArchive = 1 call; the extraction itself must be exactly one more
+    assert.equal(rf.calls.length, 2, "openArchive(1) + extract(1) — not openArchive(1) + header(1) + data(1)");
+  } finally {
+    restore();
+  }
+});
+
+test("extractEntry: a stored entry also costs one read", async () => {
+  const rf = rangeFetch(zipBytes);
+  const restore = withFetch(rf.fetchImpl);
+  try {
+    const model = await zx.openArchive(AUTH, FILE);
+    const entry = model.entries.find((e) => e.name === "notes.txt");
+    const out = await zx.extractEntry(AUTH, FILE, entry);
+    assert.equal(Buffer.from(out.data).toString("utf8"), Buffer.from(STORED).toString("utf8"));
+    assert.equal(rf.calls.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("extractEntry: a local header WIDER than the CD is still extracted byte-exact", async () => {
+  // Hand-built: CD claims extraLen=0, the local header carries an 8-byte
+  // extra field — the data starts 8 bytes later than the CD implies.
+  const name = Buffer.from("w.png", "utf8");
+  const data = new Uint8Array(Buffer.from("wide local header bytes!!", "utf8"));
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6);
+  local.writeUInt16LE(0, 8); local.writeUInt32LE(0, 14);
+  local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(name.length, 26); local.writeUInt16LE(8, 28); // 8-byte local extra!
+  const extra = Buffer.from([0xaa, 0xbb, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+  const off = 0;
+  const cd = Buffer.alloc(46);
+  cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6); cd.writeUInt16LE(0x0800, 8);
+  cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(data.length, 24);
+  cd.writeUInt16LE(name.length, 28); cd.writeUInt16LE(0, 30); // CD says NO extra
+  cd.writeUInt32LE(off, 42);
+  const cdStart = 30 + name.length + extra.length + data.length;
+  const cdBuf = Buffer.concat([cd, name]);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12); eocd.writeUInt32LE(cdStart, 16);
+  const bytes = new Uint8Array(Buffer.concat([local, name, extra, Buffer.from(data), cdBuf, eocd]));
+  const rf = rangeFetch(bytes);
+  const restore = withFetch(rf.fetchImpl);
+  try {
+    const model = await zx.openArchive(AUTH, FILE);
+    const out = await zx.extractEntry(AUTH, FILE, model.entries[0]);
+    assert.equal(Buffer.from(out.data).toString("utf8"), Buffer.from(data).toString("utf8"), "the fallback read lands exactly on the data");
   } finally {
     restore();
   }

@@ -27,6 +27,13 @@ export interface ZipEntry {
   /** General-purpose bit flags (bit 11 = UTF-8 name, bit 0 = encrypted). */
   flags: number;
   encrypted: boolean;
+  /**
+   * The central directory's name/extra field lengths (BYTES). The local
+   * header normally agrees; extractEntry reads header+data in ONE range
+   * request using these, and only re-reads when the local is wider.
+   */
+  nameLen: number;
+  extraLen: number;
 }
 
 export interface ZipModel {
@@ -207,6 +214,8 @@ function parseCentralDirectory(dv: DataView, cdOffset: number, count: number): Z
       compressedSize,
       crc32,
       offset,
+      nameLen,
+      extraLen,
       flags,
       encrypted: (flags & 0x0001) !== 0,
     });

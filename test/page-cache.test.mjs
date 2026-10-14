@@ -88,3 +88,71 @@ test("cache: capacity is at least 1 (a zero/negative cap is a typo, not a leak)"
   c.put("b", page(2));
   assert.equal(c.size(), 1);
 });
+
+/* ---------------- in-flight page dedup (the C1's slow-RTL report) --------
+ * A direction flip (or any re-prefetch) mid-flight must NOT re-fetch a
+ * page that is already being read: two range requests for the same 2 MB
+ * page fight for the TV's bandwidth and slow BOTH down. The deduper hands
+ * out the SAME promise for a key until the request settles — then the key
+ * is free (a fresh failure is allowed to retry).
+ */
+const dc = req(join(dir, "cache.cjs"));
+
+test("dedup: concurrent requests for one key share ONE underlying fetch", async () => {
+  const d = dc.createPageDeduper();
+  let calls = 0;
+  const make = () => {
+    calls += 1;
+    return new Promise((r) => setTimeout(() => r({ url: "blob:1", w: 1, h: 1 }), 20));
+  };
+  const a = d.request("k", make);
+  const b = d.request("k", make); // in flight: must reuse
+  assert.equal(a, b, "…same promise out");
+  const v = await a;
+  assert.equal(calls, 1, "exactly one underlying fetch");
+  assert.equal(v.url, "blob:1");
+});
+
+test("dedup: after SETTLE the key is free (a new request may fetch again)", async () => {
+  const d = dc.createPageDeduper();
+  let calls = 0;
+  const make = () => {
+    calls += 1;
+    return Promise.resolve({ url: "blob:" + calls, w: 1, h: 1 });
+  };
+  const v1 = await d.request("k", make);
+  const v2 = await d.request("k", make);
+  assert.equal(calls, 2, "settled keys don't pin");
+  assert.equal(v1.url, "blob:1");
+  assert.equal(v2.url, "blob:2");
+});
+
+test("dedup: a REJECTED in-flight request frees the key (the retry is allowed)", async () => {
+  const d = dc.createPageDeduper();
+  const state = { calls: 0 };
+  const make = () => {
+    state.calls += 1;
+    if (state.calls === 1) return Promise.reject(new Error("first fails"));
+    return Promise.resolve({ url: "blob:ok", w: 1, h: 1 });
+  };
+  const first = d.request("k", make);
+  first.catch(() => undefined); // silence the expected rejection
+  await new Promise((r) => setTimeout(r, 5));
+  const second = await d.request("k", make); // must be a fresh attempt
+  assert.equal(second.url, "blob:ok");
+  assert.equal(state.calls, 2);
+});
+
+test("dedup: distinct keys are independent; clear() releases everything", async () => {
+  const d = dc.createPageDeduper();
+  let calls = 0;
+  const make = () => {
+    calls += 1;
+    return new Promise((r) => setTimeout(() => r({ url: "blob:" + calls, w: 1, h: 1 }), 10));
+  };
+  const p1 = d.request("a", make);
+  const p2 = d.request("b", make);
+  d.clear();
+  await Promise.all([p1, p2]);
+  assert.equal(calls, 2);
+});

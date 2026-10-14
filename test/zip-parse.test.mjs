@@ -251,3 +251,47 @@ test("parentPath: pops one archive folder level", () => {
   assert.equal(zip.archiveParentPath("sub/"), "");
   assert.equal(zip.archiveParentPath(""), "");
 });
+
+/* ---------------- entry geometry (one-read extraction, v1.1) -------------
+ * The CD already knows each entry's name/extra lengths — the extract layer
+ * needs them to read header+data in ONE range request (the C1's 2 MB pages
+ * were paying TWO round trips each: 30-byte header, then data).
+ */
+test("entries expose the CD's name/extra lengths (extractEntry's one-read geometry)", () => {
+  // build a minimal CD via the same fixture style: parse a tiny zip
+  const z = req(join(dir, "bundle.cjs"));
+  const made = makeMiniZip([["a/b.png", 1234], ["c.png", 77]]);
+  const model = z.parseZip(new Uint8Array(made), 0);
+  const [e1, e2] = model.entries;
+  assert.equal(e1.nameLen, 7, "a/b.png is 7 bytes");
+  assert.equal(e1.extraLen, 0);
+  assert.equal(e2.nameLen, 5, "c.png is 5 bytes");
+});
+
+function makeMiniZip(spec) {
+  // spec: [name, compressedSize][] — deflate-0 stored bytes (content irrelevant)
+  const CRC = (() => { const t = new Int32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c; } return t; })();
+  const crc = (b) => { let c = -1; for (const x of b) c = CRC[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const chunks = []; const central = []; let off = 0;
+  for (const [name, size] of spec) {
+    const nm = Buffer.from(name, "utf8");
+    const data = new Uint8Array(size);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6);
+    local.writeUInt16LE(0, 8); local.writeUInt32LE(crc(data), 14);
+    local.writeUInt32LE(size, 18); local.writeUInt32LE(size, 22);
+    local.writeUInt16LE(nm.length, 26); local.writeUInt16LE(0, 28);
+    chunks.push(local, nm, Buffer.from(data));
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6); cd.writeUInt16LE(0x0800, 8);
+    cd.writeUInt32LE(crc(data), 16); cd.writeUInt32LE(size, 20); cd.writeUInt32LE(size, 24);
+    cd.writeUInt16LE(nm.length, 28); cd.writeUInt32LE(off, 42);
+    central.push(cd, nm);
+    off += 30 + nm.length + size;
+  }
+  const cdBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(spec.length, 8); eocd.writeUInt16LE(spec.length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12); eocd.writeUInt32LE(off, 16);
+  return Buffer.concat([...chunks, cdBuf, eocd]);
+}

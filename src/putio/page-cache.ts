@@ -78,3 +78,47 @@ export function createPageCache(maxPages: number, revoke: (url: string) => void)
     },
   };
 }
+
+/* ---------------- in-flight page dedup -----------------------------------
+ *
+ * The prefetch and a turn (or a direction flip mid-flight) can both ask
+ * for the SAME page while its range read is still in progress. Without
+ * dedup that is two parallel fetches of the same 2 MB page fighting for
+ * the TV's bandwidth — the C1's slow-reading report. The deduper hands
+ * out the SAME promise for a key until the request SETTLES (success or
+ * failure); then the key is free, so a failed page can genuinely retry.
+ */
+export interface PageDeduper<T> {
+  /** The in-flight promise for this key, or a fresh `make()` if none. */
+  request(key: string, make: () => Promise<T>): Promise<T>;
+  /** Release every in-flight key (screen teardown; the promises finish
+   *  on their own — this only stops NEW callers from joining them). */
+  clear(): void;
+}
+
+export function createPageDeduper<T>(): PageDeduper<T> {
+  const inflight = new Map<string, Promise<T>>();
+
+  function request(key: string, make: () => Promise<T>): Promise<T> {
+    const existing = inflight.get(key);
+    if (existing) return existing; // join it — one fetch, many readers
+    const p = make();
+    inflight.set(key, p);
+    // settle (either way) frees the key; a rejection is not a pin
+    p.then(
+      () => {
+        if (inflight.get(key) === p) inflight.delete(key);
+      },
+      () => {
+        if (inflight.get(key) === p) inflight.delete(key);
+      },
+    );
+    return p;
+  }
+
+  function clear(): void {
+    inflight.clear();
+  }
+
+  return { request, clear };
+}

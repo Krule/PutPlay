@@ -309,3 +309,25 @@ test("app: signing out clears the page cache (the blobs are that account's book)
   assert.ok(/pageCache\.clear\(\)/.test(block), "…and the cached page blobs go with the session too");
 });
 
+
+/* ---------------- prefetch timing (the C1's "slow between pages" report) -
+ * The next sheet's bytes must be fetched WHILE the current sheet is still
+ * loading (full overlap), not only after it is on screen — on 2 MB pages
+ * the after-the-fact prefetch never finishes in the reader's turn time.
+ * And every page request goes through the in-flight deduper: a direction
+ * flip mid-flight must join the fetch, not start a second one.
+ */
+
+test("reader: the next sheet's fetch starts when the current sheet's load STARTS (parallel, not after)", () => {
+  const ls = screen.slice(screen.search("function loadSheet"), screen.search("function loadSheet") + 2200);
+  const atPrefetch = ls.indexOf("prefetch()");
+  const atAll = ls.indexOf("Promise.all");
+  assert.ok(atPrefetch >= 0 && atAll >= 0, "loadSheet prefetches and awaits");
+  assert.ok(atPrefetch < atAll, "…the prefetch fires BEFORE the current sheet's results resolve");
+});
+
+test("reader: page requests go through the in-flight deduper (a flip mid-flight joins, not re-fetches)", () => {
+  const pd = screen.slice(screen.search("function pageData"), screen.search("function pageData") + 1400);
+  assert.ok(/createPageDeduper[<(]/.test(screen), "the deduper is the shared page-cache factory");
+  assert.ok(/\.request\(/.test(pd), "pageData joins an in-flight fetch for the same key");
+});

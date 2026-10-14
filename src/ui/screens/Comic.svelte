@@ -21,6 +21,7 @@
     type Sheet,
   } from "../../putio/comic";
   import { probeImage } from "../img-probe";
+  import { createPageDeduper } from "../../putio/page-cache";
   import { comic, setComic, upsertProgress, pageCache, pageKey } from "../../store/comic";
 
   /**
@@ -100,6 +101,8 @@
   let failedBytes = 0;
 
   let errorEl: HTMLButtonElement | null = null;
+  // the screen root — the focus scope keeps D-pad moves inside the reader
+  let readerEl: HTMLElement | null = null;
 
   /* ---------------- zoom + pan (relative ladder, center-anchored) ------ */
   let zoom: ZoomLevel = "fit";
@@ -120,16 +123,23 @@
   /** One page: a cache hit (no network at all) or the range-read +
    *  inflate + probe path. New bytes go INTO the cache — from that moment
    *  the cache owns the blob (eviction/sign-out revoke it, never the
-   *  screen), and a turn back through this page is a hit. */
+   *  screen), and a turn back through this page is a hit. The deduper
+   *  means the prefetch and a turn (or a direction flip mid-flight) can
+   *  both ask for the same page and pay for it ONCE — two parallel range
+   *  reads of one 2 MB page would fight for the TV's bandwidth. */
+  const pageDedup = createPageDeduper<{ url: string; w: number; h: number }>();
+
   function pageData(au: Auth, f: PutFile, entry: ZipEntry, key: string) {
     const hit = pageCache.get(key);
     if (hit) return Promise.resolve({ url: hit.url, w: hit.w, h: hit.h });
-    return extractEntry(au, f, entry)
-      .then(({ data, mime }) => probeImage(URL.createObjectURL(new Blob([data], { type: mime }))))
-      .then((r) => {
-        pageCache.put(key, { url: r.url, w: r.w, h: r.h });
-        return r;
-      });
+    return pageDedup.request(key, () =>
+      extractEntry(au, f, entry).then(
+        ({ data, mime }) => probeImage(URL.createObjectURL(new Blob([data], { type: mime }))),
+      ),
+    ).then((r) => {
+      pageCache.put(key, { url: r.url, w: r.w, h: r.h });
+      return r;
+    });
   }
 
   interface PageResult {
@@ -158,6 +168,13 @@
       sheetState = "error"; // an empty session is an error, not a blank
       return;
     }
+
+    // THE NEXT SHEET'S BYTES START MOVING NOW — in parallel with this
+    // sheet's own load, not after it. On 2 MB pages the old after-the-fact
+    // prefetch never finished within the reader's turn time (the C1's
+    // "slow between pages"); with full overlap, a turn finds the next
+    // sheet ready. (Deduped: calling this twice is a join, not a re-fetch.)
+    prefetch();
 
     // the prefetch hit (the next sheet we were just shown) is consumed here
     const hit = prefetched && prefetched.sheet === s ? prefetched : null;
@@ -292,6 +309,13 @@
   /* ---------------- zoom + pan keys ------------------------------------ */
   function onOK() {
     wake();
+    // the now-playing strip owns its focused controls — a strip button under
+    // the page must click, not turn the page
+    const ae = remote.activeEl;
+    if (ae && ae.closest("#np")) {
+      remote.clickActive();
+      return;
+    }
     if (sheetState !== "ready" || sheetW <= 0) return; // nothing on screen to zoom
     zoom = cycleZoom(zoom);
     panX = 0;
@@ -344,11 +368,16 @@
 
   onMount(() => {
     remote.setHandlers({ onBack, onOK, onNavigate });
+    // the arrows PAN the page here — scope the spatial remote to this
+    // screen so the app-level now-playing strip (outside this root) can
+    // never catch a D-pad move. The library keeps the strip reachable.
+    remote.setFocusScope(readerEl);
     wake();
     if (file && model && sheets.length > 0) loadSheet(sheetIdx);
     else dispatch("back"); // defensive: the App should never route here empty
     return () => {
       remote.clearHandlers(); // no stale handlers leak into the library
+      remote.setFocusScope(null); // lift the trap for the screen below
       if (hideTimer) clearTimeout(hideTimer);
       if (flashTimer) clearTimeout(flashTimer);
       // no blob cleanup: the LRU cache owns every page (it survives screen
@@ -361,7 +390,7 @@
   $: if (errorEl) remote.focusEl(errorEl);
 </script>
 
-<div class="reader" bind:clientWidth={viewW} bind:clientHeight={viewH}>
+<div class="reader" bind:this={readerEl} bind:clientWidth={viewW} bind:clientHeight={viewH}>
   {#if sheetState === "ready" && slots.length > 0}
     <div
       class="sheet"

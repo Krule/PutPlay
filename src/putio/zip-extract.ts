@@ -148,9 +148,18 @@ export async function extractEntry(auth: Auth, file: PutFile, e: ZipEntry): Prom
   }
 
   const url = streamURL(auth, file.id);
-  const header = await rangeBytes(url, e.offset, e.offset + 29);
-  const dataStart = e.offset + localDataStart(header);
-  const data = await rangeBytes(url, dataStart, dataStart + e.compressedSize - 1);
+  // ONE range read for header + data (the C1's slow-turn fix): the data
+  // starts at offset + 30 + localNameLen + localExtraLen, and in every
+  // conforming archive the local lengths equal the CD's — which the entry
+  // carries. Read them together; only a WIDER-than-CD local header costs
+  // the exact second read (rare, and honest — the bytes decide).
+  const cdPad = 30 + e.nameLen + e.extraLen;
+  const head = await rangeBytes(url, e.offset, e.offset + cdPad + e.compressedSize - 1);
+  const data =
+    head.length >= 30 && localDataStart(head.subarray(0, 30)) === cdPad
+      ? head.subarray(cdPad)
+      : await rangeBytes(url, e.offset + localDataStart(head.subarray(0, 30)),
+                          e.offset + localDataStart(head.subarray(0, 30)) + e.compressedSize - 1);
   if (data.length !== e.compressedSize) {
     throw new ZipError("bad-range", `The server sent the wrong byte range for ${e.name}.`);
   }

@@ -290,7 +290,14 @@
         var zipPath = mid === 15 ? "/test/e2e/archive.zip" : mid === 18 ? "/test/e2e/spread.cbz" : "/test/e2e/story.cbz";
         var zipType = mid === 15 ? "application/zip" : "application/octet-stream";
         return origFetch(zipPath).then(function (r) {
-          return r.arrayBuffer().then(function (buf) {
+          // test hook: an artificial CDN latency so the prefetch-timing
+          // behaviour is observable (window.__rangeDelay = 1500)
+          var delay = window.__rangeDelay || 0;
+          var delayed = delay
+            ? new Promise(function (res) { setTimeout(res, delay); }).then(function () { return r; })
+            : Promise.resolve(r);
+          return delayed.then(function (r2) {
+            return r2.arrayBuffer().then(function (buf) {
             var total = buf.byteLength;
             var range = init && init.headers ? init.headers.Range : null;
             window.__ranges = window.__ranges || [];
@@ -312,6 +319,7 @@
                 "Content-Length": String(end - start + 1),
                 "Content-Type": zipType
               }
+            });
             });
           });
         });
