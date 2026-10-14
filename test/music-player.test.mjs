@@ -328,6 +328,15 @@ test("down (at fit) toggles the corner surface's focus in reading screens", () =
     const okBody = src.slice(okIdx, okIdx + 700);
     assert.ok(/player\.docked/.test(okBody), `${screen}: onOK must cover the docked video's controls`);
     assert.ok(/clickActive/.test(okBody), `${screen}: onOK must activate the focused corner control`);
+    // the flicker rule (found on the TV): a press with NO current focus
+    // must veto the spatial pick, or pickNearestToEdge re-enters the
+    // corner (the only candidate in the reader) and the ring toggles
+    // on/off on every page-turn. Corner entry is explicit: Down (the
+    // toggle) or the pointer.
+    const navIdx = src.indexOf("function onNavigate");
+    const navBody = src.slice(navIdx, navIdx + 900);
+    const vetoes = (navBody.match(/return !remote\.activeEl/g) || []).length;
+    assert.ok(vetoes >= 2, `${screen}: focus-less presses must veto the corner pick (got ${vetoes} vetoes)`);
   }
 });
 

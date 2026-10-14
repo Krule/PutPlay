@@ -149,20 +149,33 @@
     else panY = nudge(panY, b.maxY, dir, stepPx);
   }
 
+  /**
+   * The flicker rule (found on the TV): a press with NO current focus must
+   * VETO the spatial pick — the corner is the only candidate in the
+   * viewer, so pickNearestToEdge would re-enter it after every edge-walk
+   * release and the ring toggled on/off on every step. Corner entry is
+   * explicit: Down (the toggle) or the pointer. A press WITH corner focus
+   * passes through, so the edge-walk release still works.
+   */
   function onNavigate(dir: Dir) {
     wake();
     if (zoom !== "fit") {
       nudgePan(dir);
-      return; // zoomed: the arrows are the pan
+      return !remote.activeEl; // pan; same rule
     }
-    if (dir === "left") step(-1);
-    else if (dir === "right") step(1);
-    else if (dir === "down") {
+    if (dir === "left") {
+      step(-1);
+      return !remote.activeEl;
+    }
+    if (dir === "right") {
+      step(1);
+      return !remote.activeEl;
+    }
+    if (dir === "down") {
       toggleCornerFocus();
-      // the toggle owns this press — a spatial move would re-pick the
-      // corner (it is the nearest down-edge candidate) and undo it
-      return true;
+      return true; // the toggle owns this press
     }
+    return !remote.activeEl; // up (fit): no-op, same rule
   }
 
   /** Down (at fit) toggles the spatial focus onto the corner surface — the

@@ -7,6 +7,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Fixed
+- While reading, page-turning no longer makes the corner's focus flicker
+  on and off on every Left/Right/Up press: a press with no focus no
+  longer pulls the corner in (it was the only thing the arrows could
+  land on). The corner is entered on purpose — Down, or the pointer —
+  and Left/Right then hand it back immediately.
 - Pressing Down to switch focus off the corner (music row or docked
   video) now actually turns it back down on the TV: releasing focus also
   hands back the DOM focus, which was keeping the corner at full opacity

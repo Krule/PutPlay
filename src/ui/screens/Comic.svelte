@@ -353,21 +353,30 @@
     dispatch("back");
   }
 
+  /**
+   * The flicker rule (found on the TV): a press with NO current focus must
+   * VETO the spatial pick — the corner is the only candidate in the reader,
+   * so pickNearestToEdge would re-enter it after every edge-walk release
+   * and the ring toggled on/off on every page-turn. Corner entry is
+   * explicit: Down (the toggle) or the pointer. A press WITH corner focus
+   * passes through, so the edge-walk release still works.
+   */
   function onNavigate(d: Dir) {
     wake();
     if (d === "up" && zoom === "fit") {
       flipDirection();
-      return;
+      return !remote.activeEl;
     }
     if (zoom !== "fit") {
       nudgePan(d);
-      return; // zoomed: the arrows are the pan
+      return !remote.activeEl; // pan; same rule
     }
-    if (d === "left" || d === "right") step(d);
-    else if (d === "down") {
-      toggleCornerFocus();
-      // the toggle owns this press — a spatial move would re-pick the
-      // corner (it is the nearest down-edge candidate) and undo it
+    if (d === "left" || d === "right") {
+      step(d);
+      return !remote.activeEl; // page-turn; same rule
+    }
+    if (d === "down") {
+      toggleCornerFocus(); // the explicit corner toggle
       return true;
     }
   }
