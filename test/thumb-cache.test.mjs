@@ -111,3 +111,71 @@ test("eviction + TTL compose: expired entries make room without counting against
   m = tc.setThumb(m, 42, entry(NOW));
   assert.deepEqual(Object.keys(m), ["42"]);
 });
+
+/* ---------------- quota degradation (the TV's localStorage is small) -----
+ * The C1 report: "some thumbs persist, some don't, on every re-open."
+ * When the store's quota is exceeded, persisting must DEGRADE — drop the
+ * oldest and retry until what remains fits — and it must NEVER throw.
+ * The in-memory map (serving this session) is untouched by the trimming:
+ * only the persisted subset shrinks.
+ */
+
+/** A storage that throws QuotaExceededError past a byte budget. */
+function quotaStorage(budget) {
+  let bytes = 0;
+  return {
+    write(raw) {
+      if (bytes + raw.length > budget) {
+        const err = new Error("quota");
+        err.name = "QuotaExceededError";
+        throw err;
+      }
+      bytes += raw.length;
+    },
+  };
+}
+
+test("persistThumbs: a roomy store gets the whole (pruned) map in one write", () => {
+  const store = quotaStorage(1_000_000);
+  let map = {};
+  for (let i = 1; i <= 3; i += 1) map = tc.setThumb(map, i, entry(NOW - i * DAY));
+  const res = tc.persistThumbs(map, store.write, NOW);
+  assert.equal(res.persisted, true);
+  assert.deepEqual(Object.keys(res.stored).sort(), ["1", "2", "3"]);
+  // the caller's in-memory map is untouched
+  assert.deepEqual(Object.keys(map).sort(), ["1", "2", "3"]);
+});
+
+test("persistThumbs: an over-quota store degrades — oldest first — until it fits, and never throws", () => {
+  // ~90 bytes per entry of JSON; a 400-byte budget fits ~4 of 8
+  const store = quotaStorage(400);
+  let map = {};
+  for (let i = 1; i <= 8; i += 1) map = tc.setThumb(map, i, entry(NOW - i * DAY));
+  const res = tc.persistThumbs(map, store.write, NOW);
+  assert.equal(res.persisted, true, "something fits");
+  // what's stored is a SUFFIX of recency: the freshest entries survive
+  const stored = Object.keys(res.stored).sort((a, b) => Number(a) - Number(b));
+  assert.ok(stored.length < 8, "trimmed");
+  assert.ok(stored.every((id) => Number(id) <= 4), "the fresh (low i = recent) ones stay");
+  assert.ok(!("8" in res.stored), "the oldest is gone");
+  // the in-memory map keeps ALL 8 — this session still serves every cover
+  assert.equal(Object.keys(map).length, 8);
+});
+
+test("persistThumbs: a store that ALWAYS throws (1-byte budget) gives up cleanly", () => {
+  const store = quotaStorage(1);
+  let map = {};
+  for (let i = 1; i <= 4; i += 1) map = tc.setThumb(map, i, entry(NOW - i * DAY));
+  const res = tc.persistThumbs(map, store.write, NOW);
+  assert.equal(res.persisted, false);
+  assert.deepEqual(res.stored, {});
+  assert.equal(Object.keys(map).length, 4, "memory still serves the session");
+});
+
+test("persistThumbs: expired entries are pruned BEFORE the first attempt (they don't burn quota)", () => {
+  const store = quotaStorage(1_000_000);
+  let map = tc.setThumb({}, 1, entry(NOW - 40 * DAY)); // expired
+  map = tc.setThumb(map, 2, entry(NOW));
+  const res = tc.persistThumbs(map, store.write, NOW);
+  assert.deepEqual(Object.keys(res.stored), ["2"], "…only the fresh one is written");
+});

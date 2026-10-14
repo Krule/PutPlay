@@ -81,3 +81,9 @@ test("tile: storage refusing (quota) is a quiet fallback — the cover still sho
 test("app: signing out clears the persistent thumbs (the account's artwork)", () => {
   assert.ok(/clearThumbs\(\)/.test(app), "the unauthed handler clears the thumb store");
 });
+
+test("tile: a cached cover that won't decode is RE-FETCHED from the network (stale bytes are not truth)", () => {
+  const sdc = tile.slice(tile.search("function showDownscaled"), tile.search("function showDownscaled") + 1600);
+  assert.ok(/loadCover\(true\)/.test(sdc), "the onerror path re-enters loadCover with forceNetwork");
+  assert.ok(/forceNetwork/.test(tile), "…and loadCover has the escape hatch (skip the stale LRU rung)");
+});

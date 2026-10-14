@@ -3,6 +3,7 @@
   import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
   import { putioIsFolder, type PutFile } from "../../putio/types";
+  import { isAudioFile } from "../../putio/audio-capable";
   import { openArchive, extractEntry } from "../../putio/zip-extract";
   import { buildComicModel } from "../../putio/comic";
   import { pageCache, pageKey } from "../../store/comic";
@@ -15,6 +16,10 @@
   // optional direct handlers (keyboard / programmatic). The tile ALSO dispatches
   // a Svelte "open" event with detail.file — parents can use on:open.
   export let onOpen: ((f: PutFile) => void) | null = null;
+  /** This file is the one the now-playing strip is playing (music). */
+  export let playing = false;
+  /** This TV vetoed the format on a real attempt (the caps record). */
+  export let blocked = false;
 
   const dispatch = createEventDispatcher();
 
@@ -38,20 +43,22 @@
   let coverState: "none" | "loading" | "ready" | "failed" = "none";
   let coverUrl = "";
 
-  function loadCover() {
+  function loadCover(forceNetwork = false) {
     const au = currentAuth();
     if (!au) return; // the library requires auth; an honest no-op regardless
-    const persisted = getThumb(file.id);
-    if (persisted) {
-      coverUrl = persisted.dataUrl;
-      coverState = "ready";
-      return;
-    }
     const key = pageKey(file.id, 0);
-    const hit = pageCache.get(key);
-    if (hit) {
-      showDownscaled(hit.url);
-      return;
+    if (!forceNetwork) {
+      const persisted = getThumb(file.id);
+      if (persisted) {
+        coverUrl = persisted.dataUrl;
+        coverState = "ready";
+        return;
+      }
+      const hit = pageCache.get(key);
+      if (hit) {
+        showDownscaled(hit.url, true);
+        return;
+      }
     }
     coverState = "loading";
     openArchive(au, file)
@@ -66,18 +73,23 @@
           probeImage(URL.createObjectURL(new Blob([data], { type: mime }))),
         ).then((p) => {
           pageCache.put(key, { url: p.url, w: p.w, h: p.h });
-          showDownscaled(p.url);
+          showDownscaled(p.url, false);
         });
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("comic cover fetch failed", err);
         coverState = "failed"; // offline, corrupt, not a zip: the glyph stays
       });
   }
 
   /** Down-scale the cover blob to a tile-sized JPEG data URL, show it, and
    *  persist it for the next launch. The canvas or the TV's storage can
-   *  refuse — then we show the full-res blob and skip persisting, quietly. */
-  function showDownscaled(blobUrl: string) {
+   *  refuse — then we show the full-res blob and skip persisting, quietly.
+   *  A blob that WON'T DECODE (stale/revoked cache bytes) is not truth:
+   *  when the bytes came from the in-memory cache, re-fetch from the
+   *  network (forceNetwork skips the stale rung); a fresh network fetch
+   *  that fails just gets the glyph. */
+  function showDownscaled(blobUrl: string, onFailRefetch: boolean) {
     const img = new Image();
     img.onload = () => {
       const w0 = img.naturalWidth;
@@ -107,8 +119,11 @@
       if (dataUrl) putThumb(file.id, { dataUrl, w, h, savedAt: Date.now() });
     };
     img.onerror = () => {
-      coverUrl = blobUrl;
-      coverState = "ready";
+      if (onFailRefetch) {
+        loadCover(true); // the cached bytes are stale — the network is truth
+        return;
+      }
+      coverState = "failed"; // fresh fetch that won't decode: the glyph
     };
     img.src = blobUrl;
   }
@@ -116,6 +131,9 @@
   const isFolder = putioIsFolder(file);
   const isVideo = !isFolder && file.content_type ? file.content_type.startsWith("video/") : false;
   const isComic = !isFolder && /\.cbz$/i.test(file.name || "");
+  // audio: one classification for the glyph, the App's routing, and the
+  // queue — a mislabelled content type falls back to the extension
+  const isAudio = !isFolder && isAudioFile(file);
   const isArchive =
     !isFolder && !isComic && file.content_type
       ? file.content_type.startsWith("application/") && !isVideo
@@ -142,7 +160,7 @@
   onDestroy(() => el && remote.unregister(el));
 </script>
 
-<div class="tile" bind:this={el} data-focus data-state="">
+<div class="tile" bind:this={el} data-focus data-state="" class:blocked={blocked}>
   <div class="thumb" class:folder={isFolder} class:video={isVideo} class:archive={isArchive} class:comic={isComic}>
     {#if file.screenshot && !imgFailed}
       <img src={file.screenshot} alt="" loading="lazy" onerror={() => (imgFailed = true)} />
@@ -158,6 +176,8 @@
       <span class="glyph">🗜️</span>
     {:else if isVideo}
       <span class="glyph">🎬</span>
+    {:else if isAudio}
+      <span class="glyph">🎵</span>
     {:else}
       <span class="glyph">📄</span>
     {/if}
@@ -165,6 +185,10 @@
       <span class="chip mp4" title="put.io MP4 ready">MP4</span>
     {:else if isVideo && !file.is_mp4_available && file.need_convert}
       <span class="chip conv" title="Converting">⚙</span>
+    {:else if playing}
+      <span class="chip playing" title="Now playing">▶</span>
+    {:else if blocked}
+      <span class="chip blocked" title="This TV can't play this format">✕</span>
     {/if}
     {#if isVideo && file.size > 0}
       <span class="chip size">{fmtBytes(file.size)}</span>
@@ -249,6 +273,21 @@
     left: 8px;
     background: var(--chip-warn-bg);
     color: var(--on-warn);
+  }
+  .chip.playing {
+    top: 8px;
+    left: 8px;
+    background: var(--accent-dim-solid);
+    color: var(--accent-2);
+  }
+  .chip.blocked {
+    top: 8px;
+    left: 8px;
+    background: var(--danger-fill);
+    color: var(--danger);
+  }
+  .tile.blocked {
+    opacity: 0.55;
   }
   .chip.size {
     bottom: 8px;

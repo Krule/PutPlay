@@ -4,13 +4,16 @@
  * grid is the only writer, and sign-out clears it (the covers are the
  * account's artwork, same rule as the shelf).
  *
- * Quota honesty: putThumb returns false when the TV's storage refuses
- * (QuotaExceededError) — the tile still displays the cover from memory;
- * it just won't survive the next launch. Never throw into the grid.
+ * Quota honesty (the C1's "some thumbs don't persist" report): when the
+ * TV's storage is full, persisting DEGRADES — the pure core drops the
+ * oldest covers until the rest fits (freshest-first). The in-memory map
+ * is NEVER trimmed, so this session still serves every cover; only the
+ * on-device subset shrinks. putThumb returns false only when the store
+ * refuses even an empty write. Never throw into the grid.
  */
 import {
   loadThumbs,
-  saveThumbs,
+  persistThumbs,
   setThumb,
   thumbFor,
   type ThumbEntry,
@@ -43,20 +46,22 @@ export function getThumb(fileId: number | string): ThumbEntry | null {
 }
 
 /**
- * Store a thumb (TTL prune + cap eviction are the pure core's job).
- * Returns false when storage is missing or refuses the write — the caller
- * must treat that as "displayed, not persisted", not as an error.
+ * Store a thumb (TTL prune + cap eviction are the pure core's job; the
+ * quota degrade ladder is persistThumbs'). ALWAYS updates the in-memory
+ * map — a storage refusal must not make THIS session forget the cover.
+ * Returns true when the cover made it onto the device (in full or in the
+ * freshest subset that fits), false when storage is missing or refuses.
  */
 export function putThumb(fileId: number | string, entry: ThumbEntry): boolean {
   const s = storage();
   if (!s) return false;
   const next = setThumb(load(), fileId, entry);
+  cache = next; // memory first — the session never loses a cover
   try {
-    s.setItem(KEY, saveThumbs(next));
-    cache = next;
-    return true;
+    const res = persistThumbs(next, (raw) => s.setItem(KEY, raw), Date.now());
+    return res.persisted; // false = the store refused even a subset
   } catch {
-    return false; // quota: the in-memory map keeps serving THIS session
+    return false;
   }
 }
 

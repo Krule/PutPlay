@@ -33,10 +33,12 @@ export type ThumbMap = Record<string, ThumbEntry>;
 export const THUMB_TTL_MS = 30 * 24 * 3600 * 1000;
 
 /**
- * The map's cap. At ~50–150 KB per down-scaled JPEG, 40 entries stay well
- * inside a 5 MB localStorage while covering a full season of comics.
+ * The map's cap. At ~50–150 KB per down-scaled JPEG, 24 entries stay well
+ * inside a 5 MB localStorage while covering a full season of comics — and
+ * when the TV's real budget is smaller, persistThumbs' degrade ladder
+ * keeps the freshest subset that fits (never the oldest).
  */
-export const THUMB_MAX_ENTRIES = 40;
+export const THUMB_MAX_ENTRIES = 24;
 
 /** Is this entry's shape intact? (Corrupt maps are dropped wholesale.) */
 function isEntry(v: unknown): v is ThumbEntry {
@@ -106,4 +108,47 @@ export function setThumb(
 /** Serialize for storage. */
 export function saveThumbs(thumbs: ThumbMap): string {
   return JSON.stringify(thumbs);
+}
+
+/**
+ * Persist a map under a REAL storage budget (the C1's "some thumbs persist,
+ * some don't" report: once the TV's localStorage filled up, every later
+ * cover silently failed to persist — and the in-memory map went stale too).
+ *
+ * The degrade ladder: write the whole (TTL-pruned) map; if the store
+ * throws (QuotaExceededError), drop the OLDEST HALF of what is being
+ * persisted and retry, until it fits. The caller's in-memory map is never
+ * trimmed — this session keeps serving every cover; only the on-device
+ * subset shrinks, freshest-first. A store that always throws gives up
+ * with an empty subset, never an exception.
+ */
+export function persistThumbs(
+  all: ThumbMap,
+  write: (raw: string) => void,
+  now: number,
+): { persisted: boolean; stored: ThumbMap } {
+  // expired entries are pruned BEFORE the first attempt — they burn budget
+  const candidate0 = loadThumbs(saveThumbs(all), now);
+  let candidate: ThumbMap = candidate0;
+  const maxTries = 6; // each try halves the candidate — 6 covers any budget
+  for (let attempt = 0; attempt < maxTries; attempt += 1) {
+    try {
+      write(saveThumbs(candidate));
+      return { persisted: true, stored: candidate };
+    } catch {
+      const ids = Object.keys(candidate);
+      if (ids.length === 0) return { persisted: false, stored: {} };
+      // drop the OLDEST half — the freshest covers are the ones that survive
+      const ranked = ids
+        .map((id) => ({ id, at: candidate[id].savedAt }))
+        .sort((a, b) => a.at - b.at);
+      const drop = new Set(ranked.slice(0, Math.max(1, Math.floor(ranked.length / 2))).map((x) => x.id));
+      const next: ThumbMap = {};
+      for (const [id, e] of Object.entries(candidate)) {
+        if (!drop.has(id)) next[id] = e;
+      }
+      candidate = next;
+    }
+  }
+  return { persisted: false, stored: candidate };
 }
