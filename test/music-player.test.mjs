@@ -314,29 +314,32 @@ test("reading screens scope the remote to the shell (corner surfaces in, library
     "the library must not scope focus (the strip is reachable there by design)");
 });
 
-test("down (at fit) toggles the corner surface's focus in reading screens", () => {
-  // The owner's ask: the corner (music row / docked video) must be able to
-  // LOSE focus while pages turn, and Down — an honest no-op at fit — is the
-  // deliberate switch: page -> corner (primary control = play/pause),
-  // corner -> page.
+test("reader arrows: the corner owns the arrows while focused, the page owns them otherwise", () => {
+  // The full contract (found on the TV, three rounds):
+  // - corner focus: arrows walk the corner's buttons / release at its
+  //   edge, and the page does NOT move (an early return before any page
+  //   action is the only way to guarantee that);
+  // - no focus: the page owns the arrows, and every page-action branch
+  //   VETOs the spatial pick (or the corner re-enters and flickers);
+  // - Down (no focus) is the explicit toggle onto the corner.
   for (const screen of ["src/ui/screens/Comic.svelte", "src/ui/screens/Image.svelte"]) {
     const src = read(screen);
-    assert.ok(/function toggleCornerFocus/.test(src), `${screen}: the toggle must exist`);
-    assert.match(src, /(d|dir) === "down"\)?\s*\{\s*\n\s*toggleCornerFocus\(\)/, `${screen}: down (fit) must call the toggle`);
+    assert.ok(/function cornerHasFocus/.test(src), `${screen}: the corner focus check must exist`);
+    assert.ok(/closest\("\.np-micro, #np, \.player\.docked"\)/.test(src), `${screen}: the check must cover the corner surfaces`);
+    const navIdx = src.indexOf("function onNavigate");
+    const navBody = src.slice(navIdx, navIdx + 1400);
+    assert.match(
+      navBody,
+      /if \(cornerHasFocus\(\)\)\s*\{[^}]*\n\s*return;?\s*\}/s,
+      `${screen}: corner focus must early-return BEFORE any page action (Left/Right must not turn the page)`
+    );
+    assert.match(src, /(d|dir) === "down"\)?\s*\{\s*\n\s*toggleCornerFocus\(\)/, `${screen}: down (no focus) is the explicit toggle`);
+    const vetoes = (navBody.match(/return true/g) || []).length;
+    assert.ok(vetoes >= 3, `${screen}: every no-focus arrow branch must veto the spatial pick (got ${vetoes})`);
     const okIdx = src.indexOf("function onOK");
-    assert.ok(okIdx !== -1, `${screen}: onOK must exist`);
     const okBody = src.slice(okIdx, okIdx + 700);
     assert.ok(/player\.docked/.test(okBody), `${screen}: onOK must cover the docked video's controls`);
     assert.ok(/clickActive/.test(okBody), `${screen}: onOK must activate the focused corner control`);
-    // the flicker rule (found on the TV): a press with NO current focus
-    // must veto the spatial pick, or pickNearestToEdge re-enters the
-    // corner (the only candidate in the reader) and the ring toggles
-    // on/off on every page-turn. Corner entry is explicit: Down (the
-    // toggle) or the pointer.
-    const navIdx = src.indexOf("function onNavigate");
-    const navBody = src.slice(navIdx, navIdx + 900);
-    const vetoes = (navBody.match(/return !remote\.activeEl/g) || []).length;
-    assert.ok(vetoes >= 2, `${screen}: focus-less presses must veto the corner pick (got ${vetoes} vetoes)`);
   }
 });
 

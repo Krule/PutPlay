@@ -7,6 +7,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Fixed
+- While the corner's focus is on the player (music row or docked
+  video), Left/Right no longer turn the comic page: while focused, the
+  corner owns the arrows (walk its buttons, release at its edge) and
+  the page stays put. Without focus, the page owns the arrows — and
+  the flicker fix from the previous round stays in place.
 - While reading, page-turning no longer makes the corner's focus flicker
   on and off on every Left/Right/Up press: a press with no focus no
   longer pulls the corner in (it was the only thing the arrows could

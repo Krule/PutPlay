@@ -157,25 +157,36 @@
    * explicit: Down (the toggle) or the pointer. A press WITH corner focus
    * passes through, so the edge-walk release still works.
    */
+  /** True when the spatial focus sits on a corner surface (music row, strip,
+   *  or docked video) — the surfaces that follow the corner focus rules. */
+  function cornerHasFocus() {
+    const ae = remote.activeEl;
+    return !!ae && ae.isConnected && !!ae.closest(".np-micro, #np, .player.docked");
+  }
+
   function onNavigate(dir: Dir) {
     wake();
-    if (zoom !== "fit") {
-      nudgePan(dir);
-      return !remote.activeEl; // pan; same rule
-    }
-    if (dir === "left") {
-      step(-1);
-      return !remote.activeEl;
-    }
-    if (dir === "right") {
-      step(1);
-      return !remote.activeEl;
+    if (cornerHasFocus()) {
+      // The corner owns the arrows: the engine walks its buttons and
+      // releases at its edge — and the image stays exactly where it is
+      // (no step/pan before this return).
+      return;
     }
     if (dir === "down") {
-      toggleCornerFocus();
-      return true; // the toggle owns this press
+      toggleCornerFocus(); // no focus, so this is page -> corner
+      return true;
     }
-    return !remote.activeEl; // up (fit): no-op, same rule
+    if (zoom !== "fit") {
+      nudgePan(dir);
+      return true;
+    }
+    if (dir === "left") step(-1);
+    else if (dir === "right") step(1);
+    // no focus: the image owns the arrows, and every branch above vetoes
+    // the spatial pick — otherwise pickNearestToEdge would re-enter the
+    // corner (the only candidate here) and the ring would flicker on
+    // every press.
+    return true;
   }
 
   /** Down (at fit) toggles the spatial focus onto the corner surface — the
