@@ -31,8 +31,38 @@ So I outlined this project, put together some resources, some rules and some lim
 - Subtitles: MKV-embedded first, then your put.io subtitles (ASS/SSA and SRT)
 - Audio track switching — and when the TV's player refuses a switch, it tells
   you the truth instead of pretending it worked
+- Reads your **.cbz comics**: only the pages you look at are streamed (range
+  reads, no full-file download), two pages side by side, left-to-right or
+  right-to-left, and it opens back at the page you left
+- Opens **.zip/.cbz archives** the same way — browse them without downloading
+- Pictures: the image viewer fits the glass, and **OK** steps fit → 2× → 4×
+  with arrow panning
+- Music files play under a **now-playing strip** while you keep browsing,
+  reading, and watching
 - Resumes where you left off; remembers your source and language preferences
 - Sign-in is a device code: enter it on your phone, or scan the QR
+
+## Screens
+
+![Library with a comic cover thumb](docs/screenshots/library.png)
+
+The library — a `.cbz` tile shows its real cover, cached locally.
+
+![Comic reader spread](docs/screenshots/comic.png)
+
+The comic reader — two pages a sheet, the direction legend in the corner.
+
+![Image viewer](docs/screenshots/image.png)
+
+The image viewer — *The Starry Night*, fit to the glass.
+
+![Now-playing strip](docs/screenshots/music.png)
+
+Music under a now-playing strip — the library stays fully usable.
+
+More in [`docs/screenshots/`](docs/screenshots/); the demo content behind
+the shots is open content — see
+[`docs/shots/CREDITS.md`](docs/shots/CREDITS.md).
 
 ## Controls
 
@@ -41,6 +71,12 @@ cancels — double-press exits.
 
 In the player: **blue** play/pause · **red** subtitles · **yellow** audio ·
 **green** playback source.
+
+In the reader and the image viewer: **OK** zooms (fit → 2× → 4×), the
+**arrows** pan while zoomed, and **Up** flips a comic's reading direction.
+
+Music: the remote's play/pause, stop, and rewind/forward keys drive the
+now-playing strip.
 
 ## Installation
 
@@ -72,7 +108,7 @@ updates” in Homebrew Channel picks up new versions on its own.
 git clone git@github.com:Krule/PutPlay.git
 cd PutPlay
 npm ci
-npm test        # 200+ tests, including the webOS 6 baseline gate
+npm test        # 500+ tests, including the webOS 6 baseline gate
 npm run build   # js/bundle.js + js/bundle.css
 npm run package # ba.ovo.putplay_<version>_all.ipk in the repo root
 ```
