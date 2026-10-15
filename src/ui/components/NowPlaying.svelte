@@ -21,6 +21,7 @@
   let panelEl: HTMLElement;
   let prevBtn: HTMLButtonElement;
   let nextBtn: HTMLButtonElement;
+  let restoreBtn: HTMLButtonElement;
 
   $: m = $music;
   $: name = (m?.file.name || "").replace(/\.[^.]+$/, "");
@@ -44,6 +45,11 @@
   // edge buttons dim AND leave the focus pool (the remote reads both)
   $: if (prevBtn) remote.setDisabled(prevBtn, atFirst);
   $: if (nextBtn) remote.setDisabled(nextBtn, atLast);
+  // "Restore to strip" is a no-op on the reading screens (the App forces
+  // the micro row there — the strip would cover the page), so it leaves
+  // the D-pad pool and dims exactly while dimmed; in the library it is
+  // real and stays reachable.
+  $: if (restoreBtn) remote.setDisabled(restoreBtn, dimmed);
 </script>
 
 {#if $music}
@@ -87,7 +93,7 @@
     <button class="dock-btn" bind:this={prevBtn} data-focus aria-label="Previous track" on:click={prevMusic}>«</button>
     <button class="dock-btn play" data-focus aria-label={m?.ms.paused ? "Play" : "Pause"} on:click={toggleMusic}>{m?.ms.paused ? "▶" : "❚❚"}</button>
     <button class="dock-btn" bind:this={nextBtn} data-focus aria-label="Next track" on:click={nextMusic}>»</button>
-    <button class="dock-btn" data-focus aria-label="Restore to strip" on:click={() => setMusicMode("strip")}>▭</button>
+    <button class="dock-btn" bind:this={restoreBtn} data-focus aria-label="Restore to strip" on:click={() => setMusicMode("strip")}>▭</button>
     <button class="dock-btn close" data-focus aria-label="Stop music" on:click={stopMusic}>✕</button>
   </div>
   {/if}

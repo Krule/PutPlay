@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { get } from "svelte/store";
   import { getRemote } from "../../webos/remote";
   import { platform } from "../../webos/platform";
@@ -69,7 +69,14 @@
   let dockEl: HTMLElement | null = null;
   let dockPrev: HTMLButtonElement | null = null;
   let dockNext: HTMLButtonElement | null = null;
-  $: if (dockEl) remote.registerAll(dockEl);
+  // The ladder's {#if} swap recreates the size button IN PLACE (the
+  // container is never reassigned), so the scan must track `mode` — and
+  // it must run AFTER Svelte patches the template: reactive statements
+  // run before the DOM update, so a synchronous scan sees the old
+  // buttons and the recreated one is never registered (the D-pad walk
+  // jumps over it). registerAll is idempotent per node; detached old
+  // nodes are GC'd by the engine on the next press.
+  $: if (dockEl && mode) tick().then(() => remote.registerAll(dockEl));
   $: if (dockPrev) remote.setDisabled(dockPrev, atFirst);
   $: if (dockNext) remote.setDisabled(dockNext, atLast);
   // FULL only: the body class swaps the app-shell layout behind the takeover

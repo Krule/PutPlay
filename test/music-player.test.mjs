@@ -452,3 +452,22 @@ test("the corner row recedes while reading (0.25, brightens on focus)", () => {
   assert.match(np, /export let dimmed/, "the dimming is a prop (the App decides)");
   assert.match(np, /class:dimmed=/, "the micro row carries the dimmed class");
 });
+
+test("the music micro's 'Restore to strip' is skipped on reading screens (it is a no-op there)", () => {
+  // Found on the TV: on comic/image the App forces the music into the
+  // micro row (the strip would cover the page), so "Restore to strip"
+  // does nothing visible there — and it silently flips the session's
+  // mode, surprising the user back in the library. On reading screens it
+  // must leave the D-pad pool and dim like the queue-edge buttons; in
+  // the library the restore is real and the button stays reachable.
+  const src = read("src/ui/components/NowPlaying.svelte");
+  const i = src.indexOf('aria-label="Restore to strip"');
+  assert.ok(i !== -1, "the micro row's restore button must exist");
+  const btn = src.slice(Math.max(0, i - 120), i + 120);
+  assert.match(btn, /bind:this=\{restoreBtn\}/, "the restore button must be bound (so it can be disabled)");
+  assert.match(
+    src,
+    /\$: if \(restoreBtn\) remote\.setDisabled\(restoreBtn, dimmed\)/,
+    "the restore button must be disabled exactly while dimmed (the reading screens)"
+  );
+});

@@ -7,6 +7,14 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Fixed
+- The docked video's size button (make it mini / restore to full) is
+  reachable with the D-pad in both mini and micro now: after a size
+  change the button was recreated in place and the focus scan never saw
+  the new one, so the walk jumped over it.
+- On the comic and picture readers, the music row's "Restore to strip"
+  button is dimmed and skipped by the D-pad: restoring the strip there
+  did nothing (the strip would cover the page), and it quietly changed
+  what the music looks like back in the library.
 - While the corner's focus is on the player (music row or docked
   video), Left/Right no longer turn the comic page: while focused, the
   corner owns the arrows (walk its buttons, release at its edge) and

@@ -322,3 +322,27 @@ test("releasing spatial focus also releases the DOM focus (:focus ring + :focus-
   const body = src.slice(i, i + 400);
   assert.match(body, /\.blur\(\)/, "blur() must also blur the DOM element");
 });
+
+test("the dock's focus scan re-runs on every ladder move (the {#if} swap recreates the size button)", () => {
+  // Found on the TV: mini->micro (and micro->mini) recreates the size
+  // button in place (Svelte's {#if} swap), but the dock's CONTAINER
+  // element is never reassigned — a scan that depends on the container
+  // alone runs once and never sees the recreated node, so the D-pad walk
+  // jumps over it (» -> ✕, skipping "Restore to mini"). The scan's
+  // reactive statement must track the mode too; registerAll is idempotent
+  // per node and the engine lazily GCs the detached old ones.
+  const src = read("src/ui/screens/Player.svelte");
+  const i = src.indexOf("remote.registerAll(dockEl)");
+  assert.ok(i !== -1, "the dock's registration scan must exist");
+  const stmt = src.slice(Math.max(0, i - 260), i + 40);
+  assert.match(
+    stmt,
+    /\$: if \(dockEl[^)]*mode[^)]*\)/,
+    "the scan must depend on the ladder mode, not only the container element"
+  );
+  assert.match(
+    stmt,
+    /tick\(\)|requestAnimationFrame/,
+    "the re-scan must be deferred until AFTER the template patch (reactive statements run before the {#if} swap, so a synchronous scan sees the old buttons)"
+  );
+});
