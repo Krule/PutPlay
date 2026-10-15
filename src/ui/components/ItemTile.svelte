@@ -7,7 +7,7 @@
   import { openArchive, extractEntry } from "../../putio/zip-extract";
   import { buildComicModel } from "../../putio/comic";
   import { pageCache, pageKey } from "../../store/comic";
-  import { getThumb, putThumb } from "../../store/thumb-store";
+  import { getThumb, putThumb, type ThumbEntry } from "../../store/thumb-store";
   import { currentAuth } from "../../store/auth";
   import { probeImage } from "../img-probe";
 
@@ -30,36 +30,51 @@
   let imgFailed = false;
 
   /* The comic cover: THREE rungs, cheapest first.
-     1. the PERSISTENT thumb (localStorage, 1-month TTL) — a previous
-        session already paid; zero network, zero blobs;
+     1. the PERSISTENT thumb (IndexedDB, 1-month TTL) — a previous
+        session already paid; zero network, zero blobs-to-fetch;
      2. the in-memory page cache — the reader (or an earlier tile) fetched
         this session; down-scale it now;
      3. the network — two-stage open, cover of the READING order, range
         read + inflate + probe; down-scale and persist for next time.
      Failure at any rung → the glyph (an empty thumb would be a lie).
-     The LRU owns the full-res blob's life; the persistent store owns the
-     data URL. Quota refusal = displayed, not persisted — never thrown. */
+     Covers are BLOBS (the IDB store owns them; no base64, no data URLs).
+     The LRU owns the full-res blob's life; the displayed cover is an
+     object URL — revoked on unmount and on replacement. An IDB refusal
+     = memory-only session, never thrown. */
   const THUMB_MAX_PX = 480; // the tile is 236 CSS px; 2x covers the 4K glass
   let coverState: "none" | "loading" | "ready" | "failed" = "none";
   let coverUrl = "";
+  /** The displayed cover's object URL (when it is one) — revoked on unmount/replace. */
+  let coverObjUrl: string | null = null;
+  /** A late async callback (IDB hit, toBlob) must not touch a dead tile. */
+  let alive = true;
 
   function loadCover(forceNetwork = false) {
     const au = currentAuth();
     if (!au) return; // the library requires auth; an honest no-op regardless
     const key = pageKey(file.id, 0);
     if (!forceNetwork) {
-      const persisted = getThumb(file.id);
-      if (persisted) {
-        coverUrl = persisted.dataUrl;
-        coverState = "ready";
-        return;
-      }
-      const hit = pageCache.get(key);
-      if (hit) {
-        showDownscaled(hit.url, true);
-        return;
-      }
+      // rung 1 is async now (IndexedDB): a hit means the fetch never starts
+      getThumb(file.id).then((entry) => {
+        if (!alive) return;
+        if (entry) {
+          showFromEntry(entry);
+          return;
+        }
+        const hit = pageCache.get(key);
+        if (hit) {
+          showDownscaled(hit.url, true);
+          return;
+        }
+        startNetwork(au);
+      });
+      return;
     }
+    startNetwork(au);
+  }
+
+  function startNetwork(au: NonNullable<ReturnType<typeof currentAuth>>) {
+    const key = pageKey(file.id, 0);
     coverState = "loading";
     openArchive(au, file)
       .then((m) => buildComicModel(m.entries))
@@ -82,7 +97,17 @@
       });
   }
 
-  /** Down-scale the cover blob to a tile-sized JPEG data URL, show it, and
+  /** Show a persisted cover (an IDB hit): an object URL, replacing any
+   *  previous one (revoked first so long sessions never leak). */
+  function showFromEntry(entry: ThumbEntry) {
+    if (!alive || coverState === "ready") return;
+    if (coverObjUrl) URL.revokeObjectURL(coverObjUrl);
+    coverObjUrl = URL.createObjectURL(entry.blob);
+    coverUrl = coverObjUrl;
+    coverState = "ready";
+  }
+
+  /** Down-scale the cover blob to a tile-sized JPEG BLOB, show it, and
    *  persist it for the next launch. The canvas or the TV's storage can
    *  refuse — then we show the full-res blob and skip persisting, quietly.
    *  A blob that WON'T DECODE (stale/revoked cache bytes) is not truth:
@@ -101,7 +126,7 @@
       const scale = Math.min(1, THUMB_MAX_PX / w0);
       const w = Math.max(1, Math.round(w0 * scale));
       const h = Math.max(1, Math.round(img.naturalHeight * scale));
-      let dataUrl = "";
+      let encoded = false;
       try {
         const c = document.createElement("canvas");
         c.width = w;
@@ -109,14 +134,28 @@
         const ctx = c.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
-          dataUrl = c.toDataURL("image/jpeg", 0.82);
+          c.toBlob((blob) => {
+            if (!alive) return; // the tile is gone; don't touch a dead cover
+            if (!blob) {
+              coverUrl = blobUrl; // encode refusal: full-res, no persist
+              coverState = "ready";
+              return;
+            }
+            if (coverObjUrl) URL.revokeObjectURL(coverObjUrl);
+            coverObjUrl = URL.createObjectURL(blob);
+            coverUrl = coverObjUrl;
+            coverState = "ready";
+            putThumb(file.id, { blob, w, h, savedAt: Date.now() }); // never rejects
+          }, "image/jpeg", 0.82);
+          encoded = true;
         }
       } catch {
-        dataUrl = ""; // canvas refusal: full-res display, no persist
+        encoded = false; // canvas refusal: full-res, no persist
       }
-      coverUrl = dataUrl || blobUrl;
-      coverState = "ready";
-      if (dataUrl) putThumb(file.id, { dataUrl, w, h, savedAt: Date.now() });
+      if (!encoded) {
+        coverUrl = blobUrl;
+        coverState = "ready";
+      }
     };
     img.onerror = () => {
       if (onFailRefetch) {
@@ -157,7 +196,11 @@
     }
     if (isComic) loadCover();
   });
-  onDestroy(() => el && remote.unregister(el));
+  onDestroy(() => {
+    alive = false;
+    if (el) remote.unregister(el);
+    if (coverObjUrl) URL.revokeObjectURL(coverObjUrl); // no object-URL leak over a long session
+  });
 </script>
 
 <div class="tile" bind:this={el} data-focus data-state="" class:blocked={blocked}>

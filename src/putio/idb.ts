@@ -24,6 +24,12 @@ export interface IdbHandle {
   delete(key: IDBValidKey): Promise<void>;
   /** Number of entries in the store. */
   count(): Promise<number>;
+  /**
+   * Primary key of the LOWEST value in the named index (a range-less
+   * cursor walks the index in order; take the first entry) — "give me
+   * the oldest key" for a savedAt-style index. Undefined when empty.
+   */
+  firstKeyBy(indexName: string): Promise<IDBValidKey | undefined>;
   /** Empty the store (sign-out: the previous account's covers go). */
   clear(): Promise<void>;
   /** Close the connection (app teardown). */
@@ -86,6 +92,15 @@ export function openIdb(
         get: (key) => request(ro().get(key)),
         delete: (key) => write((s) => s.delete(key)),
         count: () => request(ro().count()),
+        firstKeyBy: (indexName) =>
+          new Promise((resolve, reject) => {
+            // a range-less cursor walks the index in order — the first
+            // entry is the lowest value (no minKey constant: it isn't in
+            // the Chrome 79 type surface)
+            const req = ro().index(indexName).openCursor();
+            req.onsuccess = () => resolve(req.result ? req.result.primaryKey : undefined);
+            req.onerror = () => reject(req.error);
+          }),
         clear: () => write((s) => s.clear()),
         close: () => db.close(),
       });

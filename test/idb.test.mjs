@@ -110,6 +110,17 @@ test("reopen: the upgrade hook does NOT re-run (idempotent app startup)", async 
   b.close();
 });
 
+test("firstKeyBy: the primary key of the lowest index value (oldest-first); undefined when empty", async () => {
+  const db = await openIdb(dbName(), 1, (s) => s.createIndex("savedAt", "savedAt"));
+  assert.equal(await db.firstKeyBy("savedAt"), undefined, "an empty store has no first key");
+  await db.put(1, { savedAt: 3000 });
+  await db.put(2, { savedAt: 1000 });
+  await db.put(3, { savedAt: 2000 });
+  assert.equal(await db.firstKeyBy("savedAt"), 2, "the OLDEST (lowest savedAt) key comes first");
+  assert.equal((await db.get(2)).savedAt, 1000);
+  db.close();
+});
+
 test("openIdb REJECTS (never throws synchronously) when indexedDB is unavailable", async () => {
   const real = globalThis.indexedDB;
   delete globalThis.indexedDB;

@@ -6,6 +6,13 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Changed
+- Comic covers now persist for up to 2,000 files across sessions: the
+  cover store moved from the browser's 16 MB localStorage limit to
+  IndexedDB, so bigger libraries stop re-downloading covers on every
+  open. Covers expire after a month as before, and signing out still
+  clears the account's artwork.
+
 ## [1.1.2] - 2026-10-15
 
 ### Fixed
