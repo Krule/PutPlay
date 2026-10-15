@@ -85,12 +85,14 @@ warnings.
    carry the compare link `v<prev>...v<new>` — the actual diff between the
    previous release and this one. A bare commit list is not a release
    description.
-5. **Move the section**: the `## [Unreleased]` entries go under
+5. **Update the documentation** Check the `README.md` and `docs` and update if
+   needed. When taking screenshots, use only Creative Commons licensed work.
+6. **Move the section**: the `## [Unreleased]` entries go under
    `## [<new>] - YYYY-MM-DD` (leave an empty `## [Unreleased]`), commit, push.
-6. **Cut and push the tag `v<new>`.** The workflow builds, runs the full suite,
+7. **Cut and push the tag `v<new>`.** The workflow builds, runs the full suite,
    packages the `.ipk`, publishes the release, and updates `repo.json`. On
    failure no release is published — fix and push a corrected tag.
-7. **Verify after publish:** the release exists with the `.ipk` asset; the
+8. **Verify after publish:** the release exists with the `.ipk` asset; the
    notes match the section from step 4 (if the workflow auto-generated notes,
    replace them with the step-4 notes); `repo.json` on main shows `<new>` with
    fresh hash/size.
