@@ -17,9 +17,9 @@
         "rootRequired": false,
         "ipkUrl": "https://github.com/Krule/PutPlay/releases/download/v1.1.2/ba.ovo.putplay_1.1.2_all.ipk",
         "ipkHash": {
-          "sha256": "4c7993fbb41ca683234510a002be7badfc84537278c67e707a499a2b651adbee"
+          "sha256": "9c62883584a581bc4672c13d8276465caa10dff6ac3f5b81254f756b790c7b56"
         },
-        "ipkSize": 196832
+        "ipkSize": 196806
       }
     }
   ]
