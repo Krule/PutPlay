@@ -86,6 +86,9 @@ In the player: **blue** play/pause · **red** subtitles · **yellow** audio ·
 
 In the reader and the image viewer: **OK** zooms (fit → 2× → 4×), the
 **arrows** pan while zoomed, and **Up** flips a comic's reading direction.
+With the music row or a docked video in the corner, **Down** hands focus
+between the page and that row; while the row is focused, the arrows
+operate the row and never turn the page.
 
 Music: the remote's play/pause, stop, and rewind/forward keys drive the
 now-playing strip.
