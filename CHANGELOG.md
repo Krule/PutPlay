@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-15
+
 ### Changed
 - Comic covers now persist for up to 2,000 files across sessions: the
   cover store moved from the browser's 16 MB localStorage limit to
