@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.12",
+    "fake-indexeddb": "^6.2.5",
     "svelte": "^4.2.20",
     "svelte-preprocess": "^6.0.5",
     "typescript": "^5.9.3"
