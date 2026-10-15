@@ -36,6 +36,23 @@ test("esbuild.mjs injects the git build stamp via define", () => {
   assert.ok(/git status --porcelain/.test(esbuild), "the dirty flag must come from the worktree");
 });
 
+test("the dirty check ignores the release pipeline's own version write (the two manifests)", () => {
+  // The pipeline applies the tag's version to package.json + appinfo.json
+  // BEFORE building (build/release-version.mjs — the tag carries the
+  // version, the manifests in the tag still hold the previous one). If
+  // the stamp's git-status check counted that intentional write, EVERY
+  // store build would read "(dirty)" on the TV regardless of tree
+  // hygiene — v1.1.2 shipped with dirty:!0 for exactly this reason.
+  const esbuild = read("build/esbuild.mjs");
+  const i = esbuild.indexOf("VERSION_MANIFESTS");
+  assert.ok(i !== -1, "the version-manifest exclusion must exist");
+  const body = esbuild.slice(i, esbuild.indexOf("const pkgVersion"));
+  assert.ok(
+    /package\.json/.test(body) && /appinfo\.json/.test(body),
+    "the dirty check must exclude the two version manifests the pipeline rewrites before the build"
+  );
+});
+
 test("Settings shows the build stamp (version + sha + dirty marker)", () => {
   const settings = read("src/ui/screens/Settings.svelte");
   assert.ok(/BUILD_INFO/.test(settings), "Settings must consume BUILD_INFO");

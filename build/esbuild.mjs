@@ -27,10 +27,21 @@ const isWatch = process.argv.includes("--watch");
  * Build stamp: which commit (and whether the tree was dirty) produced this
  * bundle. Shown on the Account screen; not part of the webOS version.
  */
+// The release pipeline intentionally rewrites these two manifests from the
+// tag (build/release-version.mjs) BEFORE the build — the tag carries the
+// new version, the manifests at that commit hold the old one. That write
+// is part of a clean release, not local dirt.
+const VERSION_MANIFESTS = new Set(["package.json", "appinfo.json"]);
+
 function gitBuildStamp() {
   try {
     const sha = execSync("git rev-parse --short HEAD", { cwd: root, stdio: "pipe" }).toString().trim();
-    const dirty = execSync("git status --porcelain", { cwd: root, stdio: "pipe" }).toString().trim().length > 0;
+    const status = execSync("git status --porcelain", { cwd: root, stdio: "pipe" }).toString();
+    const dirty = status
+      .split("\n")
+      .map((line) => line.slice(3)) // "XY <path>" -> path
+      .filter((path) => path.length > 0 && !VERSION_MANIFESTS.has(path))
+      .length > 0;
     return { sha, dirty };
   } catch {
     return { sha: null, dirty: false }; // not a git checkout (e.g. a dist zip)

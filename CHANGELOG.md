@@ -9,9 +9,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [1.1.2] - 2026-10-15
 
 ### Fixed
-- The version line in Settings no longer reads "(dirty)" for store
-  builds: a few tracked helper files made every clean pipeline build
-  look modified. v1.1.2 is the first release with a clean stamp.
+- The version line in Settings now reads clean on store builds: two
+  things made every pipeline build look modified — tracked helper files
+  under node_modules, and the pipeline's own version update (tag →
+  manifests) being counted as a local change. v1.1.2 is the first
+  release stamped clean.
 - The docked video's size button (make it mini / restore to full) is
   reachable with the D-pad in both mini and micro now: after a size
   change the button was recreated in place and the focus scan never saw
