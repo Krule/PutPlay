@@ -42,10 +42,20 @@ function packageApp() {
   const id = JSON.parse(readFileSync(join(root, "appinfo.json"), "utf8")).id;
   const ipkName = `${id}_${pkg.version}_all.ipk`;
 
+  // Build first: package.mjs stages js/ VERBATIM, so the gate only means
+  // "the ipk ships the build output" when that output is fresh from the
+  // source. Without this, a stale js/ (last release's build) is what gets
+  // staged, and the compare fails on stale-vs-fresh hashes, not a bug.
+  // The hashes are snapshotted right after the build — a concurrent test
+  // (build-stamp rebuilds js/) can republish the files any time after, and
+  // the assertion must hold against the build this ipk was made from.
+  execSync("node build/esbuild.mjs", { cwd: root, stdio: "pipe", timeout: 60_000 });
+  const bundleSha = sha(join(root, "js/bundle.js"));
+  const cssSha = sha(join(root, "js/bundle.css"));
   execSync("node build/package.mjs", { cwd: root, stdio: "pipe", timeout: 90_000 });
   const ipk = join(root, ipkName);
   assert.ok(existsSync(ipk), `${ipkName} not produced`);
-  return { id, ipk };
+  return { id, ipk, bundleSha, cssSha };
 }
 
 /** Extract a member from an ipk (ar + data.tar.gz) and return its bytes.
@@ -61,16 +71,16 @@ function ipkMember(ipk, member) {
 test("ipk ships the build output verbatim", { timeout: 120_000 }, (t) => {
   if (!requireAres(t)) return;
 
-  const { id, ipk } = packageApp();
+  const { id, ipk, bundleSha, cssSha } = packageApp();
   const memberBase = `usr/palm/applications/${id}/js`;
   assert.equal(
     sha(ipkMember(ipk, `${memberBase}/bundle.js`)),
-    sha(join(root, "js/bundle.js")),
+    bundleSha,
     "ipk bundle.js differs from the build output"
   );
   assert.equal(
     sha(ipkMember(ipk, `${memberBase}/bundle.css`)),
-    sha(join(root, "js/bundle.css")),
+    cssSha,
     "ipk bundle.css differs from the build output"
   );
 });

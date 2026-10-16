@@ -12,7 +12,14 @@ import {
   type NativeAudioTrack,
 } from "./track-merge";
 import { parseHlsAudioRenditions, type HlsAudioRendition } from "./hls-manifest";
+import { freshSkip, freshStartTarget, type Seg } from "./segments";
 import Hls from "hls.js";
+
+/** The segment lookup is async: when it lands AFTER the metadata, the
+ *  fresh skip still applies only while the playhead is this close to the
+ *  start of the content — further along, the user is already in the
+ *  episode, and yanking them back is the bigger sin. */
+const FRESH_LATE_GRACE = 5;
 
 export type SourceKind = "original" | "mp4" | "hls";
 
@@ -53,6 +60,9 @@ export interface MediaState {
    *  track for — an honest announcement (the old behavior was silence).
    *  One message per file open. */
   audioPrefMiss?: string;
+  /** One-shot: a fresh start skipped past the leading segments (their
+   *  types, "intro + recap") — the Player turns this into the toast. */
+  skippedSeg?: string;
   /** Mid-playback stalls on the CURRENT source (waiting events after the
    *  first frame). Reset to 0 on every source load. The Player turns this
    *  into the once-per-file smoother-stream advisory (putio/stall). */
@@ -117,6 +127,14 @@ export class MediaEngine {
    * the restore is one chance, not a loop (if IT dies, the normal
    * fallback chain takes over) */
   private recoveredAfterDance = false;
+  /** The episode's segments from TheIntroDB (the Player feeds them as the
+   *  lookup resolves). null = nothing known — the fresh-start skip is
+   *  inert. Survives source switches: same episode, same shape. */
+  private segs: Seg[] | null = null;
+  /** The video has ended — naturally, or the credits were skipped. The
+   *  current position is no longer worth resuming (a skip lands INSIDE the
+   *  credits; re-opening into them is the exact thing the skip avoids). */
+  private finished = false;
   /** configured preferred audio language (the Player mirrors the setting). */
   private prefLang: string | null = null;
   /** the preference has been applied for THIS source (once per source load). */
@@ -213,6 +231,7 @@ export class MediaEngine {
     this.recoveredAfterDance = false; // a fresh load is a fresh chance
     this.prefApplied = false; // a new source load re-arms the preference
     this.userPaused = false; // a new source load is a fresh playback intent
+    this.finished = false; // a fresh load is a fresh end-state
     if (kind === "mp4") v.src = mp4StreamURL(this.auth, this.file.id);
     else if (kind === "original") v.src = streamURL(this.auth, this.file.id);
     else if (kind === "hls") this.attachHls(t);
@@ -289,6 +308,7 @@ export class MediaEngine {
 
   /** Persist playback position every ~30s and on pause/unload. */
   saveResume(): void {
+    if (this.finished) return; // ended / outro skipped — no position to resume
     const v = this.v();
     const t = v.currentTime;
     if (!t || v.duration < 120) return; // skip live / very short
@@ -311,13 +331,19 @@ export class MediaEngine {
     this.resumeLocked = true;
     this.startFromBeginning = t === 0;
     const v = this.v();
-    if (t > 0) {
+    // "start from beginning" = the start of the CONTENT: the configured
+    // intro+recap are skipped. A resume target is the user's explicit mark —
+    // it is applied as-is.
+    const target = t === 0 ? this.freshTarget() : t;
+    if (target > 0) {
       try {
-        v.currentTime = t;
+        v.currentTime = target;
       } catch {
         /* not seekable yet — onMeta applies pendingSeek */
+        this.pendingSeek = target;
       }
-    } else {
+    } else if (t === 0) {
+      // metadata may still be pending — onMeta re-derives the target
       this.pendingSeek = 0;
     }
   }
@@ -609,6 +635,41 @@ export class MediaEngine {
     this.setSource("hls", t);
   }
 
+  /** Feed the episode's segments (the Player's lookup result). Drives the
+   *  fresh-start skip — and, when the data arrives AFTER the metadata
+   *  (the lookup is async), applies that skip late: the playhead is still
+   *  near the top, the intro is long, landing it now is the same promise.
+   *  A saved position wins — never (or an explicit "start from beginning",
+   *  which asks for the content's start again). */
+  setSegments(segs: Seg[]): void {
+    this.segs = segs && segs.length ? segs : null;
+    const v = this.v();
+    const d = v.duration;
+    if (this.finished || !d || !Number.isFinite(d)) return;
+    if ((this.file.start_from || 0) > 0 && !this.startFromBeginning) return; // a resume wins
+    const fs = freshSkip(this.segs, d, d === Infinity);
+    if (fs.target > 0 && v.currentTime < fs.target - FRESH_LATE_GRACE) {
+      try {
+        v.currentTime = fs.target;
+      } catch {
+        /* not seekable yet */
+      }
+      this.onState({ skippedSeg: fs.label });
+    }
+  }
+
+  /** The fresh-start target from the shared rule (0 = start normally). */
+  private freshTarget(): number {
+    const d = this.v().duration;
+    return freshStartTarget(this.segs, d || 0, d === Infinity);
+  }
+
+  /** The video is over (natural end, or the credits were skipped): no
+   *  resume position is saved from here on. */
+  finish(): void {
+    this.finished = true;
+  }
+
   /** Mirror the configured preferred audio language (Settings). Applied
    *  once per source load, to the first REAL (non-empty) track list — the
    *  first sync can fire before the pipeline exposes any tracks. */
@@ -882,7 +943,11 @@ export class MediaEngine {
       // a source switch remembers "where we were"; t==0 only means "start
       // from beginning" when the user explicitly chose it
       if (t > 2 || (t === 0 && this.startFromBeginning)) {
-        try { v.currentTime = t; } catch { /* range error — start over */ }
+        // "start from beginning" = the start of the CONTENT: the configured
+        // intro+recap are skipped. Re-derived NOW — the choice may have
+        // predated the metadata (duration was still 0 when it was made).
+        const target = t === 0 && this.startFromBeginning ? this.freshTarget() : t;
+        try { v.currentTime = target; } catch { /* range error — start over */ }
       }
     }
     this.onState(s);
@@ -893,7 +958,18 @@ export class MediaEngine {
     if (!this.resumeApplied && !this.suppressAutoResume && !this.resumeLocked) {
       this.resumeApplied = true;
       this.applyResume().then((from) => {
-        if (from) platformToast(`Resumed from ${Math.floor(from / 60)}:${String(from % 60).padStart(2, "0")}`);
+        if (from) {
+          platformToast(`Resumed from ${Math.floor(from / 60)}:${String(from % 60).padStart(2, "0")}`);
+        } else {
+          // Fresh start — no saved position: the leading segments (intro,
+          // often the recap) are skipped (the one rule lives in segments.ts;
+          // the Player toasts).
+          const fs = freshSkip(this.segs, v.duration, v.duration === Infinity);
+          if (fs.target > 0) {
+            try { v.currentTime = fs.target; } catch { /* not seekable */ }
+            this.onState({ skippedSeg: fs.label });
+          }
+        }
       });
     }
   };

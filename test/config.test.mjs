@@ -205,6 +205,33 @@ test("pickAudioTrack: EAAAO exposure variants all resolve to the English track",
   assert.equal(pickAudioTrack(mk("ita", "eng"), "fre"), -1); // absent language
 });
 
+// ---------------- skip segments (intro / recap / credits, from show data) ----------------
+//
+// One switch (skipSegments): ON = auto-skip at the episode's real segment
+// boundaries (TheIntroDB), OFF = the player offers the skip per section.
+// The TMDb key that resolves title → TMDb id is BAKED INTO THE APP at build
+// time (src/putio/tmdb-key.ts) — a TV has no viable keyboard for it — so
+// the user config carries only the switch. Garbage from a hand-edited
+// install coerces to the default — never a half-configured skip.
+
+test("normalizeConfig: the segment switch defaults ON and is the ONLY segment setting", () => {
+  const c = normalizeConfig({});
+  assert.equal(c.skipSegments, true, "auto-skip is the headline");
+  assert.ok(!("tmdbKey" in c), "the key is not user config (it is embedded)");
+});
+
+test("normalizeConfig: segment settings pass through when valid", () => {
+  const c = normalizeConfig({ skipSegments: false });
+  assert.equal(c.skipSegments, false);
+  // a stale install's saved key is dropped, not carried along
+  assert.ok(!("tmdbKey" in normalizeConfig({ skipSegments: true, tmdbKey: "stale" })));
+});
+
+test("normalizeConfig: a non-boolean switch falls back to the default", () => {
+  assert.equal(normalizeConfig({ skipSegments: "yes" }).skipSegments, true);
+  assert.equal(normalizeConfig({ skipSegments: 0 }).skipSegments, true);
+});
+
 // ---------------- readingDirection: REMOVED (2026-10-13, TV feedback) ----------------
 //
 // The user doesn't want a direction choice in Settings — the reader's

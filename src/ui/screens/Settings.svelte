@@ -27,6 +27,11 @@
   $: cfgScale = c?.subScale ?? 1;
   $: cfgFallback = c?.audioFallback ?? "ask";
   $: cfgPlayNext = c?.playNext ?? true;
+  // skip segments (intro / recap / credits): ONE switch — auto-skip at each
+  // section's boundary (TheIntroDB times) or ask per section. The TMDb key
+  // that resolves the title → show id is baked into the app (a TV has no
+  // viable keyboard for it), so there is nothing else to configure.
+  let cfgSkipSegs = true;
 
   const SOURCE_OPTIONS: { kind: ConfigState["source"]; label: string }[] = [
     { kind: "original", label: "Original" },
@@ -145,6 +150,7 @@
         subScale: cfgScale,
         audioFallback: cfgFallback,
         playNext: cfgPlayNext,
+        skipSegments: cfgSkipSegs,
       });
     }
     saveConfig().catch(() => undefined);
@@ -162,6 +168,7 @@
   onMount(() => {
     a = get(auth);
     c = get(config);
+    cfgSkipSegs = c?.skipSegments ?? true;
     const unsubAuth = auth.subscribe((v) => (a = v));
     const unsubCfg = config.subscribe((v) => (c = v));
     remote.setHandlers({ onBack, onOK: () => remote.clickActive() });
@@ -271,6 +278,20 @@
           {/each}
         </div>
       </div>
+
+      <div class="card">
+        <p class="card-title">Skip intro, recap and credits</p>
+        <div class="opt-row">
+          <button class="chip" class:sel={cfgSkipSegs} data-focus on:click={() => (cfgSkipSegs = true)}>Auto-skip</button>
+          <button class="chip" class:sel={!cfgSkipSegs} data-focus on:click={() => (cfgSkipSegs = false)}>Ask me</button>
+        </div>
+        <p class="note">
+          Section times come from TheIntroDB (community data), matched to your file's episode
+          automatically. No match or no data for a file: nothing is skipped. Auto-skip jumps
+          each section as playback reaches it; Ask me asks, section by section. A resume
+          always wins.
+        </p>
+      </div>
     </div>
   </div>
 
@@ -339,7 +360,23 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
+    /* scrollable, like the Library grid: the columns are at capacity, so a
+       card past the fold must scroll into view as the D-pad reaches it
+       (the remote engine's focus-time scrollIntoView) — a clipped card is
+       unreachable, and a card the user can't reach does not exist.
+       clip-x: the scaled focus target must never grow x-overflow (it
+       summons a bottom scrollbar), vertical scrolling is untouched. */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-3) transparent;
+  }
+  .col::-webkit-scrollbar {
+    width: 10px;
+  }
+  .col::-webkit-scrollbar-thumb {
+    background: var(--surface-3);
+    border-radius: 5px;
   }
   .col > :not(:first-child) {
     margin-top: 28px;

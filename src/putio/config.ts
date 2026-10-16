@@ -12,6 +12,13 @@
  *  - playNext: when a video ends, auto-advance to the next video in the
  *    same folder (the docked player's queue walk). Music auto-next is
  *    always on — this gate is the video's (owner: configurable, default on).
+ *  - skipSegments: segment skipping from REAL show data. The episode's
+ *    intro/recap/credits boundaries come from TheIntroDB, resolved per
+ *    file via a TMDb title search (the TMDb key is baked in at build time
+ *    — src/putio/tmdb-key.ts — because a TV has no viable keyboard for
+ *    it). The single switch: ON = auto-skip at each boundary; OFF = the
+ *    player offers the skip per section (the user decides). A resume
+ *    always wins; no match, or no data = the feature is silently off.
  */
 
 export interface ConfigState {
@@ -21,6 +28,9 @@ export interface ConfigState {
   subScale: number;
   audioFallback: "ask" | "auto-hls";
   playNext: boolean;
+  /** The single segment-skip switch: ON = auto-skip intro/recap/credits at
+   *  their (TheIntroDB) boundaries; OFF = the player offers the skip. */
+  skipSegments: boolean;
 }
 
 export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: number } = {
@@ -30,6 +40,7 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   subScale: 1,
   audioFallback: "ask",
   playNext: true,
+  skipSegments: true,
   subScaleMin: 0.8,
   subScaleMax: 2,
 };
@@ -63,6 +74,7 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
     ? (p.audioFallback as ConfigState["audioFallback"])
     : d.audioFallback;
   const playNext = typeof p.playNext === "boolean" ? p.playNext : d.playNext;
+  const skipSegments = typeof p.skipSegments === "boolean" ? p.skipSegments : d.skipSegments;
   return {
     source,
     audioLang: (p.audioLang ?? "").trim(),
@@ -70,6 +82,7 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
     subScale: Math.min(d.subScaleMax, Math.max(d.subScaleMin, scale)),
     audioFallback,
     playNext,
+    skipSegments,
   };
 }
 

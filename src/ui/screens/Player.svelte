@@ -24,6 +24,10 @@
     type SubtitleCue,
   } from "../../putio/subs";
   import { shouldShowResumePrompt, initialSeekTarget } from "../../putio/resume";
+  import { segAction, type Seg } from "../../putio/segments";
+  import { lookupSegments } from "../../putio/seglookup";
+  import { segCache } from "../../putio/seg-cache";
+  import { TMDB_KEY } from "../../putio/tmdb-key";
   import { controlsPinned } from "../../putio/player-controls";
   import { clickIsOutsideClickTarget } from "../../putio/overlay";
   import { progressPct } from "../../putio/progress";
@@ -146,8 +150,24 @@
   ];
 
   let resumePrompt: { from: number } | null = null;
+  /** The episode's segments from TheIntroDB (the lookup's result) — the
+   *  auto-skip and the offer both act on these windows. */
+  let segs: Seg[] = [];
+  /** Per segment: settled (skipped or played through) — a settled section
+   *  never fires its action again. */
+  let segConsumed: boolean[] = [];
+  /** The offer panel is up for this segment index (-1 = closed). At most
+   *  one offer per section per file — "play through" or a natural end
+   *  settles it. */
+  let segOfferIdx = -1;
 
   // ---------------- engine wiring ----------------
+
+  /** "Play next in folder" applies: the setting is on AND there is a next
+   *  video in the queue (end of queue is a STOP, same rule as music). */
+  function canAdvanceVideo(): boolean {
+    return get(config).playNext && !!session && session.index < session.queue.length - 1;
+  }
 
   /** Engine state patch → screen state, one field at a time (undefined = unchanged). */
   function applyEngineState(p: Partial<MediaState>): void {
@@ -175,6 +195,9 @@
     // for — say so (one toast per file open; the old behavior was
     // silence, which read as "the setting does nothing")
     if (p.audioPrefMiss) platform.toast(p.audioPrefMiss);
+    // a fresh start skipped past the leading segments — say what was
+    // skipped (the engine names the types: "intro + recap")
+    if (p.skippedSeg) platform.toast(`Skipped ${p.skippedSeg}`);
     if (p.audioTracks !== undefined) audioTracks = p.audioTracks;
     // NOTE: the preferred-language pick is owned by the ENGINE
     // (setAudioPreference → applied to the first REAL track list, with
@@ -245,6 +268,9 @@
       subCues = [];
       subText = "";
       startedPlaying = false;
+      segs = []; // a new file is a fresh segment decision
+      segConsumed = [];
+      segOfferIdx = -1;
     }
     engineFileId = file.id;
     cfg = get(config);
@@ -272,10 +298,12 @@
       },
       onEnded: () => {
         showControls = true;
+        segOfferIdx = -1; // the credits ended under the prompt — nothing left to ask
+        engine?.finish(); // the end position saves no resume
         // "Play next in folder" (default on): the session file changes and
         // the reactive below rebuilds the engine on the next video. End of
         // queue (or the setting off) → the honest finished state.
-        if (get(config).playNext && session && session.index < session.queue.length - 1) {
+        if (canAdvanceVideo()) {
           advanceVideo();
           return;
         }
@@ -285,9 +313,40 @@
       suppressAutoResume: suppressResume,
     });
     engine.setAudioPreference(cfg?.audioLang || null);
-
     sourceOptions = engine.sourceOptions().map((o) => ({ ...o }));
     engine.setSource(prefSource, undefined, true); // silent: don't pop the source overlay on entry
+    startSegLookup();
+  }
+
+  /**
+   * The per-file segment lookup (async, NON-BLOCKING): file name → TMDb
+   * (the key baked into the app — a TV has no viable keyboard for a key)
+   * → TheIntroDB → the episode's intro/recap/credits windows. Playback
+   * starts immediately; when the data lands, the engine applies the
+   * fresh-start skip late (the playhead is still near the top), and the
+   * Player's crossing reactive takes over from there. No episode marker,
+   * no match, no data → nothing is fetched further and nothing is
+   * skipped. A stale answer (the file changed mid-flight) is dropped —
+   * the cache (IndexedDB) keeps re-plays free of network.
+   */
+  function startSegLookup(): void {
+    if (!TMDB_KEY || TMDB_KEY === "PASTE_KEY_HERE") {
+      segs = [];
+      segConsumed = [];
+      return; // no baked-in key — the feature is off (honestly, quietly)
+    }
+    const forId = file.id;
+    const name = file.name;
+    // segCache is passed but ignored while caching is suspended
+    // (see seglookup.ts) — every play re-looks-up from the live sources.
+    lookupSegments(TMDB_KEY, name, undefined, segCache)
+      .then((s) => {
+        if (forId !== file.id || !engine) return;
+        segs = s;
+        segConsumed = s.map(() => false);
+        engine.setSegments(s);
+      })
+      .catch(() => {}); // the lookup degrades to "nothing to skip" itself
   }
 
   /**
@@ -312,6 +371,10 @@
     if (resumePrompt) {
       resumePrompt = null;
       engine?.play(); // dismissing the prompt = "just play" (scrim-click parity)
+      return;
+    }
+    if (segOfferIdx !== -1) {
+      playSegThrough(); // Back = play through (the harmless default)
       return;
     }
     if (overlays.audio || overlays.subs || overlays.source) {
@@ -363,8 +426,34 @@
   $: pinned = controlsPinned({
     paused,
     error: !!error,
-    panelOpen: overlays.audio || overlays.subs || overlays.source,
+    panelOpen: overlays.audio || overlays.subs || overlays.source || segOfferIdx !== -1,
   });
+
+  // FEATURE: segment skip — when the playhead enters a segment window
+  // (intro / recap / end credits), the single switch decides: ON = auto-
+  // skip to the end (end credits END the episode); OFF = the offer panel,
+  // full mode only, never over an open panel or the resume prompt. A
+  // settled section (consumed) never fires again. Works docked too — the
+  // auto-skip is a seek, the offer is what needs the full screen. The check
+  // must be a reactive statement (a bare call would run once at mount and
+  // freeze).
+  $: if (segs.length && currentTime > 0 && !paused && !live) {
+    const action = segAction(segs, currentTime, duration, segConsumed, !!cfg?.skipSegments, live);
+    if (action) {
+      if (action.kind === "skip" || action.kind === "credits") {
+        skipSegNow(action.index);
+      } else if (
+        mode === "full" &&
+        segOfferIdx === -1 &&
+        !resumePrompt &&
+        !overlays.audio &&
+        !overlays.subs &&
+        !overlays.source
+      ) {
+        segOfferIdx = action.index;
+      }
+    }
+  }
 
   // The original stream's buffer belongs to the webview — the app cannot
   // grow it (no HTML5 API) — but it must not sit silent when it keeps
@@ -661,6 +750,49 @@
     engine?.play();
   }
 
+  /** The skip for a segment (auto, or the offer's button): the section is
+   *  settled either way. End credits (end = null) END the episode — the
+   *  normal end-of-video flow (auto-next when enabled, else the finished
+   *  state); any other segment seeks to its end. The skipped position saves
+   *  no resume — re-opening into the section is the exact thing the skip
+   *  exists to avoid. */
+  function skipSegNow(idx: number): void {
+    const seg = segs[idx];
+    if (!seg) return;
+    segConsumed = segConsumed.slice();
+    segConsumed[idx] = true;
+    segOfferIdx = -1;
+    if (seg.end === null) {
+      if (engine) {
+        engine.finish();
+        engine.pause();
+      }
+      if (canAdvanceVideo()) {
+        platform.toast("Credits skipped");
+        advanceVideo();
+        return;
+      }
+      platform.toast("Credits skipped — press Back to return to your library");
+      return;
+    }
+    platform.toast(`Skipped ${seg.type}`);
+    engine?.seek(seg.end);
+  }
+
+  /** The offer's "Play through": settle this section — no re-offer. */
+  function playSegThrough(): void {
+    if (segOfferIdx !== -1) {
+      segConsumed = segConsumed.slice();
+      segConsumed[segOfferIdx] = true;
+    }
+    segOfferIdx = -1;
+  }
+
+  /** "Intro" / "Recap" / "End credits" for the offer title. */
+  function segTitle(t: string): string {
+    return t === "credits" ? "End credits" : t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
   onDestroy(() => {
     document.body.classList.remove("player-mode");
     window.removeEventListener("focus", kick);
@@ -713,6 +845,7 @@
   let audioPanelEl: HTMLDivElement;
   let subsPanelEl: HTMLDivElement;
   let resumePanelEl: HTMLDivElement;
+  let segPanelEl: HTMLDivElement;
   function onBarClick(e: MouseEvent) {
     if (!barEl || !duration) return;
     const r = barEl.getBoundingClientRect();
@@ -729,6 +862,7 @@
       resumePrompt = null;
       engine?.play(); // dismissing the resume prompt = "just play"
     }
+    if (segOfferIdx !== -1) playSegThrough(); // dismissing the offer = play through
   }
 
   // ---------------- 5-way remote focus wiring ----------------
@@ -771,11 +905,12 @@
     }
   }
 
-  const wasOpen: Record<"source" | "audio" | "subs" | "resume" | "leave" | "err", boolean> = {
+  const wasOpen: Record<"source" | "audio" | "subs" | "resume" | "seg" | "leave" | "err", boolean> = {
     source: false,
     audio: false,
     subs: false,
     resume: false,
+    seg: false,
     leave: false,
     err: false,
   };
@@ -793,7 +928,7 @@
    */
   function panelFocus(
     el: HTMLDivElement | undefined,
-    key: "source" | "audio" | "subs" | "resume" | "leave" | "err",
+    key: "source" | "audio" | "subs" | "resume" | "seg" | "leave" | "err",
     restoreCtl: string,
     mode: "row" | "first" | "safe"
   ): void {
@@ -824,8 +959,10 @@
   $: panelFocus(subsPanelEl, "subs", "subs", "row");
   // modals: focus the natural action — Resume (primary), "No, keep playing"
   // (the safe default of the double-Back guard — Back is already the leave
-  // path), Retry; closing any of them restores focus to play
+  // path), Skip (the feature's point — OK takes it), Retry; closing any of
+  // them restores focus to play
   $: panelFocus(resumePanelEl, "resume", "play", "first");
+  $: panelFocus(segPanelEl, "seg", "play", "first");
   $: panelFocus(errPanelEl, "err", "play", "first");
   // track lists can change or arrive while a panel is open — the new rows are
   // committed to the DOM after this flush's reactive phase, so re-scan on the
@@ -837,7 +974,7 @@
   // topmost one (later template branch = higher z); null restores the
   // control bar. Reads the bind refs, so it re-runs post-commit on open/close.
   $: remote.setFocusScope(
-    resumePanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
+    segPanelEl || resumePanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
   );
 </script>
 
@@ -1042,6 +1179,25 @@
         <div class="row center">
           <button class="btn primary" data-focus on:click={resume}>Resume from {fmtTime(resumePrompt.from)}</button>
           <button class="btn ghost" data-focus on:click={skipResume}>Start from beginning</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if segOfferIdx !== -1 && segs[segOfferIdx]}
+    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, segPanelEl)}>
+      <div class="panel pick-panel seg-panel" bind:this={segPanelEl} on:click={(e) => e.stopPropagation()}>
+        <p class="pick-title">{segTitle(segs[segOfferIdx].type)}</p>
+        <p class="muted pad" style="text-align:center">
+          {segs[segOfferIdx].type === "credits"
+            ? "The end credits have started."
+            : `The ${segs[segOfferIdx].type} has started.`}
+        </p>
+        <div class="row center">
+          <button class="btn primary" data-focus on:click={() => skipSegNow(segOfferIdx)}>
+            Skip {segs[segOfferIdx].type === "credits" ? "credits" : segs[segOfferIdx].type}
+          </button>
+          <button class="btn ghost" data-focus on:click={playSegThrough}>Play through</button>
         </div>
       </div>
     </div>
@@ -1342,6 +1498,9 @@
     border-width: 3px;
   }
   .resume-panel {
+    width: 640px;
+  }
+  .seg-panel {
     width: 640px;
   }
   .legend-player {

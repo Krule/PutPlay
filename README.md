@@ -40,6 +40,16 @@ So I outlined this project, put together some resources, some rules and some lim
 - Music files play under a **now-playing strip** while you keep browsing,
   reading, and watching
 - Resumes where you left off; remembers your source and language preferences
+- Skip intro, recap and credits: the episode's real segment times come
+  from TheIntroDB, matched to your file automatically (the TMDb key is
+  baked into the app — nothing to configure; anime names without an
+  SxxEyy marker, like "…Black Clover - 171 (1080p)…", are recognized).
+  Settings → "Skip intro,
+  recap and credits" picks the behavior: Auto-skip (default) jumps each
+  section as playback reaches it — fresh starts begin after the
+  intro/recap and skipping the credits ends the episode; "Ask me" offers
+  the choice per section instead. A resume always wins; no match or no
+  data = nothing is skipped
 - Sign-in is a device code: enter it on your phone, or scan the QR
 
 ## Screens

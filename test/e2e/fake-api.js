@@ -69,6 +69,33 @@
       })
         .concat([
           {
+            // EPISODE-NAMED FILE (segment-skip e2e): the name parses to
+            // "Test Show" S01E01, which the fake TMDb/TheIntroDB world
+            // (above) resolves to intro 0–20 s / recap 20–30 s /
+            // credits 40 s–end over the 60 s testvid.
+            id: 20,
+            name: "Test.Show.S01E01.720p.mp4",
+            size: 906084,
+            content_type: "video/mp4",
+            parent_id: null,
+            is_folder: 0,
+            is_mp4_available: false,
+            start_from: 0
+          },
+          {
+            // ANIME-NAMED FILE (dual-source e2e): a bare-episode name that
+            // TMDb/TheIntroDB miss but AniList/AniSkip resolve — op 0–20 s
+            // / ED 45 s–end over the 60 s testvid.
+            id: 21,
+            name: "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv",
+            size: 906084,
+            content_type: "video/x-matroska",
+            parent_id: null,
+            is_folder: 0,
+            is_mp4_available: false,
+            start_from: 0
+          },
+          {
             // MULTI-AUDIO MKV, both tracks natively switchable (E-AC3 + AAC).
             // With ?stubborn the webview mock vetoes enabled-writes until a
             // full src reload (the webOS 6 audio-switch bug the app must
@@ -226,10 +253,112 @@
     return f;
   };
 
+  /* TMDb + TheIntroDB — the segment-skip lookup's e2e world. The episode
+   * file "Test.Show.S01E01.720p.mp4" (id 20) resolves to show id 777,
+   * whose TheIntroDB entry is shaped for the 60 s testvid: intro 0–20 s,
+   * recap 20–30 s, end credits from 40 s to the end. */
+  var TMDB_FAKE = {
+    results: [
+      { id: 777, name: "Test Show", first_air_date: "2020-01-01", popularity: 50 },
+      { id: 778, name: "Test Show Returns", first_air_date: "2021-05-05", popularity: 10 }
+    ]
+  };
+  var TIDB_FAKE = {
+    tmdb_id: 777,
+    type: "tv",
+    season: 1,
+    episode: 1,
+    intro: [{ start_ms: 0, end_ms: 20000 }],
+    recap: [{ start_ms: 20000, end_ms: 30000 }],
+    credits: [{ start_ms: 40000, end_ms: null }]
+  };
+  /* AniList + AniSkip — the keyless anime source's e2e world. "Black
+   * Clover" resolves to MAL id 555, whose AniSkip entry is shaped for the
+   * 60 s testvid: op 0–20 s, ED 45 s (to the end). Everything else (the
+   * Western "Test Show") gets no anime match. */
+  var ANILIST_FAKE = {
+    data: {
+      Page: {
+        media: [
+          { idMal: 555, title: { romaji: "Black Clover", english: "Black Clover" }, averageScore: 72, startDate: { year: 2017 } }
+        ]
+      }
+    }
+  };
+  var ANISKIP_FAKE = {
+    found: true,
+    results: [
+      { interval: { startTime: 0, endTime: 20 }, skipType: "op" },
+      { interval: { startTime: 45, endTime: 55 }, skipType: "ed" }
+    ]
+  };
+
   var origFetch = window.fetch.bind(window);
 
   window.fetch = function (input, init) {
     var url = typeof input === "string" ? input : (input && input.url) || "";
+    if (url.indexOf("https://api.themoviedb.org/") === 0) {
+      window.__segCalls = window.__segCalls || [];
+      window.__segCalls.push({ host: "tmdb", url: url, auth: init && init.headers ? init.headers.Authorization : null });
+      return Promise.resolve(
+        new Response(JSON.stringify(TMDB_FAKE), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
+    if (url.indexOf("https://api.theintrodb.org/") === 0) {
+      window.__segCalls = window.__segCalls || [];
+      window.__segCalls.push({ host: "theintrodb", url: url });
+      return Promise.resolve(
+        new Response(JSON.stringify(TIDB_FAKE), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
+    if (url.indexOf("https://graphql.anilist.co") === 0) {
+      window.__segCalls = window.__segCalls || [];
+      var alBody = init && init.body ? String(init.body) : "";
+      window.__segCalls.push({ host: "anilist", url: url, body: alBody });
+      var alData = alBody.indexOf("Black Clover") !== -1 ? ANILIST_FAKE : { data: { Page: { media: [] } } };
+      return Promise.resolve(
+        new Response(JSON.stringify(alData), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
+    if (url.indexOf("https://api.aniskip.com/v1/") === 0) {
+      window.__segCalls = window.__segCalls || [];
+      window.__segCalls.push({ host: "aniskip-v1", url: url });
+      // The legacy DB answers for the anime file too — with DIFFERENT
+      // numbers — to prove the current (v2) DB wins in the merge.
+      var as1Data = url.indexOf("/555/171") !== -1 ? {
+        found: true,
+        results: [
+          { interval: { start_time: 5, end_time: 15 }, skip_type: "op" },
+          { interval: { start_time: 46, end_time: 56 }, skip_type: "ed" }
+        ]
+      } : { found: false, results: [], message: "No skip times found" };
+      return Promise.resolve(
+        new Response(JSON.stringify(as1Data), {
+          status: url.indexOf("/555/171") !== -1 ? 200 : 404,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
+    if (url.indexOf("https://api.aniskip.com/") === 0) {
+      window.__segCalls = window.__segCalls || [];
+      window.__segCalls.push({ host: "aniskip", url: url });
+      var asData = url.indexOf("/555/171") !== -1 ? ANISKIP_FAKE : { found: false, results: [], message: "No skip times found" };
+      return Promise.resolve(
+        new Response(JSON.stringify(asData), {
+          status: url.indexOf("/555/171") !== -1 ? 200 : 404,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
     if (url.indexOf("https://api.put.io/") !== 0) return origFetch(input, init);
     var p;
     try { p = new URL(url).pathname; } catch (e) { p = ""; }

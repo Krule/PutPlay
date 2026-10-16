@@ -6,6 +6,32 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Skip intro, recap and credits using real show data: the player looks up
+  the episode's actual segment times from TheIntroDB (community data) —
+  the file name is matched to the show automatically, with the TMDb key
+  baked into the app (nothing to type on the TV). One switch decides the
+  behavior: Auto-skip (default) jumps each section as playback reaches it
+  — a fresh start begins after the intro and/or recap, and skipping the
+  end credits ends the episode and moves on to the next video; Ask me
+  shows an offer over the player for each section instead, and you choose
+  skip or play through. A saved resume always wins; no match, or no data,
+  simply means nothing is skipped. Each play looks the episode up fresh
+  from the live sources (on-device caching is suspended for now). Anime
+  file names without
+  an SxxEyy marker are resolved too — a bare episode number like
+  "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv" works (a 1–2
+  digit number needs the release-group tag to be trusted; resolutions,
+  years and decimals are never mistaken for episodes). Anime is covered
+  by a second, keyless source: the episode's title is resolved to its
+  MyAnimeList id (AniList) and its opening/recap/ending come from
+  AniSkip, the anime community's live skip database — new series are
+  covered as they air. AniSkip runs two databases (a current one and a
+  legacy one that still carries finished series end-to-end); both are
+  checked and the current one wins where they disagree. Where sources
+  report, TheIntroDB wins per section; where one misses, another fills
+  the gap. A show no source carries simply gets nothing skipped.
+
 ## [1.1.3] - 2026-10-15
 
 ### Changed
