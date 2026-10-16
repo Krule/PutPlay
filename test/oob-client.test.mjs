@@ -5,7 +5,7 @@
 // the generic app_id=1.
 //
 // Run: pnpm test
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";

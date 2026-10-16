@@ -1,26 +1,9 @@
 // Unit tests for the pure subtitle parser (src/putio/subs.ts).
-// Run: pnpm test  →  transpiles subs.ts with esbuild, loads it, runs node:test.
+// Run: pnpm test
 
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-// --- transpile the pure module once ---
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "subs.cjs");
-await build({
-  entryPoints: ["src/putio/subs.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { vttToCues, cueAt, subtitlesToCues } = require(out);
+import { vttToCues, cueAt, subtitlesToCues } from "../src/putio/subs.ts";
 
 // ---------------- vttToCues ----------------
 

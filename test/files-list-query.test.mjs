@@ -7,27 +7,12 @@
 // "open a folder" showed the wrong folder's contents.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+// api.ts pulls in webostvjs (via platform.ts), which assigns window.webOS
+// at module scope — the window shim must load first (ESM import order).
+import "./shims/node-window.mjs";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "files-list-query.cjs");
-await build({
-  entryPoints: ["src/putio/api.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const { listFiles } = (() => {
-  if (typeof globalThis.window === "undefined") globalThis.window = globalThis;
-  return createRequire(import.meta.url)(out);
-})();
+import { listFiles } from "../src/putio/api.ts";
 
 const AUTH = {
   accountEmail: "t@t",

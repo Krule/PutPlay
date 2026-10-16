@@ -13,7 +13,7 @@
 //  - Settings shows the stamp
 //
 // Run: pnpm test
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";

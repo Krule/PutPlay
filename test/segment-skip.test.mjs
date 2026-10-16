@@ -34,52 +34,32 @@
 //      scroll (a clipped card is unreachable — the v1 layout regression).
 //
 // Run: pnpm test
-import { build } from "esbuild";
+// media.ts pulls platform.ts → webostvjs: the window + localStorage shims
+// (imported first) must exist before those modules load.
+import "./shims/node-webos.mjs";
 import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";
-import { test } from "node:test";
+import { vi, test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import { MediaEngine } from "../src/putio/media.ts";
+import { DEFAULT_CONFIG } from "../src/putio/config.ts";
+import { parseEpisode } from "../src/putio/titles.ts";
+import { parseSegments } from "../src/putio/introdb.ts";
+import { pickTmdbMatch } from "../src/putio/tmdb.ts";
+import { anilistSearchAnime, pickAnilistMatch } from "../src/putio/anilist.ts";
+import { aniskipSegments, aniskipSegmentsV1 } from "../src/putio/aniskip.ts";
+import { lookupSegments, mergeSegments } from "../src/putio/seglookup.ts";
+
+// The fake <video> drives the engine — hls.js is stubbed, as the old
+// esbuild alias did.
+vi.mock("hls.js", () => ({ default: class Hls {} }));
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const read = (p) => readFileSync(join(root, p), "utf8");
-
-// ---------------- harness (same shape as music-player.test.mjs) ----------------
-
-const dir = mkdtempSync(join(tmpdir(), "putio-segskip-"));
-const out = join(dir, "segskip.cjs");
-const hlsStub = join(dir, "hls-stub.cjs");
-writeFileSync(hlsStub, "module.exports = { default: class Hls {} };\n");
-const entry = join(dir, "entry.ts");
-writeFileSync(
-  entry,
-  [
-    `export * from "${resolve(root, "src/putio/segments.ts")}";`,
-    `export * from "${resolve(root, "src/putio/config.ts")}";`,
-    `export * from "${resolve(root, "src/putio/media.ts")}";`,
-    `export * from "${resolve(root, "src/putio/titles.ts")}";`,
-    `export * from "${resolve(root, "src/putio/introdb.ts")}";`,
-    `export * from "${resolve(root, "src/putio/tmdb.ts")}";`,
-    `export * from "${resolve(root, "src/putio/anilist.ts")}";`,
-    `export * from "${resolve(root, "src/putio/aniskip.ts")}";`,
-    `export * from "${resolve(root, "src/putio/seglookup.ts")}";`,
-  ].join("\n")
-);
-
-await build({
-  entryPoints: [entry],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  alias: { "hls.js": hlsStub },
-  logLevel: "silent",
-});
 
 // A fetch router: the put.io start-from calls are logged (the "no resume
 // saved after a skip" assertion); TMDb + TheIntroDB return per-test canned
@@ -154,43 +134,19 @@ globalThis.fetch = (url, init) => {
   return Promise.reject(new Error("unexpected network in unit tests: " + u));
 };
 
-const mod = (() => {
-  if (typeof globalThis.window === "undefined") globalThis.window = globalThis;
-  const mem = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-    setItem: (k, v) => void mem.set(k, String(v)),
-    removeItem: (k) => void mem.delete(k),
-  };
-  // platform.toast touches document — a stub is enough for it to run
-  const fakeEl = () => ({
-    id: "",
-    className: "",
-    textContent: "",
-    offsetWidth: 0,
-    classList: { add() {}, remove() {} },
-  });
-  globalThis.document = {
-    getElementById: () => null,
-    createElement: () => fakeEl(),
-    body: { appendChild() {} },
-  };
-  return createRequire(import.meta.url)(out);
-})();
-
-const {
-  MediaEngine,
-  DEFAULT_CONFIG,
-  lookupSegments,
-  parseEpisode,
-  parseSegments,
-  pickTmdbMatch,
-  anilistSearchAnime,
-  pickAnilistMatch,
-  aniskipSegments,
-  aniskipSegmentsV1,
-  mergeSegments,
-} = mod;
+// platform.toast touches document — a stub is enough for it to run
+const fakeEl = () => ({
+  id: "",
+  className: "",
+  textContent: "",
+  offsetWidth: 0,
+  classList: { add() {}, remove() {} },
+});
+globalThis.document = {
+  getElementById: () => null,
+  createElement: () => fakeEl(),
+  body: { appendChild() {} },
+};
 
 const AUTH = { oauthToken: "tok", downloadToken: null };
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
@@ -300,15 +256,6 @@ const TIDB_BBD = {
   episode: 1,
   intro: [{ start_ms: 228664, end_ms: 246143 }],
   credits: [{ start_ms: 3431000, end_ms: null }],
-};
-// Anime shape: a 90s intro followed by a 60s recap — the fresh-start block.
-const TIDB_ANIME = {
-  tmdb_id: 7,
-  type: "tv",
-  season: 1,
-  episode: 1,
-  intro: [{ start_ms: 0, end_ms: 90000 }],
-  recap: [{ start_ms: 90000, end_ms: 150000 }],
 };
 const TMDB_ANIME = {
   results: [

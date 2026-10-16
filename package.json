@@ -9,7 +9,8 @@
     "watch": "node build/esbuild.mjs --watch",
     "package": "pnpm build && node build/package.mjs",
     "deploy:tv": "node build/deploy.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "hls.js": "1.0.11",
@@ -21,11 +22,13 @@
     "fake-indexeddb": "^6.2.5",
     "svelte": "^4.2.20",
     "svelte-preprocess": "^6.0.5",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "svelte-preprocess"
     ]
   }
 }

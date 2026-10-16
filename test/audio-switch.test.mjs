@@ -15,7 +15,7 @@
 //    it says so and points at the HLS source (hls.js switching works).
 //
 // Run: pnpm test
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { applyAudioTrack, planAudioSwitch } from "../src/putio/audio-switch.ts";
 import { readFileSync } from "node:fs";

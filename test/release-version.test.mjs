@@ -5,7 +5,7 @@
 // release can never disagree.
 //
 // Run: pnpm test
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";

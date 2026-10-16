@@ -13,31 +13,17 @@
 //   activeRowKey(rows, kind, index)        → which row is "on"
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "track-merge.cjs");
-await build({
-  entryPoints: ["src/putio/track-merge.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const {
+import {
   codecPlayableOnWebOS6,
   mergeAudioRows,
   activeRowKey,
   langMatches,
   audioStreamsFromMediaInfo,
-} = require(out);
+  pickHlsAudioTrackIndex,
+  panelRowHint,
+} from "../src/putio/track-merge.ts";
 
 // ---------------- media_info extraction ----------------
 
@@ -251,11 +237,6 @@ test("activeRowKey: HLS source → the row holding that rendition", () => {
 // manifest default. pickHlsAudioTrackIndex matches a language against
 // hls.js's live audioTracks list.
 
-const { pickHlsAudioTrackIndex } = (() => {
-  // re-require so the new export is visible even if added later
-  return require(out);
-})();
-
 test("pickHlsAudioTrackIndex: matches by 2/3-letter language code (either side)", () => {
   const tracks = [
     { name: "English", lang: "en" },
@@ -306,7 +287,6 @@ const row5 = (o = {}) => ({
 });
 
 test("panelRowHint: the five row states", () => {
-  const { panelRowHint } = require(out);
   assert.equal(panelRowHint(row5(), { active: true }), "on");
   assert.equal(panelRowHint(row5(), { switching: true }), "Switching\u2026");
   assert.equal(panelRowHint(row5({ nativeIndex: 0, undecodable: false }), {}), "on this TV");
@@ -316,13 +296,11 @@ test("panelRowHint: the five row states", () => {
 });
 
 test("panelRowHint: active beats switching, switching beats the rest", () => {
-  const { panelRowHint } = require(out);
   assert.equal(panelRowHint(row5({ nativeIndex: 0 }), { active: true, switching: true }), "on");
   assert.equal(panelRowHint(row5({ nativeIndex: 0, codec: "aac" }), { switching: true }), "Switching\u2026");
 });
 
 test("panelRowHint: an undecodable row WITH a stream rendition offers the stream", () => {
-  const { panelRowHint } = require(out);
   const r = row5({ hlsIndex: 0, undecodable: true });
   assert.equal(panelRowHint(r, {}), "via put.io stream");
 });

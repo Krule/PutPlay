@@ -8,25 +8,9 @@
 //
 // Run: pnpm test
 
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "overlay.cjs");
-await build({
-  entryPoints: ["src/putio/overlay.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { isOutsideClick } = require(out);
+import { isOutsideClick } from "../src/putio/overlay.ts";
 
 // A 620×400 panel centered in a 1920×1080 stage.
 const panel = { left: (1920 - 620) / 2, top: (1080 - 400) / 2, width: 620, height: 400 };

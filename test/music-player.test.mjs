@@ -21,54 +21,23 @@
 // the e2e pass; this test pins the behavior the strip renders.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+// store/music.ts pulls media.ts → platform.ts → webostvjs: the window +
+// localStorage shims (imported first) must exist before those modules load.
+import "./shims/node-webos.mjs";
+import { vi, test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 import { get } from "svelte/store";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "..");
-const read = (p) => readFileSync(join(root, p), "utf8");
-
-// ---------------- harness (same shape as audio-escalation.test.mjs) ----------------
-
-const dir = mkdtempSync(join(tmpdir(), "putio-music-"));
-const out = join(dir, "music.cjs");
-const hlsStub = join(dir, "hls-stub.cjs");
-writeFileSync(hlsStub, "module.exports = { default: class Hls {} };\n");
-// one generated entry re-exports the modules under test (store/music.ts
-// pulls media.ts → platform.ts → webostvjs, all bundled for node)
-const entry = join(dir, "entry.ts");
-writeFileSync(
-  entry,
-  [
-    `export * from "${resolve(root, "src/putio/audio-capable.ts")}";`,
-    `export * from "${resolve(root, "src/putio/queue.ts")}";`,
-    `export * from "${resolve(root, "src/store/music.ts")}";`,
-  ].join("\n")
-);
-
-await build({
-  entryPoints: [entry],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  alias: { "hls.js": hlsStub },
-  logLevel: "silent",
-});
-const {
+import {
   isAudioFile,
   audioFamily,
   applyProbe,
   isFamilyUnsupported,
-  buildMusicQueue,
-  stepQueue,
+} from "../src/putio/audio-capable.ts";
+import { buildMusicQueue, stepQueue } from "../src/putio/queue.ts";
+import {
   music,
   registerMusicElement,
   startMusic,
@@ -77,17 +46,15 @@ const {
   prevMusic,
   recordMusicProbe,
   audioUnsupported,
-} = (() => {
-  if (typeof globalThis.window === "undefined") globalThis.window = globalThis;
-  // platform.store falls back to localStorage on node — give it an in-memory one
-  const mem = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-    setItem: (k, v) => void mem.set(k, String(v)),
-    removeItem: (k) => void mem.delete(k),
-  };
-  return createRequire(import.meta.url)(out);
-})();
+} from "../src/store/music.ts";
+
+// The fake <video> drives the engine — hls.js is stubbed, as the old
+// esbuild alias did.
+vi.mock("hls.js", () => ({ default: class Hls {} }));
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, "..");
+const read = (p) => readFileSync(join(root, p), "utf8");
 
 // The engine's media_info fetch must never hit the network in tests.
 globalThis.fetch = () => Promise.reject(new Error("no network in unit tests"));

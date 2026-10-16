@@ -10,25 +10,9 @@
 //
 // Run: pnpm test
 
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "resume.cjs");
-await build({
-  entryPoints: ["src/putio/resume.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { shouldShowResumePrompt, initialSeekTarget, RESUME_MIN, NEAR_START_MAX } = require(out);
+import { shouldShowResumePrompt, initialSeekTarget, RESUME_MIN } from "../src/putio/resume.ts";
 
 // ---------------- shouldShowResumePrompt ----------------
 

@@ -6,7 +6,7 @@
 // exist, survive the channel's DOMPurify pass, and reference only images
 // that ship in the repo.
 // Schema cross-checked against the live immich entry on repo.webosbrew.org.
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";

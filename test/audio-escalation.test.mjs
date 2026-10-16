@@ -12,33 +12,18 @@
 //
 // Run: pnpm test
 
-import { build } from "esbuild";
-import { test } from "node:test";
+// platform.ts guards with isWebOS() at RUNTIME, but module-scope code in
+// the media.ts chain (webostvjs) references `window` — the shim (imported
+// first) gives node a minimal one.
+import "./shims/node-window.mjs";
+import { vi, test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import { MediaEngine } from "../src/putio/media.ts";
 
-const dir = mkdtempSync(join(tmpdir(), "putio-test-"));
-const out = join(dir, "media.cjs");
-const hlsStub = join(dir, "hls-stub.cjs");
-writeFileSync(hlsStub, "module.exports = { default: class Hls {} };\n");
-
-await build({
-  entryPoints: ["src/putio/media.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  alias: { "hls.js": hlsStub },
-});
-const { MediaEngine } = (() => {
-  // platform.ts guards with isWebOS() at RUNTIME, but module-scope code in
-  // the bundle references `window` — give node a minimal one.
-  if (typeof globalThis.window === "undefined") globalThis.window = globalThis;
-  return createRequire(import.meta.url)(out);
-})();
+// The fake <video> drives the engine — hls.js is stubbed, as the old
+// esbuild alias did.
+vi.mock("hls.js", () => ({ default: class Hls {} }));
 
 // The constructor's media_info fetch must never hit the network in tests.
 const realFetch = globalThis.fetch;

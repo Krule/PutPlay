@@ -14,27 +14,10 @@
 // the tests assert the network behaviour, not just the bytes.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { deflateRawSync } from "node:zlib";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), "zipextract-"));
-await build({
-  entryPoints: [join(here, "..", "src/putio/zip-extract.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "bundle.cjs"),
-});
-const req = createRequire(import.meta.url);
-const zx = req(join(dir, "bundle.cjs"));
+import * as zx from "../src/putio/zip-extract.ts";
 
 /* ---------------- build a real zip in memory ---------------- */
 const CRC_TABLE = (() => {

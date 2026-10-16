@@ -17,7 +17,7 @@
 //    in-flight ticks with a generation counter (no zombies).
 //
 // Run: pnpm test
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { nextPollStep, OOB_CODE_TTL_MS } from "../src/putio/oob-poll.ts";
 import { readFileSync } from "node:fs";

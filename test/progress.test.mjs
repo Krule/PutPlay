@@ -3,25 +3,9 @@
 // track/fill actually move during playback.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "progress.cjs");
-await build({
-  entryPoints: ["src/putio/progress.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { progressPct } = require(out);
+import { progressPct } from "../src/putio/progress.ts";
 
 test("no usable duration (0, NaN, negative) → 0, not NaN", () => {
   assert.equal(progressPct(5, 0), 0);

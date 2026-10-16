@@ -13,7 +13,7 @@
 // Without a PTY the -i (interactive) mode no-ops silently — the service
 // never sees the request — so the PTY is not a cosmetic detail.
 // Everyone else installs via the Homebrew Channel app, not this script.
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { devInstallRemote, isInstallSuccess, installLogCheck, devUninstallRemote, removeLogCheck } from "../build/deploy-lib.mjs";
 

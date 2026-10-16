@@ -8,25 +8,9 @@
 // unavailable) are never a focus target.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "picker-default.cjs");
-await build({
-  entryPoints: ["src/putio/picker-default.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { pickerDefaultIndex, rowFocusState } = require(out);
+import { pickerDefaultIndex, rowFocusState } from "../src/putio/picker-default.ts";
 
 test("the currently selected row wins", () => {
   assert.equal(pickerDefaultIndex([{}, { selected: true }, {}]), 1);

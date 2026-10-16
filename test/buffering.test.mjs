@@ -8,7 +8,7 @@
 // case reaching the buffer end is just end-of-file, not a stall.
 //
 // Run: pnpm test
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { isBuffering } from "../src/putio/progress.ts";
 

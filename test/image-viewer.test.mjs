@@ -14,29 +14,15 @@
 //      that load through the signed stream URL.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import * as img from "../src/putio/image.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(here, "..", p), "utf8");
-
-const dir = mkdtempSync(join(tmpdir(), "imgviewer-"));
-await build({
-  entryPoints: [join(here, "..", "src/putio/image.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "bundle.cjs"),
-});
-const req = createRequire(import.meta.url);
-const img = req(join(dir, "bundle.cjs"));
 
 const file = (name, content_type) => ({ id: 1, name, content_type, is_folder: 0 });
 

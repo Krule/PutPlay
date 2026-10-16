@@ -5,7 +5,7 @@
 // Skipped where the invariant is not checkable: no git checkout, or a
 // checkout with no tags visible (CI branch pushes — the Release workflow,
 // which does see the tag, is the enforcement point).
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -20,25 +20,27 @@ function latestTagVersion() {
   return tag ? tag.replace(/^v/, "") : null;
 }
 
-test("CHANGELOG.md has a section for the latest release tag", (t) => {
-  const file = join(root, "CHANGELOG.md");
-  if (!existsSync(file)) {
-    assert.fail("CHANGELOG.md is missing from the repo root");
+// The invariant is only checkable where git tags are visible (a git
+// checkout that knows at least one tag) — decide at collection time.
+let latestVersion = null;
+let gitBroken = false;
+try {
+  latestVersion = latestTagVersion();
+} catch {
+  gitBroken = true;
+}
+
+test.runIf(!gitBroken && latestVersion !== null)(
+  "CHANGELOG.md has a section for the latest release tag",
+  () => {
+    const file = join(root, "CHANGELOG.md");
+    if (!existsSync(file)) {
+      assert.fail("CHANGELOG.md is missing from the repo root");
+    }
+    const changelog = readFileSync(file, "utf8");
+    assert.ok(
+      new RegExp(`^## \\[${latestVersion}\\]`, "m").test(changelog),
+      `CHANGELOG.md has no "## [${latestVersion}]" section for the latest tag`
+    );
   }
-  let version;
-  try {
-    version = latestTagVersion();
-  } catch {
-    t.skip("not a git checkout — skipping");
-    return;
-  }
-  if (version === null) {
-    t.skip("no tags visible in this checkout — skipping");
-    return;
-  }
-  const changelog = readFileSync(file, "utf8");
-  assert.ok(
-    new RegExp(`^## \\[${version}\\]`, "m").test(changelog),
-    `CHANGELOG.md has no "## [${version}]" section for the latest tag`
-  );
-});
+);

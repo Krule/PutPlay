@@ -22,29 +22,15 @@
 // `python3 test/fixtures/make-zips.py`).
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import * as zip from "../src/putio/zip.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fix = (p) => new Uint8Array(readFileSync(join(here, "fixtures", p)));
-
-const dir = mkdtempSync(join(tmpdir(), "zipparse-"));
-await build({
-  entryPoints: [join(here, "..", "src/putio/zip.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "bundle.cjs"),
-});
-const req = createRequire(import.meta.url);
-const zip = req(join(dir, "bundle.cjs"));
 
 const byName = (m) => Object.fromEntries(m.entries.map((e) => [e.name, e]));
 
@@ -259,9 +245,8 @@ test("parentPath: pops one archive folder level", () => {
  */
 test("entries expose the CD's name/extra lengths (extractEntry's one-read geometry)", () => {
   // build a minimal CD via the same fixture style: parse a tiny zip
-  const z = req(join(dir, "bundle.cjs"));
   const made = makeMiniZip([["a/b.png", 1234], ["c.png", 77]]);
-  const model = z.parseZip(new Uint8Array(made), 0);
+  const model = zip.parseZip(new Uint8Array(made), 0);
   const [e1, e2] = model.entries;
   assert.equal(e1.nameLen, 7, "a/b.png is 7 bytes");
   assert.equal(e1.extraLen, 0);

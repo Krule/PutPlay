@@ -7,7 +7,7 @@
 // scans the list in order, so ordering is what makes embedded win.
 //
 // Run: pnpm test
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import {
   orderSubtitleSources,

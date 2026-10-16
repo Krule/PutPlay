@@ -8,25 +8,9 @@
 // focusable), and a focused control was ignored.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "player-ok.cjs");
-await build({
-  entryPoints: ["src/putio/player-ok.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { playerOkAction } = require(out);
+import { playerOkAction } from "../src/putio/player-ok.ts";
 
 test("a spatially focused control wins — OK activates it (overlay or not)", () => {
   assert.equal(playerOkAction(true), "activate-focused");

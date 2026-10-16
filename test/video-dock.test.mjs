@@ -21,45 +21,29 @@
 // element. The visual dock is verified in the browser pass.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { vi, test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { get } from "svelte/store";
+import { isPlayableVideo, buildVideoQueue } from "../src/putio/queue.ts";
+import {
+  video,
+  startVideoSession,
+  setVideoMode,
+  endVideoSession,
+  advanceVideo,
+  stepVideo,
+} from "../src/store/video.ts";
+
+// The session store is engine-free — hls.js is stubbed, as the old esbuild
+// alias did (the Player owns the real engine).
+vi.mock("hls.js", () => ({ default: class Hls {} }));
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const read = (p) => readFileSync(join(root, p), "utf8");
-
-// ---------------- harness (same shape as music-player.test.mjs) ----------------
-
-const dir = mkdtempSync(join(tmpdir(), "putio-vdock-"));
-const out = join(dir, "vdock.cjs");
-const hlsStub = join(dir, "hls-stub.cjs");
-writeFileSync(hlsStub, "module.exports = { default: class Hls {} };\n");
-const entry = join(dir, "entry.ts");
-writeFileSync(
-  entry,
-  [
-    `export * from "${resolve(root, "src/putio/queue.ts")}";`,
-    `export * from "${resolve(root, "src/store/video.ts")}";`,
-  ].join("\n")
-);
-
-await build({
-  entryPoints: [entry],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  alias: { "hls.js": hlsStub },
-  logLevel: "silent",
-});
-const { isPlayableVideo, buildVideoQueue, video, startVideoSession, setVideoMode, endVideoSession, advanceVideo, stepVideo } =
-  await import(out);
 
 // ---------------- fixtures ----------------
 

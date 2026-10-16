@@ -10,13 +10,12 @@
 // which is what node exercises: no globalThis.luna, so isWebOS() is false.
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+// The bundled webostvjs SDK assigns `window.webOS` at module scope, so the
+// window shim (imported first) must exist before the store loads.
+import "./shims/node-window.mjs";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
+import { loadAuth, auth, adoptAccount } from "../src/store/auth.ts";
 
 /* ---------------- in-memory localStorage shim (the storage seam) ---------------- */
 
@@ -85,23 +84,6 @@ function makeEnv(mode = "ok") {
     },
   };
 }
-
-/* ---------------- bundle the real store ---------------- */
-
-// The bundled webostvjs SDK assigns `window.webOS` at module scope, so the
-// window shim must exist BEFORE the bundle is required (node has no window).
-if (typeof globalThis.window === "undefined") globalThis.window = globalThis;
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "cold-start-auth.cjs");
-await build({
-  entryPoints: ["src/store/auth.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const { loadAuth, auth, adoptAccount } = createRequire(import.meta.url)(out);
 
 function readAuth() {
   let s = null;

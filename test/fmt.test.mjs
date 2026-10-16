@@ -1,26 +1,6 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
-import { createRequire } from "module";
-import { execSync } from "child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const tmp = mkdtempSync(path.join(tmpdir(), "putio-test-"));
-const bundle = path.join(tmp, "fmt.cjs");
-execSync(
-  `npx esbuild ${path.join(here, "..", "src", "putio", "api.ts")} --bundle --format=cjs --platform=node --external:hls.js --external:webostvjs/webOSTV --outfile=${bundle}`,
-  { cwd: path.join(here, ".."), stdio: "pipe" }
-);
-const require = createRequire(import.meta.url);
-const { fmtBytes, fmtTime } = require(bundle);
-
-// clean up the temp bundle (lives in the OS temp dir, never the repo)
-test("teardown: remove temp bundle", () =>
-  rmSync(tmp, { recursive: true, force: true, maxRetries: 3 })
-);
+import { fmtBytes, fmtTime } from "../src/putio/api.ts";
 
 test("fmtBytes: B -> KB -> MB -> GB -> TB", () => {
   assert.equal(fmtBytes(512), "512 B");

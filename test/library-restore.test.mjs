@@ -18,26 +18,10 @@
 //                             and would otherwise survive re-auth).
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
 import { get } from "svelte/store";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "library-restore.cjs");
-await build({
-  entryPoints: ["src/store/library.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const lib = require(out);
+import * as lib from "../src/store/library.ts";
 
 test("mountFolderId: a deep folder survives the player round-trip", () => {
   assert.equal(lib.mountFolderId({ folderId: 12345 }), 12345);

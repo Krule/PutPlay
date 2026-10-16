@@ -4,7 +4,7 @@
 // pointer/D-pad activity, and again when playback first starts.
 //
 // Run: pnpm test
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { controlsPinned } from "../src/putio/player-controls.ts";
 

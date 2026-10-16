@@ -7,7 +7,7 @@
 //
 // Run: pnpm test
 import { execSync } from "node:child_process";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 test("tsc: the pure source tree typechecks clean (no unused locals/params)", () => {

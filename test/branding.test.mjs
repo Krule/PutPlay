@@ -4,7 +4,7 @@
 // subline. The package id is "ba.ovo.putplay": it is the webOS app
 // identity that updates are keyed on, and changing it AFTER the first
 // release breaks updates — it may only change in the pre-release window.
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";

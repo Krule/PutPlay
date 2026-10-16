@@ -14,34 +14,13 @@
 //
 // Run: pnpm test
 import "fake-indexeddb/auto";
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), "thumbstore-"));
-await build({
-  entryPoints: [join(here, "..", "src/store/thumb-store.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "store.cjs"),
-});
-await build({
-  entryPoints: [join(here, "..", "src/putio/idb.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "idb.cjs"),
-});
-const req = createRequire(import.meta.url);
-const { openIdb } = req(join(dir, "idb.cjs"));
-const {
+import { openIdb } from "../src/putio/idb.ts";
+import {
   getThumb,
   putThumb,
   clearThumbs,
@@ -49,7 +28,9 @@ const {
   THUMB_MAX_ENTRIES,
   THUMB_DB_NAME,
   __resetForTests,
-} = req(join(dir, "store.cjs"));
+} from "../src/store/thumb-store.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const DAY = 24 * 3600 * 1000;
 const NOW = Date.now();

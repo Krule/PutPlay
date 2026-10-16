@@ -24,7 +24,7 @@ import sveltePreprocess from "svelte-preprocess";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 
 const here = dirname(fileURLToPath(import.meta.url));

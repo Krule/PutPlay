@@ -16,30 +16,15 @@
 //   5. Settings reuses the shared ladder (no private copy).
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import { SUB_SCALE_OPTIONS, DEFAULT_CONFIG } from "../src/putio/config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(join(here, "..", p), "utf8");
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "sub-scale.cjs");
-await build({
-  entryPoints: ["src/putio/config.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { SUB_SCALE_OPTIONS, DEFAULT_CONFIG } = require(out);
 
 function bodyOf(src, name) {
   const start = src.indexOf(`function ${name}(`);

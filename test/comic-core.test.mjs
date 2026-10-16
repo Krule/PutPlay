@@ -20,45 +20,17 @@
 //   comic-undecodable.zip   junk bytes under a decodable name (D8)
 //
 // Run: pnpm test
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import * as comic from "../src/putio/comic.ts";
+import * as progress from "../src/putio/comic-progress.ts";
+import * as zip from "../src/putio/zip.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fix = (p) => new Uint8Array(readFileSync(join(here, "fixtures", p)));
-
-const dir = mkdtempSync(join(tmpdir(), "comiccore-"));
-await build({
-  entryPoints: [join(here, "..", "src/putio/comic.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "comic.cjs"),
-});
-await build({
-  entryPoints: [join(here, "..", "src/putio/comic-progress.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "progress.cjs"),
-});
-await build({
-  entryPoints: [join(here, "..", "src/putio/zip.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "zip.cjs"),
-});
-const req = createRequire(import.meta.url);
-const comic = req(join(dir, "comic.cjs"));
-const progress = req(join(dir, "progress.cjs"));
-const zip = req(join(dir, "zip.cjs"));
 
 // A synthetic ZipEntry with the exact shape of zip.ts (tests that build
 // models from in-memory entries, not fixture bytes).

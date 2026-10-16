@@ -7,7 +7,7 @@
 // (2) icon.svg was never staged into the ipk, so the logo 404d on every
 // installed app while the dev simulator (which serves the repo root) still
 // showed it. Skipped where the ares CLI is not installed.
-import test from "node:test";
+import { test } from "vitest";
 import assert from "assert/strict";
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
@@ -22,19 +22,13 @@ function sha(bufOrPath) {
   return createHash("sha1").update(typeof bufOrPath === "string" ? readFileSync(bufOrPath) : bufOrPath).digest("hex");
 }
 
-/** Gate tests on the ares CLI: skip (not fail) where it is not installed. */
-function requireAres(t) {
-  let aresOk = false;
-  try {
-    execSync("command -v ares-package", { shell: "/bin/bash" });
-    aresOk = true;
-  } catch { /* not installed */ }
-  if (!aresOk) {
-    t.skip("ares-package not installed — skipping packaging gate");
-    return false;
-  }
-  return true;
-}
+/** Gate the packaging tests on the ares CLI: skip (not fail) where it is
+ *  not installed — checked once at collection time. */
+let ARES_OK = false;
+try {
+  execSync("command -v ares-package", { shell: "/bin/bash" });
+  ARES_OK = true;
+} catch { /* not installed */ }
 
 /** Run the real packaging pipeline and locate the produced .ipk. */
 function packageApp() {
@@ -68,9 +62,7 @@ function ipkMember(ipk, member) {
   return tar;
 }
 
-test("ipk ships the build output verbatim", { timeout: 120_000 }, (t) => {
-  if (!requireAres(t)) return;
-
+test.runIf(ARES_OK)("ipk ships the build output verbatim", { timeout: 120_000 }, () => {
   const { id, ipk, bundleSha, cssSha } = packageApp();
   const memberBase = `usr/palm/applications/${id}/js`;
   assert.equal(
@@ -89,9 +81,7 @@ test("ipk ships the build output verbatim", { timeout: 120_000 }, (t) => {
 // If the file is not staged into the .ipk, the logo 404s on every installed
 // app (Homebrew Channel, dev install alike) while the dev simulator still
 // shows it — the simulator serves the repo root, where icon.svg exists.
-test("ipk ships the sign-in logo (icon.svg) byte-identical", { timeout: 120_000 }, (t) => {
-  if (!requireAres(t)) return;
-
+test.runIf(ARES_OK)("ipk ships the sign-in logo (icon.svg) byte-identical", { timeout: 120_000 }, () => {
   const { id, ipk } = packageApp();
   const logoMember = `usr/palm/applications/${id}/icon.svg`;
   let logoBytes;

@@ -15,25 +15,9 @@
 //
 // Run: pnpm test
 
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-
-const out = join(mkdtempSync(join(tmpdir(), "putio-test-")), "config.cjs");
-await build({
-  entryPoints: ["src/putio/config.ts"],
-  bundle: true,
-  format: "cjs",
-  platform: "node",
-  outfile: out,
-  logLevel: "silent",
-});
-const require = createRequire(import.meta.url);
-const { DEFAULT_CONFIG, normalizeConfig, matchLang, pickAudioTrack, pickSubtitleTrack } = require(out);
+import { DEFAULT_CONFIG, normalizeConfig, matchLang, pickAudioTrack, pickSubtitleTrack } from "../src/putio/config.ts";
 // (module under test: src/putio/config.ts — pure decisions; the Svelte
 //  store in src/store/config.ts wraps it)
 

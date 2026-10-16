@@ -1,25 +1,8 @@
 // Page LRU cache (page-cache.ts) — the "already read" memory the C1 asked
 // for: 10 pages, evict least-recently-used, revoke evicted blobs.
-import { build } from "esbuild";
-import { test } from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const dir = mkdtempSync(join(tmpdir(), "pagecache-"));
-await build({
-  entryPoints: [join(here, "..", "src/putio/page-cache.ts")],
-  bundle: true,
-  format: "cjs",
-  target: "es2019",
-  outfile: join(dir, "cache.cjs"),
-});
-const req = createRequire(import.meta.url);
-const { createPageCache } = req(join(dir, "cache.cjs"));
+import { createPageCache, createPageDeduper } from "../src/putio/page-cache.ts";
 
 const page = (n) => ({ url: `blob:page-${n}`, w: 100 + n, h: 200 });
 
@@ -96,10 +79,8 @@ test("cache: capacity is at least 1 (a zero/negative cap is a typo, not a leak)"
  * out the SAME promise for a key until the request settles — then the key
  * is free (a fresh failure is allowed to retry).
  */
-const dc = req(join(dir, "cache.cjs"));
-
 test("dedup: concurrent requests for one key share ONE underlying fetch", async () => {
-  const d = dc.createPageDeduper();
+  const d = createPageDeduper();
   let calls = 0;
   const make = () => {
     calls += 1;
@@ -114,7 +95,7 @@ test("dedup: concurrent requests for one key share ONE underlying fetch", async 
 });
 
 test("dedup: after SETTLE the key is free (a new request may fetch again)", async () => {
-  const d = dc.createPageDeduper();
+  const d = createPageDeduper();
   let calls = 0;
   const make = () => {
     calls += 1;
@@ -128,7 +109,7 @@ test("dedup: after SETTLE the key is free (a new request may fetch again)", asyn
 });
 
 test("dedup: a REJECTED in-flight request frees the key (the retry is allowed)", async () => {
-  const d = dc.createPageDeduper();
+  const d = createPageDeduper();
   const state = { calls: 0 };
   const make = () => {
     state.calls += 1;
@@ -144,7 +125,7 @@ test("dedup: a REJECTED in-flight request frees the key (the retry is allowed)",
 });
 
 test("dedup: distinct keys are independent; clear() releases everything", async () => {
-  const d = dc.createPageDeduper();
+  const d = createPageDeduper();
   let calls = 0;
   const make = () => {
     calls += 1;
