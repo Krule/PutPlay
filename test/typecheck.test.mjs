@@ -1,4 +1,4 @@
-// Type gate: the esbuild build strips types WITHOUT checking them, so TS
+// Type gate: the build strips types WITHOUT checking them, so TS
 // errors (missing imports, wrong fields, dead locals) ship silently. This
 // gate runs tsc over the pure source tree on every test run.
 //

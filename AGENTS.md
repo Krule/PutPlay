@@ -162,3 +162,11 @@ Examples:
 - `[REFACTOR] -> [INNER] -> Extracting password validation into a standalone utility function.`
 
 If a test pass reveals an opportunity for refactoring, explicitly state: **"ENTERING REFACTORING PHASE"**, list the code smells identified, and execute the structural clean-up step-by-step.
+
+---
+
+## Signed commits
+
+- Signed commits require biometric permission by the user. It's not a blip, it's by design.
+- When commit signing fails, skip the commit and continue other work if there is some. Otherwise, stop and wait for user's explicit instruction to continue.
+- It's more often than not due to user being AFK.

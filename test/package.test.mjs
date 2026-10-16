@@ -14,6 +14,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "url";
 import { createHash } from "node:crypto";
+import { withBuildLock } from "./shims/build-lock.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -36,20 +37,23 @@ function packageApp() {
   const id = JSON.parse(readFileSync(join(root, "appinfo.json"), "utf8")).id;
   const ipkName = `${id}_${pkg.version}_all.ipk`;
 
-  // Build first: package.mjs stages js/ VERBATIM, so the gate only means
-  // "the ipk ships the build output" when that output is fresh from the
-  // source. Without this, a stale js/ (last release's build) is what gets
-  // staged, and the compare fails on stale-vs-fresh hashes, not a bug.
-  // The hashes are snapshotted right after the build — a concurrent test
-  // (build-stamp rebuilds js/) can republish the files any time after, and
-  // the assertion must hold against the build this ipk was made from.
-  execSync("node build/esbuild.mjs", { cwd: root, stdio: "pipe", timeout: 60_000 });
-  const bundleSha = sha(join(root, "js/bundle.js"));
-  const cssSha = sha(join(root, "js/bundle.css"));
-  execSync("node build/package.mjs", { cwd: root, stdio: "pipe", timeout: 90_000 });
-  const ipk = join(root, ipkName);
-  assert.ok(existsSync(ipk), `${ipkName} not produced`);
-  return { id, ipk, bundleSha, cssSha };
+  return withBuildLock(async () => {
+    // Build first: package.mjs stages js/ VERBATIM, so the gate only means
+    // "the ipk ships the build output" when that output is fresh from the
+    // source. Without this, a stale js/ (last release's build) is what gets
+    // staged, and the compare fails on stale-vs-fresh hashes, not a bug.
+    // The whole build → snapshot → package sequence holds the build lock:
+    // a concurrent test (build-stamp rebuilds js/) must not republish the
+    // files between the snapshot and the ipk staging, and the assertion
+    // must hold against the build this ipk was made from.
+    execSync("pnpm exec vite build", { cwd: root, stdio: "pipe", timeout: 120_000 });
+    const bundleSha = sha(join(root, "js/bundle.js"));
+    const cssSha = sha(join(root, "js/bundle.css"));
+    execSync("node build/package.mjs", { cwd: root, stdio: "pipe", timeout: 90_000 });
+    const ipk = join(root, ipkName);
+    assert.ok(existsSync(ipk), `${ipkName} not produced`);
+    return { id, ipk, bundleSha, cssSha };
+  });
 }
 
 /** Extract a member from an ipk (ar + data.tar.gz) and return its bytes.
@@ -62,8 +66,8 @@ function ipkMember(ipk, member) {
   return tar;
 }
 
-test.runIf(ARES_OK)("ipk ships the build output verbatim", { timeout: 120_000 }, () => {
-  const { id, ipk, bundleSha, cssSha } = packageApp();
+test.runIf(ARES_OK)("ipk ships the build output verbatim", { timeout: 180_000 }, async () => {
+  const { id, ipk, bundleSha, cssSha } = await packageApp();
   const memberBase = `usr/palm/applications/${id}/js`;
   assert.equal(
     sha(ipkMember(ipk, `${memberBase}/bundle.js`)),
@@ -81,8 +85,8 @@ test.runIf(ARES_OK)("ipk ships the build output verbatim", { timeout: 120_000 },
 // If the file is not staged into the .ipk, the logo 404s on every installed
 // app (Homebrew Channel, dev install alike) while the dev simulator still
 // shows it — the simulator serves the repo root, where icon.svg exists.
-test.runIf(ARES_OK)("ipk ships the sign-in logo (icon.svg) byte-identical", { timeout: 120_000 }, () => {
-  const { id, ipk } = packageApp();
+test.runIf(ARES_OK)("ipk ships the sign-in logo (icon.svg) byte-identical", { timeout: 180_000 }, async () => {
+  const { id, ipk } = await packageApp();
   const logoMember = `usr/palm/applications/${id}/icon.svg`;
   let logoBytes;
   try {

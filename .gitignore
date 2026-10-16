@@ -1,7 +1,7 @@
 .agent
 .agents
+.tmp
 node_modules/
-.pnpm-store/
 __pycache__/
 js/
 *.ipk
@@ -10,4 +10,5 @@ js/
 .pkg-staging/
 build/deploy.mjs
 preview
+docs/mockups
 putplay*.svg

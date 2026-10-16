@@ -5,8 +5,8 @@
   "description": "put.io browser & player for webOS TV",
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "build": "node build/esbuild.mjs",
-    "watch": "node build/esbuild.mjs --watch",
+    "build": "vite build",
+    "watch": "vite build --watch",
     "package": "pnpm build && node build/package.mjs",
     "deploy:tv": "node build/deploy.mjs",
     "test": "vitest run",
@@ -23,6 +23,7 @@
     "svelte": "^4.2.20",
     "svelte-preprocess": "^6.0.5",
     "typescript": "^5.9.3",
+    "vite": "^5.4.21",
     "vitest": "^2.1.9"
   },
   "pnpm": {

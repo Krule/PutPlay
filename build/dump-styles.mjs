@@ -1,6 +1,6 @@
 // One-shot: compile every .svelte with external CSS → /tmp/scoped-audit.css
 // so the ux_audit tool can audit the COMPLETE stylesheet, not just theme.css.
-// Mirrors build/esbuild.mjs preprocessing exactly (sveltePreprocess → strip TS).
+// Mirrors the build's svelte preprocessing (sveltePreprocess → strip TS).
 import { readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { sveltePreprocess } from "svelte-preprocess";
