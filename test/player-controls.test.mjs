@@ -3,7 +3,7 @@
 // overlay panel open. Otherwise it auto-hides ~4s after the last
 // pointer/D-pad activity, and again when playback first starts.
 //
-// Run: npm test
+// Run: pnpm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { controlsPinned } from "../src/putio/player-controls.ts";

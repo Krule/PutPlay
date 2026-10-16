@@ -13,7 +13,7 @@
 //   normalizeConfig(partial) — merge user input onto defaults, coercing to
 //     the stored shape (source kind, non-negative size, sane language).
 //
-// Run: npm test
+// Run: pnpm test
 
 import { build } from "esbuild";
 import { test } from "node:test";

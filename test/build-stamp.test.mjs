@@ -12,7 +12,7 @@
 //  - build-info.ts guards with typeof (null outside a built context)
 //  - Settings shows the stamp
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync, existsSync } from "node:fs";

@@ -12,7 +12,7 @@
 //      selector list invalidates the WHOLE rule, which would kill the
 //      :focus outline on the TV.
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";

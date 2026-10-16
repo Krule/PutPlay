@@ -132,10 +132,10 @@ updates” in Homebrew Channel picks up new versions on its own.
 ```sh
 git clone git@github.com:Krule/PutPlay.git
 cd PutPlay
-npm ci
-npm test        # 500+ tests, including the webOS 6 baseline gate
-npm run build   # js/bundle.js + js/bundle.css
-npm run package # ba.ovo.putplay_<version>_all.ipk in the repo root
+pnpm install
+pnpm test       # 500+ tests, including the webOS 6 baseline gate
+pnpm run build  # js/bundle.js + js/bundle.css
+pnpm run package # ba.ovo.putplay_<version>_all.ipk in the repo root
 ```
 
 Releases are tag-driven: push `v1.2.3` and CI builds, tests, packages

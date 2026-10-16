@@ -7,7 +7,7 @@ is faked.
 ## Run
 
 ```bash
-npm run build
+pnpm run build
 python3 test/e2e/serve.py            # Range-capable static server, port 8642
 agent-browser open "http://localhost:8642/?seedtoken" \
   --init-script test/e2e/fake-api.js

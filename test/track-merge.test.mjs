@@ -12,7 +12,7 @@
 //   mergeAudioRows(native, meta, hls)      → stable, label-enriched rows
 //   activeRowKey(rows, kind, index)        → which row is "on"
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "assert/strict";

@@ -16,7 +16,7 @@
 //  - auth.ts uses the planner, tracks consecutive errors + 429, and kills
 //    in-flight ticks with a generation counter (no zombies).
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { nextPollStep, OOB_CODE_TTL_MS } from "../src/putio/oob-poll.ts";

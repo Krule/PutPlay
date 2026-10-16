@@ -12,7 +12,7 @@
 // Node coverage: fake-indexeddb (a faithful in-memory IDB), so these are
 // real behavioral tests.
 //
-// Run: npm test
+// Run: pnpm test
 import "fake-indexeddb/auto";
 import { build } from "esbuild";
 import { test } from "node:test";

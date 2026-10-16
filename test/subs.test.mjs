@@ -1,5 +1,5 @@
 // Unit tests for the pure subtitle parser (src/putio/subs.ts).
-// Run: npm test  →  transpiles subs.ts with esbuild, loads it, runs node:test.
+// Run: pnpm test  →  transpiles subs.ts with esbuild, loads it, runs node:test.
 
 import { build } from "esbuild";
 import { test } from "node:test";

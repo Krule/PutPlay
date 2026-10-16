@@ -13,7 +13,7 @@
 //      buildLibraryTargets: the folder's decodable images -> ViewerTargets
 //      that load through the signed stream URL.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

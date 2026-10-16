@@ -8,7 +8,7 @@
 //   initialSeekTarget(startFrom, choice) — where to put the playhead, and
 //     whether it may apply immediately (t>0) or must wait for metadata (t=0).
 //
-// Run: npm test
+// Run: pnpm test
 
 import { build } from "esbuild";
 import { test } from "node:test";

@@ -6,7 +6,7 @@
 // sequential ifs reading a screen the first just assigned, they revert every
 // navigation after the first round-trip (the .acct "does nothing" bug).
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

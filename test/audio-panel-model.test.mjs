@@ -12,7 +12,7 @@
 //     alone misses the initial population on some files)
 //   - selection is row-based: selectAudioRow(row)
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

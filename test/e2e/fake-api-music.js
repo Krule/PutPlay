@@ -2,7 +2,7 @@
  * the video/comic fixtures; this one stays stable for the music verifications).
  *
  * Run:
- *   npm run build
+ *   pnpm run build
  *   python3 -m http.server 8642
  *   agent-browser open "http://localhost:8642/?seedtoken" \
  *     --init-script test/e2e/fake-api-music.js

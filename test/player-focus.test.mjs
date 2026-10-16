@@ -8,7 +8,7 @@
 // clickActive() had nothing to click. Pointer clicks still worked, which is
 // why it only bites on the 5-way remote.
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

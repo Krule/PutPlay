@@ -19,7 +19,7 @@
 //   comic-natural.zip       the 1..12 lexicographic trap
 //   comic-undecodable.zip   junk bytes under a decodable name (D8)
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

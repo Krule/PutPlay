@@ -1,6 +1,7 @@
 .agent
 .agents
 node_modules/
+.pnpm-store/
 __pycache__/
 js/
 *.ipk

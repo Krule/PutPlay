@@ -10,7 +10,7 @@
 // Contract: routeNav is EDGE-triggered (reacts to prev→next increments) and
 // evaluates both decisions against the INCOMING screen.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

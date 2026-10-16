@@ -7,7 +7,7 @@
 // data (waiting on network) — UNLESS the media is fully buffered, in which
 // case reaching the buffer end is just end-of-file, not a stall.
 //
-// Run: npm test
+// Run: pnpm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isBuffering } from "../src/putio/progress.ts";

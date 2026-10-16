@@ -2,7 +2,7 @@
 // Pure math — the Player binds its result to a reactive value so the bar
 // track/fill actually move during playback.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

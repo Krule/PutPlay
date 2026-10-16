@@ -11,7 +11,7 @@
 //    preselected, blank row for "none").
 //  - Back closes the picker (TV idiom) and focus returns to the field.
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

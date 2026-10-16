@@ -4,7 +4,7 @@
 // client. The id is a single constant; the OOB request must use it, never
 // the generic app_id=1.
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync } from "node:fs";

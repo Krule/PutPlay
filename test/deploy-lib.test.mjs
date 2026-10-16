@@ -1,5 +1,5 @@
 // Unit tests for build/deploy-lib.mjs — the pure logic behind
-// `npm run deploy:tv`.
+// `pnpm run deploy:tv`.
 //
 // Scope (per owner): the deployer targets ONE TV — a rooted webOS 6 box
 // without Developer Mode, where the working install is the dev/install

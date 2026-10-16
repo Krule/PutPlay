@@ -9,7 +9,7 @@
 // goes through the shared closeOverlays() helper, and so does the Back key
 // (one close-list, not three copies).
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

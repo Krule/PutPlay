@@ -13,7 +13,7 @@
 //    (the Player already syncs `p.source` from state).
 //  - Player.onState must keep syncing source from state.
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

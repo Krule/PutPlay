@@ -13,7 +13,7 @@
 //      scaled active tile stays inside the grid's padding box, and the grid
 //      clips x-overflow so no transform can ever grow one.
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync } from "node:fs";

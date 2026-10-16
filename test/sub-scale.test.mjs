@@ -15,7 +15,7 @@
 //      video element (it used to be a fixed 30px);
 //   5. Settings reuses the shared ladder (no private copy).
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

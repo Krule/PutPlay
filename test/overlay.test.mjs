@@ -6,7 +6,7 @@
 // Pure geometry, testable in node (no DOM needed): the click is dismissed iff
 // it falls on the scrim and outside the panel rect.
 //
-// Run: npm test
+// Run: pnpm test
 
 import { build } from "esbuild";
 import { test } from "node:test";

@@ -12,7 +12,7 @@
 // the width style is re-applied in the fragment's UPDATE function (p()),
 // which only happens when the template binds a plain reactive value.
 //
-// Run: npm test
+// Run: pnpm test
 import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";
 import { readFileSync } from "node:fs";

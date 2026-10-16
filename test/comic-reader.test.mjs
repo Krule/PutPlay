@@ -19,7 +19,7 @@
 //   - NO direction in Settings (removed 2026-10-13): the reader's Up-key legend is the control.
 //   - .cbz is an entry, not a "coming soon" (it IS a zip).
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

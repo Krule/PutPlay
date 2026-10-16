@@ -18,7 +18,7 @@
 // This gate compiles Connect.svelte the way the build does and checks the
 // generated markup.
 //
-// Run: npm test
+// Run: pnpm test
 import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";
 import { readFileSync } from "node:fs";

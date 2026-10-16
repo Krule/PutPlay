@@ -5,7 +5,7 @@
 // assToCues() returned [] for all of them, which is why "subtitles when
 // playing the original video are not working properly".
 //
-// Run: npm test
+// Run: pnpm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assToCues, subtitlesToCues } from "../src/putio/subs.ts";

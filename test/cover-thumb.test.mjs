@@ -6,7 +6,7 @@
 // opens. The down-scaled JPEG data URL survives app restarts on the TV;
 // sign-out clears the account's artwork.
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

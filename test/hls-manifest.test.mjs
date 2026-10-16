@@ -9,7 +9,7 @@
 // Contract: parseHlsAudioRenditions(text) → audio renditions in manifest
 // order. Pure, no DOM, Chrome 79-safe (the bundle must stay ES2019-ish).
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { readFileSync } from "node:fs";

@@ -9,7 +9,7 @@
 // The storage seam is the non-webOS fallback (platform store → localStorage),
 // which is what node exercises: no globalThis.luna, so isWebOS() is false.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

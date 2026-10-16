@@ -14,7 +14,7 @@
 //  - Player toasts the choice ONLY after the engine confirms it; on refusal
 //    it says so and points at the HLS source (hls.js switching works).
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { applyAudioTrack, planAudioSwitch } from "../src/putio/audio-switch.ts";

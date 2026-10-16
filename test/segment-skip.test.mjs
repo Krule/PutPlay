@@ -33,7 +33,7 @@
 //      fresh target from the shared pure module; the Settings columns still
 //      scroll (a clipped card is unreachable — the v1 layout regression).
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { compile, preprocess } from "svelte/compiler";
 import sveltePreprocess from "svelte-preprocess";

@@ -11,7 +11,7 @@
 //      the smoother engine-buffered stream. The decision is pure
 //      (shouldAdviseSmootherSource in putio/stall.ts).
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

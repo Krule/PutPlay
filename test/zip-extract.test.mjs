@@ -13,7 +13,7 @@
 // The fake fetch below is Range-capable and records every range requested —
 // the tests assert the network behaviour, not just the bytes.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -17,7 +17,7 @@
 //                             account's folders (the store is module-level
 //                             and would otherwise survive re-auth).
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

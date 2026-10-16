@@ -6,7 +6,7 @@
 //    styling — an opaque black box. video::cue overrides it to a
 //    transparent, shadowed, app-font caption (Chrome 79 supports ::cue).
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

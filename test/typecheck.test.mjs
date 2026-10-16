@@ -5,7 +5,7 @@
 // .svelte files are not in scope (tsc can't parse them) — screen-level type
 // mistakes are caught by the build + the e2e harness.
 //
-// Run: npm test
+// Run: pnpm test
 import { execSync } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -6,7 +6,7 @@
 // parent_id=0 was silently DROPPED and the API returned the ROOT listing —
 // "open a folder" showed the wrong folder's contents.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

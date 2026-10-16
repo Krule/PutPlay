@@ -20,7 +20,7 @@
 // source (put.io doesn't transcode audio). The visual strip is verified in
 // the e2e pass; this test pins the behavior the strip renders.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

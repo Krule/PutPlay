@@ -7,7 +7,7 @@
 // `library.selected` on every OK, so pressing OK on the .acct header button
 // did nothing or replayed the last file.)
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

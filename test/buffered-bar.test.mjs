@@ -8,7 +8,7 @@
 //    bindings evaluate once and freeze).
 //  - Live (duration ∞) → 0 (progressPct already returns 0 for ∞).
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

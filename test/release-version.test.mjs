@@ -4,7 +4,7 @@
 // webOS uses for app identity/updates) so the ipk, the app, and the GitHub
 // release can never disagree.
 //
-// Run: npm test
+// Run: pnpm test
 import test from "node:test";
 import assert from "assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";

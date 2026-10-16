@@ -20,7 +20,7 @@
 // MediaEngine — plan §9.1 architecture), so it runs here without a fake
 // element. The visual dock is verified in the browser pass.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

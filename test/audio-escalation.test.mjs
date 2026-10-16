@@ -10,7 +10,7 @@
 // reload re-arms the pipeline (exactly the behavior the e2e fake emulates).
 // The hls.js import is stubbed — the native path never instantiates it.
 //
-// Run: npm test
+// Run: pnpm test
 
 import { build } from "esbuild";
 import { test } from "node:test";

@@ -8,7 +8,7 @@
 // libraryOkAction / playerOkAction contracts) as dead code and OK functional
 // only on elements that happen to be real buttons.
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

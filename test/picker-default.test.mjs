@@ -7,7 +7,7 @@
 // else the first enabled row. Disabled rows (e.g. "put.io MP4" when
 // unavailable) are never a focus target.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

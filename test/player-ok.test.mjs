@@ -7,7 +7,7 @@
 // overlay flags only: with an overlay open it was a dead end (no row was
 // focusable), and a focused control was ignored.
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

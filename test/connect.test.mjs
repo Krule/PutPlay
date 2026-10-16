@@ -12,7 +12,7 @@
 //
 // Pure decision + a pure double-press guard, testable in node.
 //
-// Run: npm test
+// Run: pnpm test
 
 import { build } from "esbuild";
 import { test } from "node:test";

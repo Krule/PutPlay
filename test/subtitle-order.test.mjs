@@ -6,7 +6,7 @@
 // OpenSubtitles suggestions last. Auto-selection (pickSubtitleDefault)
 // scans the list in order, so ordering is what makes embedded win.
 //
-// Run: npm test
+// Run: pnpm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

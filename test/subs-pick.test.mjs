@@ -12,7 +12,7 @@
 //     actually has cues. Never auto-select an arbitrary OpenSubtitles match
 //     in another language → returns -1 (off).
 //
-// Run: npm test
+// Run: pnpm test
 
 import { build } from "esbuild";
 import { test } from "node:test";

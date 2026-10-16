@@ -21,7 +21,7 @@
 // Fixtures: test/fixtures/ (byte-stable; regenerate with
 // `python3 test/fixtures/make-zips.py`).
 //
-// Run: npm test
+// Run: pnpm test
 import { build } from "esbuild";
 import { test } from "node:test";
 import assert from "node:assert/strict";

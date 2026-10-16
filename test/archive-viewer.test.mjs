@@ -14,7 +14,7 @@
 //   - Back pops one archive folder first, then leaves the archive
 //   - the e2e fake serves the zip with Range support (the parser depends on it)
 //
-// Run: npm test
+// Run: pnpm test
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
