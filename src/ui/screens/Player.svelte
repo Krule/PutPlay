@@ -23,7 +23,6 @@
     type LoadedSubtitle,
     type SubtitleCue,
   } from "../../putio/subs";
-  import { shouldShowResumePrompt, initialSeekTarget } from "../../putio/resume";
   import { segAction, type Seg } from "../../putio/segments";
   import { lookupSegments } from "../../putio/seglookup";
   import { segCache } from "../../putio/seg-cache";
@@ -149,7 +148,6 @@
     { kind: "hls" as SourceKind, label: "HLS", available: true, hint: "" },
   ];
 
-  let resumePrompt: { from: number } | null = null;
   /** The episode's segments from TheIntroDB (the lookup's result) — the
    *  auto-skip and the offer both act on these windows. */
   let segs: Seg[] = [];
@@ -252,7 +250,7 @@
     if (p.stalls !== undefined) stalls = p.stalls;
   }
 
-  function initEngine(suppressResume: boolean) {
+  function initEngine() {
     const au = currentAuth();
     if (!au || !videoEl) return;
     // A session file change (auto-next / manual step) rebuilds the engine on
@@ -309,8 +307,6 @@
         }
         platform.toast("Finished — press Back to return to your library");
       },
-      // BUG 1: if we'll show the resume prompt, the engine must NOT auto-seek
-      suppressAutoResume: suppressResume,
     });
     engine.setAudioPreference(cfg?.audioLang || null);
     sourceOptions = engine.sourceOptions().map((o) => ({ ...o }));
@@ -350,15 +346,13 @@
   }
 
   /**
-   * The engine follows the session file. The session's FIRST file may raise
-   * the resume prompt (BUG 1: the engine is then built with suppressAutoResume
-   * so it can't race the user's choice). Later files are a deliberate queue
-   * walk — no prompt; the engine's own auto-resume applies (music parity).
+   * The engine follows the session file. There is no resume prompt (L1:
+   * pure auto-resume) — the engine's own auto-resume applies on every open
+   * (a real saved position, near the start), and "start from beginning" is
+   * a seek to 0 on the scrubber.
    */
   $: if (videoEl && file && file.id !== engineFileId) {
-    const first = engineFileId === null;
-    resumePrompt = first && shouldShowResumePrompt(file.start_from) ? { from: file.start_from } : null;
-    initEngine(!!resumePrompt);
+    initEngine();
     ensureSubtitles();
   }
 
@@ -368,11 +362,6 @@
    *  (it re-asserts the remote when we stop re-asserting below). */
   function onBack() {
     if (mode !== "full") return;
-    if (resumePrompt) {
-      resumePrompt = null;
-      engine?.play(); // dismissing the prompt = "just play" (scrim-click parity)
-      return;
-    }
     if (segOfferIdx !== -1) {
       playSegThrough(); // Back = play through (the harmless default)
       return;
@@ -432,7 +421,7 @@
   // FEATURE: segment skip — when the playhead enters a segment window
   // (intro / recap / end credits), the single switch decides: ON = auto-
   // skip to the end (end credits END the episode); OFF = the offer panel,
-  // full mode only, never over an open panel or the resume prompt. A
+  // full mode only, never over an open panel. A
   // settled section (consumed) never fires again. Works docked too — the
   // auto-skip is a seek, the offer is what needs the full screen. The check
   // must be a reactive statement (a bare call would run once at mount and
@@ -445,7 +434,6 @@
       } else if (
         mode === "full" &&
         segOfferIdx === -1 &&
-        !resumePrompt &&
         !overlays.audio &&
         !overlays.subs &&
         !overlays.source
@@ -731,25 +719,6 @@
     });
   }
 
-  function resume() {
-    if (resumePrompt && engine) {
-      // BUG 1: apply the user's choice through the engine's tested seek path
-      // (it locks out auto-resume and defers 0-seeks to metadata).
-      const t = initialSeekTarget(resumePrompt.from, "resume", {
-        currentTime: engine.video.currentTime || 0,
-        duration: duration || 0,
-      });
-      engine.applyInitialSeek(t.time);
-      engine.play();
-    }
-    resumePrompt = null;
-  }
-  function skipResume() {
-    if (engine) engine.applyInitialSeek(0); // the engine waits for metadata itself
-    resumePrompt = null;
-    engine?.play();
-  }
-
   /** The skip for a segment (auto, or the offer's button): the section is
    *  settled either way. End credits (end = null) END the episode — the
    *  normal end-of-video flow (auto-next when enabled, else the finished
@@ -844,7 +813,6 @@
   let sourcePanelEl: HTMLDivElement;
   let audioPanelEl: HTMLDivElement;
   let subsPanelEl: HTMLDivElement;
-  let resumePanelEl: HTMLDivElement;
   let segPanelEl: HTMLDivElement;
   function onBarClick(e: MouseEvent) {
     if (!barEl || !duration) return;
@@ -858,10 +826,6 @@
   function onPanelScrimClick(e: MouseEvent, panelEl: HTMLElement | null) {
     if (!clickIsOutsideClickTarget(e, panelEl)) return;
     closeOverlays();
-    if (resumePrompt) {
-      resumePrompt = null;
-      engine?.play(); // dismissing the resume prompt = "just play"
-    }
     if (segOfferIdx !== -1) playSegThrough(); // dismissing the offer = play through
   }
 
@@ -901,11 +865,11 @@
     if (controlsEl && !baseFocusDone) {
       baseFocusDone = true;
       remote.registerAll(controlsEl);
-      if (!resumePrompt) restoreIfStale(ctlEl("play"));
+      restoreIfStale(ctlEl("play"));
     }
   }
 
-  const wasOpen: Record<"source" | "audio" | "subs" | "resume" | "seg" | "leave" | "err", boolean> = {
+  const wasOpen: Record<"source" | "audio" | "subs" | "seg" | "leave" | "err", boolean> = {
     source: false,
     audio: false,
     subs: false,
@@ -928,7 +892,7 @@
    */
   function panelFocus(
     el: HTMLDivElement | undefined,
-    key: "source" | "audio" | "subs" | "resume" | "seg" | "leave" | "err",
+    key: "source" | "audio" | "subs" | "seg" | "leave" | "err",
     restoreCtl: string,
     mode: "row" | "first" | "safe"
   ): void {
@@ -957,11 +921,10 @@
   $: panelFocus(sourcePanelEl, "source", "source", "row");
   $: panelFocus(audioPanelEl, "audio", "audio", "row");
   $: panelFocus(subsPanelEl, "subs", "subs", "row");
-  // modals: focus the natural action — Resume (primary), "No, keep playing"
-  // (the safe default of the double-Back guard — Back is already the leave
-  // path), Skip (the feature's point — OK takes it), Retry; closing any of
-  // them restores focus to play
-  $: panelFocus(resumePanelEl, "resume", "play", "first");
+  // modals: focus the natural action — "No, keep playing" (the safe default
+  // of the double-Back guard — Back is already the leave path), Skip (the
+  // feature's point — OK takes it), Retry; closing any of them restores
+  // focus to play
   $: panelFocus(segPanelEl, "seg", "play", "first");
   $: panelFocus(errPanelEl, "err", "play", "first");
   // track lists can change or arrive while a panel is open — the new rows are
@@ -974,7 +937,7 @@
   // topmost one (later template branch = higher z); null restores the
   // control bar. Reads the bind refs, so it re-runs post-commit on open/close.
   $: remote.setFocusScope(
-    segPanelEl || resumePanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
+    segPanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
   );
 </script>
 
@@ -1165,21 +1128,6 @@
             <span class="pick-hint" class:ok={subScale === o.v}>{subScale === o.v ? "on" : ""}</span>
           </button>
         {/each}
-      </div>
-    </div>
-  {/if}
-
-  {#if resumePrompt}
-    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, resumePanelEl)}>
-      <div class="panel pick-panel resume-panel" bind:this={resumePanelEl} on:click={(e) => e.stopPropagation()}>
-        <p class="pick-title">Resume?</p>
-        <p class="muted pad" style="text-align:center">
-          You left this at {fmtTime(resumePrompt.from)}
-        </p>
-        <div class="row center">
-          <button class="btn primary" data-focus on:click={resume}>Resume from {fmtTime(resumePrompt.from)}</button>
-          <button class="btn ghost" data-focus on:click={skipResume}>Start from beginning</button>
-        </div>
       </div>
     </div>
   {/if}
@@ -1496,9 +1444,6 @@
     width: 28px;
     height: 28px;
     border-width: 3px;
-  }
-  .resume-panel {
-    width: 640px;
   }
   .seg-panel {
     width: 640px;

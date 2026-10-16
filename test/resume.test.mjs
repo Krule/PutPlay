@@ -1,67 +1,49 @@
-// Unit tests for the resume prompt decision (src/putio/resume.ts).
-// BUG 1: "Start from beginning" used to resume from the last saved position
-// because the engine auto-applied resume (seek to from-5) before the user
-// could choose, and the prompt's seeks were no-ops while duration was 0.
+// Unit tests for the auto-resume decision (src/putio/resume.ts).
 //
-// The decision is extracted as a pure function so it is testable in node:
-//   shouldShowResumePrompt(startFrom) — is there a real saved position?
-//   initialSeekTarget(startFrom, choice) — where to put the playhead, and
-//     whether it may apply immediately (t>0) or must wait for metadata (t=0).
+// Locked decision L1: PURE AUTO-RESUME. There is no prompt and no choice —
+// reopening a file with a saved position simply starts where the viewer
+// left off, and "start from beginning" is a seek to 0 on the scrubber.
+//
+// The engine's ONE rule lives here as a pure function so it is testable in
+// node and shared (the MediaEngine fetches the saved position and applies
+// the seek; this module only decides where):
+//   autoResumeTarget(startFrom, currentTime)
+//     — a real saved position (> RESUME_MIN) with the playhead still near
+//       the start (the file is being OPENED, not replayed) → seek to
+//       saved-lead, clamped at 0. Otherwise: no auto-resume (null).
 //
 // Run: pnpm test
 
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { shouldShowResumePrompt, initialSeekTarget, RESUME_MIN } from "../src/putio/resume.ts";
+import { autoResumeTarget, RESUME_MIN, NEAR_START_MAX, RESUME_LEAD } from "../src/putio/resume.ts";
 
-// ---------------- shouldShowResumePrompt ----------------
-
-test("no saved position (0) → no prompt", () => {
-  assert.equal(shouldShowResumePrompt(0), false);
-  assert.equal(shouldShowResumePrompt(null), false);
-  assert.equal(shouldShowResumePrompt(undefined), false);
+test("constants: the rule's three thresholds are the locked values", () => {
+  assert.equal(RESUME_MIN, 30); // smaller saved positions are "no real position"
+  assert.equal(NEAR_START_MAX, 60); // auto-resume only while still near the start
+  assert.equal(RESUME_LEAD, 5); // a few seconds of context before the saved mark
 });
 
-test("trivially small saved position → no prompt (nothing to skip past)", () => {
-  assert.equal(shouldShowResumePrompt(5), false);
-  assert.equal(shouldShowResumePrompt(29.5), false);
+test("no saved position → no auto-resume", () => {
+  assert.equal(autoResumeTarget(0, 0), null);
+  assert.equal(autoResumeTarget(null, 0), null);
+  assert.equal(autoResumeTarget(undefined, 0), null);
 });
 
-test("real saved position (> RESUME_MIN) → prompt", () => {
-  assert.equal(shouldShowResumePrompt(RESUME_MIN + 1), true);
-  assert.equal(shouldShowResumePrompt(120), true);
-  assert.equal(shouldShowResumePrompt(7123.4), true);
+test("trivially small saved position → no auto-resume (nothing to skip past)", () => {
+  assert.equal(autoResumeTarget(5, 0), null);
+  assert.equal(autoResumeTarget(RESUME_MIN, 0), null); // 30 itself is not "real"
 });
 
-// ---------------- initialSeekTarget ----------------
-
-test("'resume' choice seeks to saved-5 immediately when we're still near the start", () => {
-  const t = initialSeekTarget(120, "resume", { currentTime: 3, duration: 0 });
-  assert.equal(t.time, 115); // 120 - 5
-  assert.equal(t.applyNow, true); // t > 0, valid even before metadata
+test("a real saved position, file still near the start → seek to saved minus the lead", () => {
+  assert.deepEqual(autoResumeTarget(120, 0), { time: 120 - RESUME_LEAD });
+  assert.deepEqual(autoResumeTarget(120, 3), { time: 115 });
+  // the smallest "real" position lands at saved-lead — the 0-clamp in the
+  // implementation is defensive (from > RESUME_MIN keeps saved-lead positive)
+  assert.deepEqual(autoResumeTarget(RESUME_MIN + 1, 0), { time: RESUME_MIN + 1 - RESUME_LEAD });
 });
 
-test("'resume' choice is clamped at 0 for tiny saved positions", () => {
-  const t = initialSeekTarget(3, "resume", { currentTime: 1, duration: 7200 });
-  assert.equal(t.time, 0);
-  assert.equal(t.applyNow, false);
-});
-
-test("'beginning' choice targets 0 — even if we're already sitting at from-5", () => {
-  // The regression: user is at 115 (auto-resumed) and presses "Start from beginning".
-  const t = initialSeekTarget(120, "beginning", { currentTime: 115, duration: 0 });
-  assert.equal(t.time, 0);
-  assert.equal(t.applyNow, false); // 0 seeks need metadata first
-});
-
-test("'beginning' choice works after metadata loaded too", () => {
-  const t = initialSeekTarget(120, "beginning", { currentTime: 5, duration: 7200 });
-  assert.equal(t.time, 0);
-  assert.equal(t.applyNow, false);
-});
-
-test("resume target is deferred when metadata is missing and target is 0", () => {
-  const t = initialSeekTarget(5, "resume", { currentTime: 0, duration: 0 });
-  assert.equal(t.time, 0);
-  assert.equal(t.applyNow, false);
+test("not near the start (a mid-file replay) → no auto-resume", () => {
+  assert.equal(autoResumeTarget(120, NEAR_START_MAX), null); // 60 itself is "not near"
+  assert.equal(autoResumeTarget(120, 600), null);
 });

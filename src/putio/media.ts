@@ -12,7 +12,8 @@ import {
   type NativeAudioTrack,
 } from "./track-merge";
 import { parseHlsAudioRenditions, type HlsAudioRendition } from "./hls-manifest";
-import { freshSkip, freshStartTarget, type Seg } from "./segments";
+import { freshSkip, type Seg } from "./segments";
+import { autoResumeTarget } from "./resume";
 import Hls from "hls.js";
 
 /** The segment lookup is async: when it lands AFTER the metadata, the
@@ -151,13 +152,8 @@ export class MediaEngine {
    *  into the put.io stream preselects this language (MANIFEST_PARSED). */
   private lastAudioLang: string | null = null;
   private pendingSeek: number | null = null;
-  /** true = the "start from beginning" pendingSeek is a user choice (not a 0 from a source switch). */
-  private startFromBeginning = false;
+  /** Auto-resume applied at most once per engine (onMeta may fire again). */
   private resumeApplied = false;
-  /** Once the user has made a resume choice, no auto-resume may override it. */
-  private resumeLocked = false;
-  /** The Player is showing the resume prompt — no engine-side auto-seek. */
-  private suppressAutoResume = false;
 
   constructor(
     video: HTMLVideoElement,
@@ -167,8 +163,6 @@ export class MediaEngine {
       onState?: (s: Partial<MediaState>) => void;
       onSourceChange?: (s: SourceKind) => void;
       onEnded?: () => void;
-      /** The Player is showing the resume prompt — the engine must not auto-seek to the saved position. */
-      suppressAutoResume?: boolean;
     } = {}
   ) {
     this.video = video;
@@ -177,7 +171,6 @@ export class MediaEngine {
     this.onState = opts.onState || (() => {});
     this.onSourceChange = opts.onSourceChange || (() => {});
     this.onEnded = opts.onEnded || (() => {});
-    this.suppressAutoResume = !!opts.suppressAutoResume;
 
     this.bindEvents();
     this.unsub.push(() => this.unbindEvents());
@@ -226,7 +219,6 @@ export class MediaEngine {
     const v = this.v();
     const t = startAt ?? (v.currentTime || 0);
     // remember where we were so the swap doesn't reset to the start
-    this.startFromBeginning = false;
     this.pendingSeek = t || undefined;
     this.recoveredAfterDance = false; // a fresh load is a fresh chance
     this.prefApplied = false; // a new source load re-arms the preference
@@ -287,7 +279,12 @@ export class MediaEngine {
     return this.v().duration || 0;
   }
 
-  /** Resume from put.io start_from if >30s and near the beginning. */
+  /**
+   * Auto-resume (L1: pure — no prompt, no choice): a file that opens with a
+   * real saved position (> RESUME_MIN) while the playhead is still near the
+   * start lands at saved-lead. The rule lives in resume.ts (shared,
+   * tested); the engine only fetches the position and applies the seek.
+   */
   async applyResume(): Promise<number | null> {
     const v = this.v();
     let from = this.file.start_from;
@@ -299,8 +296,9 @@ export class MediaEngine {
         from = 0;
       }
     }
-    if (from && from > 30 && (v.currentTime || 0) < 60) {
-      v.currentTime = Math.max(0, from - 5);
+    const target = autoResumeTarget(from, v.currentTime || 0);
+    if (target) {
+      v.currentTime = target.time;
       return from;
     }
     return null;
@@ -313,39 +311,9 @@ export class MediaEngine {
     const t = v.currentTime;
     if (!t || v.duration < 120) return; // skip live / very short
     if (v.duration && t > v.duration - 30) return; // near end
-    // After the user chose "start from beginning", early positions must not
-    // be re-saved over their explicit choice.
-    if (this.resumeLocked && t < 60) return;
     const { setStartFrom } = apiRef;
     setStartFrom(this.auth, this.file.id, t).catch(() => undefined);
     this.lastSaved = t;
-  }
-
-  /**
-   * Apply the user's resume-prompt choice (BUG 1). Locks the engine against
-   * any further auto-resume and seeks to the chosen target — deferring to
-   * `loadedmetadata` when the target is 0, which the webview drops if set
-   * before metadata exists.
-   */
-  applyInitialSeek(t: number): void {
-    this.resumeLocked = true;
-    this.startFromBeginning = t === 0;
-    const v = this.v();
-    // "start from beginning" = the start of the CONTENT: the configured
-    // intro+recap are skipped. A resume target is the user's explicit mark —
-    // it is applied as-is.
-    const target = t === 0 ? this.freshTarget() : t;
-    if (target > 0) {
-      try {
-        v.currentTime = target;
-      } catch {
-        /* not seekable yet — onMeta applies pendingSeek */
-        this.pendingSeek = target;
-      }
-    } else if (t === 0) {
-      // metadata may still be pending — onMeta re-derives the target
-      this.pendingSeek = 0;
-    }
   }
 
   /* ---------------- hls.js ---------------- */
@@ -639,14 +607,13 @@ export class MediaEngine {
    *  fresh-start skip — and, when the data arrives AFTER the metadata
    *  (the lookup is async), applies that skip late: the playhead is still
    *  near the top, the intro is long, landing it now is the same promise.
-   *  A saved position wins — never (or an explicit "start from beginning",
-   *  which asks for the content's start again). */
+   *  A saved position wins — never. */
   setSegments(segs: Seg[]): void {
     this.segs = segs && segs.length ? segs : null;
     const v = this.v();
     const d = v.duration;
     if (this.finished || !d || !Number.isFinite(d)) return;
-    if ((this.file.start_from || 0) > 0 && !this.startFromBeginning) return; // a resume wins
+    if ((this.file.start_from || 0) > 0) return; // a resume wins
     const fs = freshSkip(this.segs, d, d === Infinity);
     if (fs.target > 0 && v.currentTime < fs.target - FRESH_LATE_GRACE) {
       try {
@@ -656,12 +623,6 @@ export class MediaEngine {
       }
       this.onState({ skippedSeg: fs.label });
     }
-  }
-
-  /** The fresh-start target from the shared rule (0 = start normally). */
-  private freshTarget(): number {
-    const d = this.v().duration;
-    return freshStartTarget(this.segs, d || 0, d === Infinity);
   }
 
   /** The video is over (natural end, or the credits were skipped): no
@@ -937,25 +898,19 @@ export class MediaEngine {
     };
     // A seek remembered before metadata existed (a seek set before the new
     // metadata is silently dropped) is applied here, now that it can work.
+    // (t==0 is a source switch at the start — there is nothing to restore.)
     if (this.pendingSeek != null) {
       const t = this.pendingSeek;
       this.pendingSeek = null;
-      // a source switch remembers "where we were"; t==0 only means "start
-      // from beginning" when the user explicitly chose it
-      if (t > 2 || (t === 0 && this.startFromBeginning)) {
-        // "start from beginning" = the start of the CONTENT: the configured
-        // intro+recap are skipped. Re-derived NOW — the choice may have
-        // predated the metadata (duration was still 0 when it was made).
-        const target = t === 0 && this.startFromBeginning ? this.freshTarget() : t;
-        try { v.currentTime = target; } catch { /* range error — start over */ }
+      if (t > 2) {
+        try { v.currentTime = t; } catch { /* range error — start over */ }
       }
     }
     this.onState(s);
     this.syncTracks();
-    // Auto-resume (BUG 1): only when the Player is NOT showing the resume
-    // prompt and the user has not already chosen a starting point. The
-    // prompt-driven path uses applyInitialSeek instead.
-    if (!this.resumeApplied && !this.suppressAutoResume && !this.resumeLocked) {
+    // Auto-resume (L1: pure — there is no prompt to race): exactly once
+    // per engine, on the first metadata.
+    if (!this.resumeApplied) {
       this.resumeApplied = true;
       this.applyResume().then((from) => {
         if (from) {

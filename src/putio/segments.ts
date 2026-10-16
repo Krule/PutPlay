@@ -57,11 +57,6 @@ export function freshSkip(segs: Seg[] | null | undefined, duration: number, live
   return { target, label: parts.join(" + ") };
 }
 
-/** The fresh-start target (0 = start normally) — the engine's one-liner. */
-export function freshStartTarget(segs: Seg[] | null | undefined, duration: number, live: boolean): number {
-  return freshSkip(segs, duration, live).target;
-}
-
 export type SegAction =
   | { kind: "skip"; index: number; target: number }
   | { kind: "offer"; index: number }

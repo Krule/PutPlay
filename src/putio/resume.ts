@@ -1,14 +1,16 @@
 /**
- * Resume-from-position decisions, extracted as pure functions so the Player
- * (which owns the resume prompt UI) and the MediaEngine (which owns the
- * <video>) can share one tested rule.
+ * Auto-resume decision, extracted as a pure function so the MediaEngine
+ * (which owns the <video> and fetches the saved position) and the tests
+ * share one tested rule.
  *
- * BUG 1 root cause: the engine auto-applied resume on `loadedmetadata`
- * (seek to start_from-5) *before* the user had chosen, and the prompt's
- * buttons sought on a video whose duration was still 0 (a no-op in the
- * webview). Fix: the engine never auto-applies when the Player shows a
- * prompt; the Player computes the target here and applies it through
- * engine.applyInitialSeek once metadata exists.
+ * Locked decision L1: PURE AUTO-RESUME. There is no prompt and no choice —
+ * the player starts where the viewer left off (HIG: avoid asking people if
+ * they want to resume), and "start from beginning" is a seek to 0 on the
+ * scrubber. The engine's only question is WHERE to seek when a file opens.
+ *
+ * (The prompt-era choice functions — shouldShowResumePrompt /
+ * initialSeekTarget — are gone with the prompt; the engine's
+ * applyInitialSeek path was removed with them.)
  */
 
 /** Saved positions smaller than this are treated as "no real position". */
@@ -18,47 +20,21 @@ export const NEAR_START_MAX = 60;
 /** Give the viewer a few seconds of context before the saved mark. */
 export const RESUME_LEAD = 5;
 
-export type ResumeChoice = "resume" | "beginning";
-
-export interface ResumeContext {
-  /** Where the <video> currently sits (0 until metadata). */
-  currentTime: number;
-  /** 0 until metadata has loaded. */
-  duration: number;
-}
-
-export interface ResumeTarget {
-  /** Seconds to seek to. */
-  time: number;
-  /**
-   * true = the seek can apply now (target > 0 works even pre-metadata);
-   * false = must wait for `loadedmetadata` (seeking to 0 before metadata
-   * is silently dropped by the webview).
-   */
-  applyNow: boolean;
-}
-
-/** Is there a saved position worth prompting about? */
-export function shouldShowResumePrompt(startFrom: number | null | undefined): boolean {
-  return !!startFrom && startFrom > RESUME_MIN;
-}
-
 /**
- * Where to put the playhead for the user's choice.
- *  - "resume": from-lead, clamped at 0; applies immediately only if > 0
- *    and we're still near the start (a mid-file "resume" is meaningless).
- *  - "beginning": 0; always waits for metadata.
+ * Where a file OPEN lands when it carries a saved position.
+ *
+ *   - a real saved position (> RESUME_MIN) while the playhead is still
+ *     near the start (the file is being opened, not replayed mid-file) →
+ *     { time: saved - RESUME_LEAD } (the defensive 0-clamp is unreachable:
+ *     saved > RESUME_MIN keeps saved-lead positive)
+ *   - no saved position, a trivial one, or a mid-file position → null
+ *     (start at 0 / start normally)
  */
-export function initialSeekTarget(
-  startFrom: number,
-  choice: ResumeChoice,
-  ctx: ResumeContext
-): ResumeTarget {
-  if (choice === "beginning") {
-    return { time: 0, applyNow: false };
-  }
-  // resume
-  const time = Math.max(0, startFrom - RESUME_LEAD);
-  const nearStart = ctx.currentTime < NEAR_START_MAX;
-  return { time, applyNow: time > 0 && nearStart };
+export function autoResumeTarget(
+  startFrom: number | null | undefined,
+  currentTime: number
+): { time: number } | null {
+  if (!startFrom || startFrom <= RESUME_MIN) return null;
+  if ((currentTime || 0) >= NEAR_START_MAX) return null;
+  return { time: Math.max(0, startFrom - RESUME_LEAD) };
 }

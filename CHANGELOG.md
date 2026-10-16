@@ -32,6 +32,12 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   report, TheIntroDB wins per section; where one misses, another fills
   the gap. A show no source carries simply gets nothing skipped.
 
+### Changed
+- The player no longer asks whether to resume: reopening a file with a
+  saved position simply starts where you left off — no dialog, no
+  waiting. (Starting over from the beginning is a seek on the player's
+  scrubber — part of the full-screen player redesign in this release.)
+
 ## [1.1.3] - 2026-10-15
 
 ### Changed

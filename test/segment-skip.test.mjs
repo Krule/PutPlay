@@ -21,8 +21,9 @@
 //          once (skippedSeg)
 //        - a short file is never skipped past its content
 //        - a saved position WINS (a resume is never yanked)
-//        - "start from beginning" = the start of the CONTENT, even when the
-//          choice predates the metadata
+//        - a seek to 0 (scrubbing back to the start — the "start from
+//          beginning" of the redesigned player) is honored as-is: no
+//          content-start re-derivation, no late fresh-skip
 //        - segment data that arrives AFTER the metadata still applies the
 //          fresh skip (the lookup is async, the intro is long)
 //        - a finished / credits-skipped video saves NO resume position
@@ -878,25 +879,25 @@ test("a saved position WINS over the skip (a resume is never yanked)", async () 
   engine.destroy();
 });
 
-test("'start from beginning' means the start of the CONTENT (after the block)", async () => {
-  // the prompt flow: metadata is up, the user picks "Start from beginning"
-  const { el, engine } = makeEngine({ id: 1, start_from: 300 });
+test("a seek to 0 (scrubbing back to the start) is honored as-is — the intro plays again", async () => {
+  // L1: "start from beginning" is now a plain seek to 0 on the scrubber,
+  // not a content-start re-derivation (the prompt and its applyInitialSeek
+  // path are gone). The user re-enters the intro window — the skip pill
+  // offers to skip it; the engine must NOT re-derive a fresh-start target
+  // on a mid-file seek.
+  const { el, engine, patches } = makeEngine({ id: 1, start_from: 300 });
   engine.setSegments(SEGS_ANIME);
   meta(el, 3600);
-  el.currentTime = 3; // a few seconds of drift before the choice
-  engine.applyInitialSeek(0);
   await tick();
-  assert.equal(el.currentTime, 150, "the beginning = after intro + recap");
-  engine.destroy();
-});
-
-test("'start from beginning' BEFORE metadata is remembered until the metadata lands", async () => {
-  const { el, engine } = makeEngine({ id: 1, start_from: 300 });
-  engine.setSegments(SEGS_ANIME);
-  engine.applyInitialSeek(0); // duration is still 0
-  meta(el, 3600);
+  assert.equal(el.currentTime, 295, "opened at the saved position (from - lead)");
+  el.currentTime = 0; // the scrubber's seek to 0
   await tick();
-  assert.equal(el.currentTime, 150, "the remembered choice lands past the block");
+  assert.equal(el.currentTime, 0, "the 0-land is honored as-is (no freshTarget re-derivation)");
+  assert.equal(
+    patches.filter((p) => p.skippedSeg).length,
+    0,
+    "no late fresh-skip fires on a mid-file seek"
+  );
   engine.destroy();
 });
 
@@ -1006,12 +1007,12 @@ test("the config carries the single switch; the TMDb key is embedded, not config
   assert.ok(!/tmdbKey/.test(src), "no key field in the config shape");
 });
 
-test("the engine derives the fresh target from the shared pure module", () => {
+test("the engine derives the fresh start from the shared pure module", () => {
   const media = read("src/putio/media.ts");
   assert.match(
     media,
-    /import\s*\{[^}]*freshStartTarget[^}]*\}\s*from\s*"\.\/segments"/s,
-    "media.ts must import freshStartTarget from ./segments (one rule, two callers)"
+    /import\s*\{[^}]*freshSkip[^}]*\}\s*from\s*"\.\/segments"/s,
+    "media.ts must import freshSkip from ./segments (the one fresh-start rule lives in the pure module, not the engine)"
   );
   assert.ok(!/SegmentConfig/.test(media), "the fixed-length config type is gone from the engine");
 });

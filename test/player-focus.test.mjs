@@ -32,7 +32,8 @@ test("Player registers its control row with the remote engine", () => {
 test("Player routes every overlay/modal surface through the shared panelFocus lifecycle", () => {
   // leavePanelEl is gone on purpose: Back no longer "leaves" — it docks
   // (lossless), and the only stop is the dock's ✕ (plan §9.1).
-  for (const panel of ["sourcePanelEl", "audioPanelEl", "subsPanelEl", "resumePanelEl", "errPanelEl"]) {
+  // resumePanelEl is gone with the resume prompt (L1: pure auto-resume).
+  for (const panel of ["sourcePanelEl", "audioPanelEl", "subsPanelEl", "segPanelEl", "errPanelEl"]) {
     assert.ok(
       new RegExp(`panelFocus\\(\\s*${panel}`).test(player),
       `${panel} must go through panelFocus() (registerAll + default focus + close-restore) — pick-rows/panel buttons are dead on the 5-way remote otherwise`
