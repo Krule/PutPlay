@@ -27,12 +27,24 @@
   import { lookupSegments } from "../../putio/seglookup";
   import { segCache } from "../../putio/seg-cache";
   import { TMDB_KEY } from "../../putio/tmdb-key";
-  import { controlsPinned } from "../../putio/player-controls";
+  import { surfaceVisibility } from "../../putio/player-surface";
+  import { pillState } from "../../putio/ctx-pill";
   import { clickIsOutsideClickTarget } from "../../putio/overlay";
-  import { progressPct } from "../../putio/progress";
   import { shouldAdviseSmootherSource } from "../../putio/stall";
   import { playerOkAction } from "../../putio/player-ok";
+  import { isRowKey, rowStep } from "../row-nav";
   import { pickerDefaultIndex, rowFocusState } from "../../putio/picker-default";
+  import { buildTitleView } from "../../putio/title-view";
+  import { parseEpisode, parseMovieName } from "../../putio/titles";
+  import { scrubSeek, scrubThumbPct } from "../../putio/scrub";
+  import { buildInfoPanel, type PanelAction } from "../../putio/info-tab";
+  import { upNext } from "../../putio/upnext";
+  import {
+    lookupEpisodeInfo,
+    lookupMovieInfo,
+    type InfoData,
+  } from "../../putio/info-data";
+  import { infoCache } from "../../putio/info-cache";
   import { config, pickSubtitleTrack, saveConfig, SUB_SCALE_OPTIONS } from "../../store/config";
   import {
     video as videoStore,
@@ -89,6 +101,48 @@
   let videoEl: HTMLVideoElement;
   let engine: MediaEngine | null = null;
 
+  // --- the title view (the chrome's identity row) + playback speed ---
+  // The parsed episode (titles.ts) feeds both the title view and the
+  // segment-skip chain; a non-episode file (a movie) is null → the title
+  // view falls back to the file name, no subtitle line (A8).
+  $: episodeParse = parseEpisode(file.name);
+  /** The TMDb-resolved episode title (late enrichment from the info data). */
+  let tmdbEpisodeTitle: string | null = null;
+  $: tv = buildTitleView({
+    name: file.name,
+    episode: episodeParse,
+    live,
+    source,
+    episodeName: tmdbEpisodeTitle,
+  });
+
+  /** Playback speed: the Player owns the state (icon + menu) and re-applies
+   *  it per file; session-level (no persistence in v1). VOD-only. */
+  let speed = 1;
+  const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  $: speedLabel = `${speed}x`;
+
+  // --- the info panel (D-pad down from the transport row) ---
+  // The data arrives LATE (network) — the panel renders the instant it
+  // opens and re-renders when the data lands; a file switch invalidates the
+  // in-flight lookup (req id); nothing ever blocks the first frame.
+  let infoOpen = false;
+  let infoData: InfoData | null = null;
+  let infoReq = 0;
+  $: infoPanel = buildInfoPanel({
+    kind: episodeParse ? "episode" : "movie",
+    synopsis: infoData?.synopsis ?? null,
+    details: infoData
+      ? {
+          rating: infoData.rating,
+          genres: infoData.genres,
+          airDate: infoData.airDate,
+          runtime: infoData.runtime,
+        }
+      : null,
+    upNext: upNext(session?.queue, session?.index ?? 0),
+  });
+
   let a: any = get(auth);
   $: subtitleLanguages = a?.subtitleLanguages || [];
 
@@ -127,10 +181,11 @@
   /** The smoother-stream advice was already given for this file (once, not a nag). */
   let stallAdvised = false;
 
-  let overlays: { audio: boolean; subs: boolean; source: boolean } = {
+  let overlays: { audio: boolean; subs: boolean; source: boolean; speed: boolean } = {
     audio: false,
     subs: false,
     source: false,
+    speed: false,
   };
   let showControls = true;
   let hideTimer: number | null = null;
@@ -154,11 +209,27 @@
   /** Per segment: settled (skipped or played through) — a settled section
    *  never fires its action again. */
   let segConsumed: boolean[] = [];
+  /** The contextual skip pill (ctx-pill): the offer's display state.
+   *  Replaces the old center offer modal — a passive bottom-right surface
+   *  that joins the focus graph (OK = skip), Back settles it (play
+   *  through), and leaving the window settles it too. */
+  $: pill = pillState({
+    segs,
+    time: currentTime,
+    duration,
+    consumed: segConsumed,
+    mode,
+    autoSkip: !!cfg?.skipSegments,
+    panelOpen:
+      overlays.audio ||
+      overlays.subs ||
+      overlays.source ||
+      overlays.speed ||
+      infoOpen,
+  });
   /** The offer panel is up for this segment index (-1 = closed). At most
    *  one offer per section per file — "play through" or a natural end
    *  settles it. */
-  let segOfferIdx = -1;
-
   // ---------------- engine wiring ----------------
 
   /** "Play next in folder" applies: the setting is on AND there is a next
@@ -268,7 +339,6 @@
       startedPlaying = false;
       segs = []; // a new file is a fresh segment decision
       segConsumed = [];
-      segOfferIdx = -1;
     }
     engineFileId = file.id;
     cfg = get(config);
@@ -296,7 +366,6 @@
       },
       onEnded: () => {
         showControls = true;
-        segOfferIdx = -1; // the credits ended under the prompt — nothing left to ask
         engine?.finish(); // the end position saves no resume
         // "Play next in folder" (default on): the session file changes and
         // the reactive below rebuilds the engine on the next video. End of
@@ -309,7 +378,9 @@
       },
     });
     engine.setAudioPreference(cfg?.audioLang || null);
+    engine.setSpeed(speed); // the session's rate applies to the new file too
     sourceOptions = engine.sourceOptions().map((o) => ({ ...o }));
+    loadInfo(); // the info data arrives late; it never blocks the first frame
     engine.setSource(prefSource, undefined, true); // silent: don't pop the source overlay on entry
     startSegLookup();
   }
@@ -360,14 +431,79 @@
    *  media keeps playing in the mini dock and the background screen comes
    *  forward. Docked (mini/micro), the background screen owns Back entirely
    *  (it re-asserts the remote when we stop re-asserting below). */
-  function onBack() {
-    if (mode !== "full") return;
-    if (segOfferIdx !== -1) {
-      playSegThrough(); // Back = play through (the harmless default)
+  /** D-pad down from the transport row: the info panel. */
+  function openInfo(): void {
+    infoOpen = true;
+    wake();
+  }
+
+  function closeInfo(): void {
+    infoOpen = false;
+    wake();
+  }
+
+  /** Load the info data for the current file — non-blocking (the panel
+   *  re-renders on arrival); the req id drops a late response if the file
+   *  changed in flight. Called from initEngine (the file-change point). */
+  function loadInfo(): void {
+    const req = ++infoReq;
+    infoData = null;
+    tmdbEpisodeTitle = null;
+    if (episodeParse) {
+      lookupEpisodeInfo({
+        title: episodeParse.title,
+        year: episodeParse.year,
+        season: episodeParse.season,
+        episode: episodeParse.episode,
+        cache: infoCache,
+      }).then((d) => {
+        if (req !== infoReq) return;
+        infoData = d;
+        tmdbEpisodeTitle = d?.episodeTitle ?? null; // late title-view enrichment
+      });
       return;
     }
-    if (overlays.audio || overlays.subs || overlays.source) {
+    const mv = parseMovieName(file.name);
+    if (!mv) return; // no movie title to query (numbers / scene junk)
+    lookupMovieInfo({ name: mv.title, year: mv.year, cache: infoCache }).then((d) => {
+      if (req !== infoReq) return;
+      infoData = d;
+    });
+  }
+
+  /** Info actions: restart is a SEEK TO 0 (L1 — no fresh-target
+   *  re-derivation); up-next plays the queue's next file (the same path
+   *  as auto-next). */
+  function playFromBeginning(): void {
+    engine?.seek(0);
+    if (paused) engine?.togglePlayPause();
+    closeInfo();
+    wake();
+  }
+
+  function playUpNext(): void {
+    closeInfo();
+    advanceVideo();
+  }
+
+  function runInfoAction(id: PanelAction["id"]): void {
+    if (id === "restart") playFromBeginning();
+    else if (id === "upnext") playUpNext();
+  }
+
+  function onBack() {
+    if (mode !== "full") return;
+    // Back chain: open menu → info panel → skip pill → dock (mini)
+    if (overlays.audio || overlays.subs || overlays.source || overlays.speed) {
       closeOverlays();
+      return;
+    }
+    if (infoOpen) {
+      closeInfo();
+      return;
+    }
+    if (pill) {
+      playSegThrough(pill.index); // Back = play through (the harmless default)
       return;
     }
     setVideoMode("mini");
@@ -380,11 +516,13 @@
     endVideoSession();
   }
 
+  // The user's keymap (LG remote): red = playback source, green = audio
+  // track, yellow = subtitles, blue = play/pause.
   function onColor(c: "blue" | "green" | "red" | "yellow") {
     if (c === "blue") engine?.togglePlayPause();
-    if (c === "green") toggleOverlay("source");
-    if (c === "yellow") toggleOverlay("audio");
-    if (c === "red") {
+    if (c === "red") toggleOverlay("source");
+    if (c === "green") toggleOverlay("audio");
+    if (c === "yellow") {
       if (overlays.subs) toggleOverlay("subs");
       else {
         toggleOverlay("subs");
@@ -412,34 +550,28 @@
 
   // Controls stay up while the user is looking at something (paused, error,
   // or a panel open); otherwise they hide 4s after the last activity.
-  $: pinned = controlsPinned({
+  // The spinner/pause-echo rules (A5/A6) come from the same pure decision.
+  $: surface = surfaceVisibility({
     paused,
+    buffering,
     error: !!error,
-    panelOpen: overlays.audio || overlays.subs || overlays.source || segOfferIdx !== -1,
+    menuOpen: overlays.audio || overlays.subs || overlays.source || overlays.speed,
+    infoOpen,
   });
+  $: pinned = surface.pinned;
 
   // FEATURE: segment skip — when the playhead enters a segment window
-  // (intro / recap / end credits), the single switch decides: ON = auto-
-  // skip to the end (end credits END the episode); OFF = the offer panel,
-  // full mode only, never over an open panel. A
-  // settled section (consumed) never fires again. Works docked too — the
-  // auto-skip is a seek, the offer is what needs the full screen. The check
-  // must be a reactive statement (a bare call would run once at mount and
-  // freeze).
+  // (intro / recap / end credits), the auto-skip switch ON skips straight
+  // to the end (end credits END the episode). OFF: the contextual PILL
+  // (the $: pill reactive above — full mode only, never over an open
+  // panel) is the offer. A settled section (consumed) never fires again.
+  // Works docked too — the auto-skip is a seek, the pill is what needs the
+  // full screen. The check must be a reactive statement (a bare call would
+  // run once at mount and freeze).
   $: if (segs.length && currentTime > 0 && !paused && !live) {
     const action = segAction(segs, currentTime, duration, segConsumed, !!cfg?.skipSegments, live);
-    if (action) {
-      if (action.kind === "skip" || action.kind === "credits") {
-        skipSegNow(action.index);
-      } else if (
-        mode === "full" &&
-        segOfferIdx === -1 &&
-        !overlays.audio &&
-        !overlays.subs &&
-        !overlays.source
-      ) {
-        segOfferIdx = action.index;
-      }
+    if (action && (action.kind === "skip" || action.kind === "credits")) {
+      skipSegNow(action.index);
     }
   }
 
@@ -493,11 +625,12 @@
   /** Panel toggling with sibling-closing: opening one panel never leaves
    *  another open — two stacked .center-panels break D-pad focus and make
    *  the top panel's rows unreachable. */
-  function toggleOverlay(which: "audio" | "subs" | "source") {
+  function toggleOverlay(which: "audio" | "subs" | "source" | "speed") {
     const wasOpen = overlays[which];
     overlays.audio = false;
     overlays.subs = false;
     overlays.source = false;
+    overlays.speed = false;
     if (!wasOpen) overlays[which] = true;
   }
 
@@ -611,6 +744,7 @@
     overlays.audio = false;
     overlays.subs = false;
     overlays.source = false;
+    overlays.speed = false;
   }
 
   function onSubPick(i: number) {
@@ -648,6 +782,25 @@
     engine?.setSource(kind, t);
     closeOverlays();
     platform.toast(`Source: ${kind === "original" ? "original file" : kind === "mp4" ? "put.io MP4" : "HLS"}`);
+  }
+
+  /** A picked rate: state + engine (setSpeed keeps pitch), close the menu. */
+  function pickSpeed(r: number): void {
+    speed = r;
+    engine?.setSpeed(r);
+    closeOverlays();
+  }
+
+  /** Menu row label: the rate as a multiple (1 → "1×"). */
+  function speedName(r: number): string {
+    return `${r}×`;
+  }
+
+  /** Menu row hint: only the extremes get one (the middle is self-evident). */
+  function speedHint(r: number): string {
+    if (r < 1) return "slower";
+    if (r > 1) return "faster";
+    return "normal";
   }
 
   // ---------------- lifecycle ----------------
@@ -702,7 +855,49 @@
       onFastForward,
       onRewind,
       onStop,
-      onNavigate: () => wake(),
+      onNavigate: (dir) => {
+        wake();
+        const a = remote.activeEl;
+        if (a && a.isConnected) {
+          const ctl = a.getAttribute("data-ctl");
+          // ←/→ on the focused bar = seek (not a spatial move)
+          if ((dir === "left" || dir === "right") && ctl === "scrub") {
+            onScrub(dir);
+            return true;
+          }
+          // ←/→ on the icon/transport ROW is row-local (CONSUMED): the
+          // adjacent key, the scrub bar at the row's live end, a no-op at
+          // the dead ends — the spatial engine's wide-bar geometry gets
+          // it wrong (row-nav.ts; test/row-nav.test.mjs)
+          if ((dir === "left" || dir === "right") && isRowKey(ctl)) {
+            const target = rowStep(ctl, dir);
+            if (target) {
+              const el = ctlEl(target);
+              if (el) remote.focusEl(el);
+            }
+            return true;
+          }
+          // The vertical corridor (plan §2.9: transport → up → scrubber →
+          // down → transport) is CONSUMED, not spatial: the transport sits
+          // bottom-left (x≈154–340) while the bar's center is mid-screen
+          // (x≈640) — outside the engine's ±95% column band, so "up from
+          // transport" would find nothing, and "down from the bar" would
+          // pick the wrong button by column distance.
+          if (dir === "up" && (ctl === "rewind" || ctl === "play" || ctl === "forward")) {
+            remote.focusEl(ctlEl("scrub"));
+            return true;
+          }
+          if (dir === "down" && ctl === "scrub") {
+            remote.focusEl(ctlEl("play"));
+            return true;
+          }
+          // down from the transport row = the info panel
+          if (dir === "down" && (ctl === "rewind" || ctl === "play" || ctl === "forward")) {
+            openInfo();
+            return true;
+          }
+        }
+      },
       onOK: () => {
         // Same contract as the Library: a spatially focused control wins
         // (cbtns, pick-rows, panel buttons); only with nothing focused does
@@ -729,8 +924,7 @@
     const seg = segs[idx];
     if (!seg) return;
     segConsumed = segConsumed.slice();
-    segConsumed[idx] = true;
-    segOfferIdx = -1;
+    segConsumed[idx] = true; // settles the pill too (consumed → pillState null)
     if (seg.end === null) {
       if (engine) {
         engine.finish();
@@ -748,18 +942,12 @@
     engine?.seek(seg.end);
   }
 
-  /** The offer's "Play through": settle this section — no re-offer. */
-  function playSegThrough(): void {
-    if (segOfferIdx !== -1) {
+  /** The pill's "play through" (Back): settle this section — no re-offer. */
+  function playSegThrough(idx: number): void {
+    if (idx >= 0 && idx < segs.length) {
       segConsumed = segConsumed.slice();
-      segConsumed[segOfferIdx] = true;
+      segConsumed[idx] = true;
     }
-    segOfferIdx = -1;
-  }
-
-  /** "Intro" / "Recap" / "End credits" for the offer title. */
-  function segTitle(t: string): string {
-    return t === "credits" ? "End credits" : t.charAt(0).toUpperCase() + t.slice(1);
   }
 
   onDestroy(() => {
@@ -779,14 +967,13 @@
     subtitles = [];
   });
 
-  // progress bar interaction (remote: left/right while focused scrubs)
-  function onScrubKey(e: KeyboardEvent) {
-    const code = (e as any).keyCode as number;
-    if (code === 37 || code === 39) {
-      const d = (code === 39 ? 10 : -10);
-      if (engine) engine.skip(d);
-      wake();
-    }
+  /** D-pad ←/→ while the SCRUBBER is focused: a real ±10s seek (the tested
+   *  scrubSeek rule — clamped to [0, dur], live-safe). Consumed in
+   *  onNavigate (return true), so the spatial engine doesn't also move. */
+  function onScrub(dir: "left" | "right"): void {
+    const t = scrubSeek(currentTime, duration, dir === "right" ? 1 : -1, 10);
+    if (t !== currentTime && engine) engine.seek(t);
+    wake();
   }
 
   // FEATURE: subtitle overlay scale from the config (1 = default 30px)
@@ -801,11 +988,14 @@
   // Tracked reactive value: Svelte re-applies the width every time the
   // currentTime/duration pair changes. (Binding a bare function call here
   // would freeze the bar at its mount-time value.)
-  $: barPct = progressPct(currentTime, duration);
-  // Buffer bar: how far ahead data is buffered (0 for live — progressPct
+  $: barPct = scrubThumbPct(currentTime, duration);
+  // Buffer bar: how far ahead data is buffered (0 for live — scrubThumbPct
   // already returns 0 for an ∞ duration). Plain reactive value: Svelte
   // style bindings only track identifiers, never bare calls.
-  $: bufferPct = progressPct(bufferEnd, duration);
+  $: bufferPct = scrubThumbPct(bufferEnd, duration);
+  // The bubble sits on the INSET track (20px off both hit-area ends), so
+  // its position is the same fraction of (100% − 40px) plus the 20px inset.
+  $: bubbleLeft = `calc(20px + (100% - 40px) * ${barPct / 100})`;
 
   let barEl: HTMLDivElement;
   // modal panels (BUG 2: side-click dismiss needs the panel rect)
@@ -813,11 +1003,15 @@
   let sourcePanelEl: HTMLDivElement;
   let audioPanelEl: HTMLDivElement;
   let subsPanelEl: HTMLDivElement;
-  let segPanelEl: HTMLDivElement;
+  let speedPanelEl: HTMLDivElement;
+  let infoPanelEl: HTMLDivElement;
+  let pillEl: HTMLDivElement;
   function onBarClick(e: MouseEvent) {
     if (!barEl || !duration) return;
     const r = barEl.getBoundingClientRect();
-    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    // the visible track keeps 20px off both hit-area ends — map the click
+    // against the TRACK, so the thumb and the click land on the same spot
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left - 20) / (r.width - 40)));
     engine?.seek(f * duration);
   }
 
@@ -826,7 +1020,6 @@
   function onPanelScrimClick(e: MouseEvent, panelEl: HTMLElement | null) {
     if (!clickIsOutsideClickTarget(e, panelEl)) return;
     closeOverlays();
-    if (segOfferIdx !== -1) playSegThrough(); // dismissing the offer = play through
   }
 
   // ---------------- 5-way remote focus wiring ----------------
@@ -838,6 +1031,7 @@
   // the engine garbage-collects detached nodes in candidates()).
 
   let controlsEl: HTMLDivElement;
+  let playerRootEl: HTMLDivElement;
   let baseFocusDone = false;
 
   function ctlEl(name: string): HTMLElement | null {
@@ -865,17 +1059,21 @@
     if (controlsEl && !baseFocusDone) {
       baseFocusDone = true;
       remote.registerAll(controlsEl);
-      restoreIfStale(ctlEl("play"));
+      // FULL: the video covers the background screen, so any focus still
+      // sitting on it is invisible — the player takes the remote outright
+      // (play button: the single D-pad target the user can act on).
+      // Docked: the background is live, so only restore if focus is stale.
+      if (mode === "full") remote.focusEl(ctlEl("play"));
+      else restoreIfStale(ctlEl("play"));
     }
   }
 
-  const wasOpen: Record<"source" | "audio" | "subs" | "seg" | "leave" | "err", boolean> = {
+  const wasOpen: Record<"source" | "audio" | "subs" | "speed" | "info" | "err", boolean> = {
     source: false,
     audio: false,
     subs: false,
-    resume: false,
-    seg: false,
-    leave: false,
+    speed: false,
+    info: false,
     err: false,
   };
 
@@ -892,9 +1090,9 @@
    */
   function panelFocus(
     el: HTMLDivElement | undefined,
-    key: "source" | "audio" | "subs" | "seg" | "leave" | "err",
+    key: "source" | "audio" | "subs" | "speed" | "info" | "err",
     restoreCtl: string,
-    mode: "row" | "first" | "safe"
+    mode: "row" | "first"
   ): void {
     if (!el) {
       if (wasOpen[key]) {
@@ -906,13 +1104,7 @@
     const rows = remote.registerAll(el);
     if (!focusInPanel(el)) {
       const idx =
-        mode === "row"
-          ? pickerDefaultIndex(rows.map((r) => rowFocusState(r)))
-          : mode === "safe"
-          ? rows.length > 1
-            ? 1
-            : 0
-          : 0;
+        mode === "row" ? pickerDefaultIndex(rows.map((r) => rowFocusState(r))) : 0;
       if (idx >= 0 && rows[idx]) remote.focusEl(rows[idx]);
     }
     wasOpen[key] = true;
@@ -921,27 +1113,41 @@
   $: panelFocus(sourcePanelEl, "source", "source", "row");
   $: panelFocus(audioPanelEl, "audio", "audio", "row");
   $: panelFocus(subsPanelEl, "subs", "subs", "row");
-  // modals: focus the natural action — "No, keep playing" (the safe default
-  // of the double-Back guard — Back is already the leave path), Skip (the
-  // feature's point — OK takes it), Retry; closing any of them restores
-  // focus to play
-  $: panelFocus(segPanelEl, "seg", "play", "first");
+  $: panelFocus(speedPanelEl, "speed", "speed", "row");
+  // the info panel is NOT scope-trapped (arrows leave it spatially, up to
+  // the transport) — but it follows the same open/close focus lifecycle:
+  // open → the first action; close → restore the transport
+  $: panelFocus(infoPanelEl, "info", "play", "first");
   $: panelFocus(errPanelEl, "err", "play", "first");
   // track lists can change or arrive while a panel is open — the new rows are
   // committed to the DOM after this flush's reactive phase, so re-scan on the
   // next frame (registerAll is idempotent; the engine GCs the old rows)
   $: if (audioPanelEl && audioPanelRows.length) requestAnimationFrame(() => remote.registerAll(audioPanelEl));
   $: if (subsPanelEl && subtitles.length) requestAnimationFrame(() => remote.registerAll(subsPanelEl));
+  // the pill appears/disappears with the section window — register it when
+  // it lands (idempotent; the engine GCs it on the next press once gone).
+  // It is a focus target but never AUTO-focused (the passive offer).
+  $: if (pillEl) tick().then(() => remote.registerAll(pillEl));
 
   // D-pad focus trap: while any panel is open, arrows stay inside the
-  // topmost one (later template branch = higher z); null restores the
-  // control bar. Reads the bind refs, so it re-runs post-commit on open/close.
+  // topmost one (later template branch = higher z). FULL mode scopes the
+  // graph to the player ROOT — the video covers the (still-mounted)
+  // background screen, so its tiles must not be D-pad candidates (a walk
+  // off the chrome would drop focus into the invisible library). Docked
+  // (mini/micro) passes null: the docked surface and the background are
+  // both live, so the whole screen is one graph again. Reads the bind
+  // refs, so it re-runs post-commit on open/close and on mode change.
   $: remote.setFocusScope(
-    segPanelEl || subsPanelEl || audioPanelEl || sourcePanelEl || errPanelEl || null
+    speedPanelEl ||
+      subsPanelEl ||
+      audioPanelEl ||
+      sourcePanelEl ||
+      errPanelEl ||
+      (mode === "full" ? playerRootEl : null)
   );
 </script>
 
-<div class="player" class:full={mode === "full"} class:docked={mode !== "full"} class:micro={mode === "micro"} class:dimmed={dimmed && mode === "micro"} on:mousemove={wake}>
+<div bind:this={playerRootEl} class="player" class:full={mode === "full"} class:docked={mode !== "full"} class:micro={mode === "micro"} class:dimmed={dimmed && mode === "micro"} on:mousemove={wake}>
   <video
     bind:this={videoEl}
     class="video"
@@ -953,59 +1159,192 @@
       engine?.togglePlayPause();
       wake();
     }}
-    on:keydown={onScrubKey}
   ></video>
 
 
   {#if mode === "full" && activeSub >= 0 && source !== "hls" && subText}
-    <div class="subs" class:show={!!subText} style="font-size:{subFontSize}px">{subText}</div>
+    <div class="subs-cues" class:show={!!subText} style="font-size:{subFontSize}px">{subText}</div>
   {/if}
 
   {#if mode === "full"}
-  <!-- ================= bottom control bar ================= -->
+  <!-- ================= the chrome (TV redesign): title row / scrub row / transport row ================= -->
   <div class="controls" bind:this={controlsEl} class:visible={showControls || pinned} class:dim={paused ? "" : "dim"}>
-    <div class="title-line">
-      <h1 class="title">{file.name}</h1>
-      {#if live}<span class="badge accent">LIVE</span>{/if}
-      {#if source === "mp4"}<span class="badge">MP4</span>{/if}
-      {#if source === "hls"}<span class="badge">HLS</span>{/if}
+    <!-- title row: the file's identity left, the trailing icon buttons right (ABOVE the bar) -->
+    <div class="title-row">
+      <div class="title-block">
+        <div class="title-line">
+          <span class="title">{tv.title}</span>
+          {#each tv.badges as b, bi}
+            <span class="badge" class:accent={b.accent}>{b.label}</span>
+          {/each}
+        </div>
+        {#if tv.subtitle}
+          <div class="subtitle">{tv.subtitle}</div>
+        {/if}
+      </div>
+      <span class="spacer"></span>
+      <button class="icbtn" data-focus data-ctl="source" on:click={() => toggleOverlay("source")} class:sel={overlays.source}>
+        <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+          <rect x="4" y="7.6" width="12" height="2.6" rx="1.3"/>
+          <polygon points="15,5.4 20,8.9 15,12.4"/>
+          <rect x="8" y="13.8" width="12" height="2.6" rx="1.3"/>
+          <polygon points="9,11.6 4,15.1 9,18.6"/>
+        </svg>
+        <span class="tip">Source · <span class="val">{source === "original" ? "original" : source}</span></span>
+      </button>
+      <button class="icbtn" data-focus data-ctl="audio" on:click={() => toggleOverlay("audio")} class:sel={overlays.audio}>
+        <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+          <path d="M4 9.4v5.2h3.2L12.4 19V5L7.2 9.4H4z"/>
+          <path d="M15.5 9.3a4.2 4.2 0 0 1 0 5.4" fill="none" stroke="#f2f5f9" stroke-width="2" stroke-linecap="round"/>
+          <path d="M18.2 7.2a8 8 0 0 1 0 9.6" fill="none" stroke="#f2f5f9" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span class="tip">Audio · <span class="val">{audioButtonLabel}</span></span>
+      </button>
+      <button
+        class="icbtn"
+        data-focus
+        data-ctl="subs"
+        on:click={() => { if (overlays.subs) toggleOverlay("subs"); else { toggleOverlay("subs"); ensureSubtitles(); } }}
+        class:sel={overlays.subs}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f2f5f9" stroke-width="2" aria-hidden="true">
+          <rect x="3" y="6" width="18" height="12" rx="3"/>
+          <text x="12" y="15.4" font-size="8" font-weight="700" text-anchor="middle" fill="#f2f5f9" stroke="none" font-family="inherit">CC</text>
+        </svg>
+        <span class="tip">CC · <span class="val">{source === "hls" ? (hlsSub === -1 ? "off" : hlsSubTracks[hlsSub]?.label || "on") : (activeSub === -1 ? "off" : subtitles[activeSub]?.language || "off")}</span></span>
+      </button>
+      {#if !live}
+      <button class="icbtn" data-focus data-ctl="speed" on:click={() => toggleOverlay("speed")} class:sel={overlays.speed}>
+        <span class="rate">{speedLabel}</span>
+        <span class="tip">Speed · <span class="val">{speedLabel}</span></span>
+      </button>
+      {/if}
     </div>
 
-    <div class="progress-row">
+    <!-- scrub row: the focusable scrubber (D-pad ←/±10s while focused) -->
+    <div class="scrub-row">
       <span class="time">{fmtTime(currentTime)}</span>
-      <div class="bar" bind:this={barEl} on:click={onBarClick}>
+      <div class="bar" data-focus data-ctl="scrub" bind:this={barEl} on:click={onBarClick}>
         <div class="bar-track">
           <div class="bar-buffer" style="width: {bufferPct}%"></div>
           <div class="bar-fill" style="width: {barPct}%"></div>
+          <div class="thumb" style="left: {barPct}%"></div>
         </div>
+        <div class="bubble" style="left: {bubbleLeft}">{fmtTime(currentTime)}</div>
       </div>
-      <span class="time">{live ? "" : fmtTime(duration)}</span>
+      <span class="time">{live ? "LIVE" : fmtTime(duration)}</span>
     </div>
 
-    <div class="button-row">
-      <button class="cbtn" data-focus data-ctl="rewind" on:click={() => { engine?.skip(-10); wake(); }}>
-        <span class="ico">«10</span>
+    <!-- transport row: transport only -->
+    <div class="transport-row">
+      <button class="tbtn" data-focus data-ctl="rewind" on:click={onRewind}>
+        <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+          <path d="M12 4a8 8 0 1 0 8 8" fill="none" stroke="#f2f5f9" stroke-width="2.2"/>
+          <polygon points="12.8,1.2 12.8,6.8 8.2,4"/>
+          <text x="12" y="15.6" font-size="8.5" font-weight="700" text-anchor="middle" font-family="inherit">10</text>
+        </svg>
       </button>
-      <button class="cbtn play" data-focus data-ctl="play" on:click={() => { engine?.togglePlayPause(); wake(); }}>
-        <span class="ico">{paused ? "▶" : "❚❚"}</span>
+      <button class="tbtn play" data-focus data-ctl="play" on:click={() => { engine?.togglePlayPause(); wake(); }}>
+        {#if paused}
+        <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+          <polygon points="8,5.2 18.8,12 8,18.8"/>
+        </svg>
+        {:else}
+        <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+          <rect x="7" y="5.2" width="3.6" height="13.6" rx="1.2"/>
+          <rect x="13.4" y="5.2" width="3.6" height="13.6" rx="1.2"/>
+        </svg>
+        {/if}
       </button>
-      <button class="cbtn" data-focus data-ctl="forward" on:click={() => { engine?.skip(30); wake(); }}>
-        <span class="ico">30»</span>
-      </button>
-
-      <span class="spacer"></span>
-
-      <button class="cbtn text" data-focus data-ctl="source" on:click={() => toggleOverlay("source")} class:sel={overlays.source}>
-        Source <span class="sub">{source === "original" ? "original" : source}</span>
-      </button>
-      <button class="cbtn text" data-focus data-ctl="audio" on:click={() => toggleOverlay("audio")} class:sel={overlays.audio}>
-        Audio <span class="sub">{audioButtonLabel}</span>
-      </button>
-      <button class="cbtn text" data-focus data-ctl="subs" on:click={() => { if (overlays.subs) toggleOverlay("subs"); else { toggleOverlay("subs"); ensureSubtitles(); } }} class:sel={overlays.subs}>
-        Subtitles <span class="sub">{source === "hls" ? (hlsSub === -1 ? "off" : hlsSubTracks[hlsSub]?.label || "on") : (activeSub === -1 ? "off" : subtitles[activeSub]?.language || "off")}</span>
+      <button class="tbtn" data-focus data-ctl="forward" on:click={onFastForward}>
+        <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+          <path d="M12 4a8 8 0 1 1-8 8" fill="none" stroke="#f2f5f9" stroke-width="2.2"/>
+          <polygon points="11.2,1.2 11.2,6.8 15.8,4"/>
+          <text x="12" y="15.6" font-size="8" font-weight="700" text-anchor="middle" font-family="inherit">30</text>
+        </svg>
       </button>
     </div>
   </div>
+
+  <!-- the contextual skip pill: a passive bottom-right surface that stays
+       when the chrome auto-hides (it does NOT follow showControls). OK =
+       skip; Back = play through; leaving the window settles it. -->
+  {#if pill}
+  <div class="pill" bind:this={pillEl} data-focus data-ctl="skip" on:click={() => skipSegNow(pill.index)}>
+    <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+      <polygon points="5,5 5,19 15.5,12"/>
+      <rect x="18" y="5" width="3" height="14" rx="1.5"/>
+    </svg>
+    <span class="pill-label">{pill.label}</span>
+  </div>
+  {/if}
+
+  <!-- the buffering spinner (A6: never while paused) — bottom-center,
+       ~120px above the transport row; not a focus target. -->
+  {#if surface.spinner}
+  <div class="buf" aria-hidden="true">
+    <div class="spinner"></div>
+  </div>
+  {/if}
+
+  <!-- the center pause-echo (A5: never on error) — a pointer-only 96px
+       play button, dead center; the transport play is the D-pad target. -->
+  {#if surface.pauseEcho}
+  <div class="pause-echo" on:click={() => { engine?.togglePlayPause(); wake(); }} role="img" aria-label="Paused — press to play">
+    <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+      <polygon points="8,5.2 18.8,12 8,18.8"/>
+    </svg>
+  </div>
+  {/if}
+
+  <!-- ================= the info panel (D-pad down from the transport row) ================= -->
+  {#if infoOpen}
+  <div class="info" bind:this={infoPanelEl}>
+    {#if infoData?.thumbUrl}
+      <img class="info-thumb" src={infoData.thumbUrl} alt="" />
+    {:else}
+      <div class="info-thumb" class:movie={!episodeParse} aria-hidden="true"></div>
+    {/if}
+    <div class="info-text">
+      {#if infoPanel.synopsis}
+        <div class="info-syn">{infoPanel.synopsis}</div>
+      {/if}
+      {#if infoPanel.details.length}
+        <div class="info-details">
+          {#if infoData?.rating != null}
+            <svg class="d-star" viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+              <path d="M12 2.6l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.2l-5.72 3-1.1-6.37-4.63-4.5 6.4-.93z"/>
+            </svg>
+          {/if}
+          {#each infoPanel.details as part, pi (part)}
+            {#if pi > 0}<span class="sep">·</span>{/if}
+            <span>{part}</span>
+          {/each}
+        </div>
+      {/if}
+      <div class="info-actions">
+        {#each infoPanel.actions as act, ai (act.id)}
+          <button class="abtn" data-focus on:click={() => runInfoAction(act.id)}>
+            {#if act.id === "restart"}
+              <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+                <rect x="4" y="5" width="3" height="14" rx="1.5"/>
+                <polygon points="20,5 20,19 9.5,12"/>
+              </svg>
+              {act.label}
+            {:else}
+              <svg viewBox="0 0 24 24" fill="#f2f5f9" aria-hidden="true">
+                <polygon points="5,5 5,19 15.5,12"/>
+                <rect x="18" y="5" width="3" height="14" rx="1.5"/>
+              </svg>
+              <span>{act.label.split(" · ")[0]}</span>
+              <span class="val2">{act.label.split(" · ")[1]}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  </div>
+  {/if}
 
   <!-- ================= overlays ================= -->
 
@@ -1025,137 +1364,124 @@
   {/if}
 
   {#if overlays.source}
-    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, sourcePanelEl)}>
-      <div class="panel pick-panel" data-focus="" bind:this={sourcePanelEl} on:click={(e) => e.stopPropagation()}>
-        <p class="pick-title">Playback source</p>
-        {#each sourceOptions as opt (opt.kind)}
-          <button
-            class="pick-row"
-            class:sel={source === opt.kind}
-            class:disabled={!opt.available}
-            data-focus
-            data-focus-disabled={!opt.available ? "true" : ""}
-            on:click={() => opt.available && onSourcePick(opt.kind)}
-          >
-            <span class="pick-label">{opt.label}</span>
-            <span class="pick-hint" class:ok={source === opt.kind}>
-              {source === opt.kind ? "now playing" : opt.available ? opt.hint : opt.hint || "unavailable"}
-            </span>
-          </button>
-        {/each}
-      </div>
+    <div class="menu source" bind:this={sourcePanelEl}>
+      <p class="menu-title">Playback source</p>
+      {#each sourceOptions as opt (opt.kind)}
+        <button
+          class="row"
+          class:sel={source === opt.kind}
+          class:disabled={!opt.available}
+          data-focus
+          data-focus-disabled={!opt.available ? "true" : ""}
+          on:click={() => opt.available && onSourcePick(opt.kind)}
+        >
+          <span class="label">{#if source === opt.kind}<span class="dot"></span>{/if}{opt.label}</span>
+          <span class="hint" class:ok={source === opt.kind}>
+            {source === opt.kind ? "now playing" : opt.available ? opt.hint : opt.hint || "unavailable"}
+          </span>
+        </button>
+      {/each}
     </div>
   {/if}
 
   {#if overlays.audio}
-    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, audioPanelEl)}>
-      <div class="panel pick-panel" bind:this={audioPanelEl} on:click={(e) => e.stopPropagation()}>
-        <p class="pick-title">Audio track</p>
-        {#if audioPanelRows.length === 0}
-          <p class="muted pad">No audio track information for this file.</p>
-        {:else}
-          <p class="muted small pad pick-sub">
-            {audioPanelRows.length === 1
-              ? `1 audio track in this file${audioPanelRows[0].codec ? ` (${audioPanelRows[0].codec.toUpperCase()})` : ""}`
-              : `${audioPanelRows.length} audio tracks in this file`}
-          </p>
-          {#each audioPanelRows as row (row.key)}
-            <button
-              class="pick-row"
-              class:sel={audioActiveKey === row.key}
-              data-focus
-              data-focus-disabled={audioSwitching ? "true" : ""}
-              on:click={() => !audioSwitching && onAudioPick(row)}
-            >
-              <span class="pick-label">{row.label}</span>
-              <span class="pick-hint" class:ok={audioActiveKey === row.key}>
-                {panelRowHint(row, {
-                  active: audioActiveKey === row.key,
-                  switching: audioSwitching && pendingAudioPick === row.key,
-                })}
-              </span>
-            </button>
-          {/each}
-        {/if}
-      </div>
+    <div class="menu audio" bind:this={audioPanelEl}>
+      <p class="menu-title">Audio track</p>
+      {#if audioPanelRows.length === 0}
+        <p class="muted pad">No audio track information for this file.</p>
+      {:else}
+        <p class="muted small pad menu-sub">
+          {audioPanelRows.length === 1
+            ? `1 audio track in this file${audioPanelRows[0].codec ? ` (${audioPanelRows[0].codec.toUpperCase()})` : ""}`
+            : `${audioPanelRows.length} audio tracks in this file`}
+        </p>
+        {#each audioPanelRows as row (row.key)}
+          <button
+            class="row"
+            class:sel={audioActiveKey === row.key}
+            data-focus
+            data-focus-disabled={audioSwitching ? "true" : ""}
+            on:click={() => !audioSwitching && onAudioPick(row)}
+          >
+            <span class="label">{#if audioActiveKey === row.key}<span class="dot"></span>{/if}{row.label}</span>
+            <span class="hint" class:ok={audioActiveKey === row.key}>
+              {panelRowHint(row, {
+                active: audioActiveKey === row.key,
+                switching: audioSwitching && pendingAudioPick === row.key,
+              })}
+            </span>
+          </button>
+        {/each}
+      {/if}
     </div>
   {/if}
 
   {#if overlays.subs}
-    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, subsPanelEl)}>
-      <div class="panel pick-panel" bind:this={subsPanelEl} on:click={(e) => e.stopPropagation()}>
-        <p class="pick-title">Subtitles</p>
-        {#if source === "hls"}
-          <button class="pick-row" class:sel={hlsSub === -1} data-focus on:click={() => onSubPick(-1)}>
-            <span class="pick-label">Off</span>
-            <span class="pick-hint" class:ok={hlsSub === -1}>{hlsSub === -1 ? "on" : ""}</span>
-          </button>
-          {#each hlsSubTracks as t, i (t.id)}
-            <button class="pick-row" class:sel={hlsSub === i} data-focus on:click={() => onSubPick(i)}>
-              <span class="pick-label">{t.label}</span>
-              <span class="pick-hint" class:ok={hlsSub === i}>{hlsSub === i ? "on" : ""}</span>
-            </button>
-          {/each}
-          {#if hlsSubTracks.length === 0}
-            <p class="muted pad">No subtitle tracks in this stream.</p>
-          {/if}
-        {:else}
-          <button class="pick-row" class:sel={activeSub === -1} data-focus on:click={() => onSubPick(-1)}>
-            <span class="pick-label">Off</span>
-            <span class="pick-hint" class:ok={activeSub === -1}>{activeSub === -1 ? "on" : ""}</span>
-          </button>
-          {#if subsLoading}
-            <div class="pad" style="display:flex;align-items:center">
-              <div class="spinner small"></div>
-              <span class="muted" style="margin-left:12px">Searching subtitles in {subtitleLanguages.join(", ")}…</span>
-            </div>
-          {:else if subtitles.length === 0}
-            <p class="muted pad">No subtitle tracks found for this title.</p>
-            <p class="muted small pad">No matches in your subtitle languages. Change the preferred subtitle language in Settings.</p>
-          {:else}
-            {#each subtitles as sub, i (sub.id)}
-              <button class="pick-row" class:sel={activeSub === i} data-focus on:click={() => onSubPick(i)}>
-                <span class="pick-label">{subLabel(sub)}</span>
-                <span class="pick-hint" class:ok={activeSub === i}>{activeSub === i ? "on" : ""}</span>
-              </button>
-            {/each}
-          {/if}
-        {/if}
-        <p class="muted small pad pick-sub" style="margin-top: 16px">Text size</p>
-        {#each SUB_SCALE_OPTIONS as o (o.v)}
-          <button class="pick-row" class:sel={subScale === o.v} data-focus on:click={() => pickSubScale(o.v)}>
-            <span class="pick-label">{o.label}</span>
-            <span class="pick-hint" class:ok={subScale === o.v}>{subScale === o.v ? "on" : ""}</span>
+    <div class="menu subs" bind:this={subsPanelEl}>
+      <p class="menu-title">Subtitles</p>
+      {#if source === "hls"}
+        <button class="row" class:sel={hlsSub === -1} data-focus on:click={() => onSubPick(-1)}>
+          <span class="label">{#if hlsSub === -1}<span class="dot"></span>{/if}Off</span>
+          <span class="hint" class:ok={hlsSub === -1}>{hlsSub === -1 ? "on" : ""}</span>
+        </button>
+        {#each hlsSubTracks as t, i (t.id)}
+          <button class="row" class:sel={hlsSub === i} data-focus on:click={() => onSubPick(i)}>
+            <span class="label">{#if hlsSub === i}<span class="dot"></span>{/if}{t.label}</span>
+            <span class="hint" class:ok={hlsSub === i}>{hlsSub === i ? "on" : ""}</span>
           </button>
         {/each}
-      </div>
+        {#if hlsSubTracks.length === 0}
+          <p class="muted pad">No subtitle tracks in this stream.</p>
+        {/if}
+      {:else}
+        <button class="row" class:sel={activeSub === -1} data-focus on:click={() => onSubPick(-1)}>
+          <span class="label">{#if activeSub === -1}<span class="dot"></span>{/if}Off</span>
+          <span class="hint" class:ok={activeSub === -1}>{activeSub === -1 ? "on" : ""}</span>
+        </button>
+        {#if subsLoading}
+          <div class="pad" style="display:flex;align-items:center">
+            <div class="spinner small"></div>
+            <span class="muted" style="margin-left:12px">Searching subtitles in {subtitleLanguages.join(", ")}…</span>
+          </div>
+        {:else if subtitles.length === 0}
+          <p class="muted pad">No subtitle tracks found for this title.</p>
+          <p class="muted small pad">No matches in your subtitle languages. Change the preferred subtitle language in Settings.</p>
+        {:else}
+          {#each subtitles as sub, i (sub.id)}
+            <button class="row" class:sel={activeSub === i} data-focus on:click={() => onSubPick(i)}>
+              <span class="label">{#if activeSub === i}<span class="dot"></span>{/if}{subLabel(sub)}</span>
+              <span class="hint" class:ok={activeSub === i}>{activeSub === i ? "on" : ""}</span>
+            </button>
+          {/each}
+        {/if}
+      {/if}
+      <p class="muted small pad menu-sub" style="margin-top: 16px">Text size</p>
+      {#each SUB_SCALE_OPTIONS as o (o.v)}
+        <button class="row" class:sel={subScale === o.v} data-focus on:click={() => pickSubScale(o.v)}>
+          <span class="label">{#if subScale === o.v}<span class="dot"></span>{/if}{o.label}</span>
+          <span class="hint" class:ok={subScale === o.v}>{subScale === o.v ? "on" : ""}</span>
+        </button>
+      {/each}
     </div>
   {/if}
 
-  {#if segOfferIdx !== -1 && segs[segOfferIdx]}
-    <div class="center-panel" on:click={(e) => onPanelScrimClick(e, segPanelEl)}>
-      <div class="panel pick-panel seg-panel" bind:this={segPanelEl} on:click={(e) => e.stopPropagation()}>
-        <p class="pick-title">{segTitle(segs[segOfferIdx].type)}</p>
-        <p class="muted pad" style="text-align:center">
-          {segs[segOfferIdx].type === "credits"
-            ? "The end credits have started."
-            : `The ${segs[segOfferIdx].type} has started.`}
-        </p>
-        <div class="row center">
-          <button class="btn primary" data-focus on:click={() => skipSegNow(segOfferIdx)}>
-            Skip {segs[segOfferIdx].type === "credits" ? "credits" : segs[segOfferIdx].type}
-          </button>
-          <button class="btn ghost" data-focus on:click={playSegThrough}>Play through</button>
-        </div>
-      </div>
+  {#if overlays.speed}
+    <div class="menu speed" bind:this={speedPanelEl}>
+      <p class="menu-title">Playback speed</p>
+      {#each SPEED_OPTIONS as r (r)}
+        <button class="row" class:sel={speed === r} data-focus on:click={() => pickSpeed(r)}>
+          <span class="label">{#if speed === r}<span class="dot"></span>{/if}{speedName(r)}</span>
+          <span class="hint">{speed === r ? "now" : speedHint(r)}</span>
+        </button>
+      {/each}
     </div>
   {/if}
 
   <!-- color legend: physical keys on the remote -->
   <div class="color-legend legend-player" class:visible={showControls}>
-    <div class="cl"><span class="dot c4"></span>Subs</div>
-    <div class="cl"><span class="dot c2"></span>Source</div>
-    <div class="cl"><span class="dot c3"></span>Audio</div>
+    <div class="cl"><span class="dot c4"></span>Source</div>
+    <div class="cl"><span class="dot c2"></span>Audio</div>
+    <div class="cl"><span class="dot c3"></span>Subs</div>
     <div class="cl"><span class="dot c1"></span>Play</div>
   </div>
   {/if}
@@ -1201,7 +1527,11 @@
     font-size: var(--cue-size, 30px);
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.6);
   }
-  .subs {
+  /* NOTE: the cue overlay is ".subs-cues", NOT ".subs" — a bare ".subs"
+     also matches the floating menu's ".menu subs" panel and silently
+     stole its positioning (centered) AND set its opacity to 0 (the menu
+     rendered invisible on the TV). Keep them distinct. */
+  .subs-cues {
     position: absolute;
     left: 50%;
     bottom: 190px;
@@ -1217,19 +1547,21 @@
     white-space: pre-wrap;
     pointer-events: none;
   }
-  .subs.show {
+  .subs-cues.show {
     opacity: 1;
   }
-  .subs:not(.show) {
+  .subs-cues:not(.show) {
     opacity: 0;
   }
+  /* One bottom-anchored surface, three rows (the mockup is the reference).
+     All text ≥24px (TV scale); icons are SVG — no glyph spans. */
   .controls {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    padding: 40px 72px 36px;
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.78) 40%);
+    padding: 40px 72px 64px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.55) 34%, rgba(0, 0, 0, 0.82) 100%);
     display: flex;
     flex-direction: column;
     opacity: 0;
@@ -1244,49 +1576,152 @@
     opacity: 1;
     pointer-events: auto;
   }
+  .title-row {
+    display: flex;
+    align-items: center;
+  }
+  .title-block {
+    min-width: 0;
+  }
   .title-line {
     display: flex;
     align-items: center;
   }
   .title-line > :not(:first-child) {
-    margin-left: 16px;
+    margin-left: 18px;
   }
   .title {
-    font-size: var(--fs-h1);
+    font-size: 48px;
     font-weight: 700;
+    letter-spacing: -0.01em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .progress-row {
+  .badge {
+    padding: 5px 16px;
+    border-radius: 999px;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: var(--surface-2);
+    color: var(--text-2);
+  }
+  .badge.accent {
+    background: var(--accent-dim-solid);
+    color: var(--accent-2);
+  }
+  .subtitle {
+    font-size: 26px;
+    color: var(--text-2);
+    margin-top: 6px;
+  }
+  .spacer {
+    flex: 1;
+  }
+  /* trailing controls: icon-only circles; the name+value tip is visible
+     ONLY while the icon is focused (it floats above the icon) */
+  .icbtn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
     display: flex;
     align-items: center;
+    justify-content: center;
+    position: relative;
+    border: 0;
+    cursor: pointer;
   }
-  .progress-row > :not(:first-child) {
+  .icbtn + .icbtn {
     margin-left: 20px;
+  }
+  .icbtn svg {
+    width: 28px;
+    height: 28px;
+  }
+  .icbtn .rate {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .icbtn .tip {
+    position: absolute;
+    bottom: 76px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 8px 16px;
+    white-space: nowrap;
+    font-size: 24px;
+    color: var(--text);
+    box-shadow: var(--elev-md);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--t-slow);
+  }
+  .icbtn .tip .val {
+    color: var(--accent-2);
+  }
+  /* FOCUS-STATE RULES: :global() is REQUIRED — the Svelte 4 compiler drops
+     any selector referencing an attribute absent from the markup, and the
+     remote engine sets data-state at runtime (never in the markup). The
+     wrapped classes are player-unique, so nothing leaks to other screens. */
+  :global(.icbtn[data-state="active"]) {
+    box-shadow: var(--focus-shadow);
+    transform: scale(1.06);
+    background: rgba(255, 255, 255, 0.16);
+  }
+  :global(.icbtn[data-state="active"] .tip),
+  :global(.icbtn.sel .tip) {
+    opacity: 1;
+  }
+  .icbtn.sel {
+    background: var(--accent-dim-solid);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  /* scrub row — 80px hit area; the track keeps 20px off the hit-area ends
+     so the focus outline (at the hit-area edge) never touches the line */
+  .scrub-row {
+    display: flex;
+    align-items: center;
   }
   .time {
     font-variant-numeric: tabular-nums;
-    font-size: var(--fs-body);
+    font-size: 28px;
     color: var(--text-2);
-    min-width: 84px;
+    min-width: 100px;
     text-align: center;
   }
+  .scrub-row .time:first-child {
+    margin-right: 36px;
+  }
+  .scrub-row .time:last-child {
+    margin-left: 36px;
+  }
   .bar {
+    position: relative;
     flex: 1;
-    height: 36px;
-    display: flex;
-    align-items: center;
+    height: 80px;
+    border-radius: 40px;
     cursor: pointer;
+    /* the theme's [data-focus] reserves a 3px focus border — the bar's
+       focus is the inset ring instead, and the track must sit 20px from
+       the bar's VISUAL edge, not from inside a border */
+    border: 0;
   }
   .bar-track {
-    position: relative;
-    width: 100%;
-    height: 10px;
-    border-radius: 5px;
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    right: 20px;
+    transform: translateY(-50%);
+    height: 6px;
+    border-radius: 3px;
     background: rgba(255, 255, 255, 0.28);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    overflow: hidden;
   }
   .bar-buffer {
     position: absolute;
@@ -1294,6 +1729,7 @@
     top: 0;
     height: 100%;
     background: rgba(255, 255, 255, 0.5);
+    border-radius: 3px;
     transition: width 200ms linear;
   }
   .bar-fill {
@@ -1302,58 +1738,261 @@
     top: 0;
     height: 100%;
     background: var(--accent);
-    border-radius: 5px;
+    border-radius: 3px;
     transition: width 200ms linear;
   }
-  .button-row {
+  .thumb {
+    position: absolute;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  }
+  .bubble {
+    position: absolute;
+    bottom: 94px;
+    transform: translateX(-50%);
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    box-shadow: var(--elev-md);
+    display: none;
+    pointer-events: none;
+  }
+  /* the FOCUSED bar: the outline hugs the 80px hit-area edge (2px inset
+     shadow) — the line ends sit 20px away from it, on both sides */
+  :global(.bar[data-state="active"]) {
+    /* the theme's generic focus scales 1.05 — an 80px bar jumping 4px is
+       a flinch, not a focus; the ring + the thumb growth ARE the focus */
+    transform: none;
+    box-shadow: inset 0 0 0 2px rgba(77, 163, 255, 0.45);
+  }
+  :global(.bar[data-state="active"] .thumb) {
+    width: 24px;
+    height: 24px;
+    box-shadow: var(--focus-shadow);
+  }
+  :global(.bar[data-state="active"] .bubble) {
+    display: block;
+  }
+  /* transport row: transport only */
+  .transport-row {
     display: flex;
     align-items: center;
   }
-  .button-row > :not(:first-child) {
+  .tbtn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border: 0;
+    cursor: pointer;
+  }
+  .tbtn svg {
+    width: 28px;
+    height: 28px;
+  }
+  .tbtn.play {
+    width: 72px;
+    height: 72px;
+  }
+  .tbtn.play svg {
+    width: 32px;
+    height: 32px;
+  }
+  .tbtn + .tbtn {
     margin-left: 20px;
   }
-  .spacer {
-    flex: 1;
+  :global(.tbtn[data-state="active"]) {
+    box-shadow: var(--focus-shadow);
+    transform: scale(1.06);
+    background: rgba(255, 255, 255, 0.16);
   }
-  .cbtn {
-    padding: 12px 22px;
-    border-radius: var(--r-md);
-    background: rgba(255, 255, 255, 0.08);
-    border: 2px solid transparent;
-    font-size: var(--fs-body);
+  /* the info panel: full-width minus the chrome gutters, 24px above the
+     chrome. It says what the title view CAN'T — synopsis + details +
+     actions (no series/episode repeat; identity stays in the title view).
+     NOT scope-trapped: arrows leave it spatially (up → the transport). */
+  .info {
+    position: absolute;
+    z-index: 50;
+    left: 72px;
+    right: 72px;
+    bottom: 419px;
+    background: var(--bg-raised);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-xl);
+    box-shadow: var(--elev-lg);
+    padding: 32px 40px;
     display: flex;
     align-items: center;
   }
-  .cbtn .ico {
-    font-size: 22px;
+  .info-thumb {
+    width: 384px;
+    height: 216px;
+    flex: none;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line-strong);
+    background: radial-gradient(
+        140px 90px at 70% 70%,
+        rgba(255, 190, 120, 0.45),
+        rgba(255, 190, 120, 0) 70%
+      ),
+      linear-gradient(160deg, #14242f 0%, #1d3a44 55%, #0d1a20 100%);
   }
-  .cbtn.play {
-    width: 76px;
-    height: 76px;
-    border-radius: 50%;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.1);
+  .info-thumb.movie {
+    background: radial-gradient(
+        160px 100px at 30% 60%,
+        rgba(140, 170, 255, 0.3),
+        rgba(140, 170, 255, 0) 70%
+      ),
+      linear-gradient(160deg, #101a2e 0%, #1c2a4a 55%, #0a111e 100%);
   }
-  .cbtn.play .ico {
-    font-size: 30px;
+  .info-text {
+    margin-left: 36px;
+    min-width: 0;
   }
-  .cbtn[data-state="active"] {
-    border-color: var(--accent);
-    background: var(--accent-dim-solid);
-  }
-  .cbtn.sel {
-    border-color: var(--accent);
-    background: var(--accent-dim-solid);
-  }
-  .cbtn .sub {
-    margin-left: 12px; /* NOT ".cbtn > :not(:first-child)": the label is a text node,
-                          so the span IS the first *element* child */
-    color: var(--accent-2);
-    font-size: var(--fs-small);
-    max-width: 220px;
+  .info-syn {
+    font-size: 26px;
+    color: var(--text-2);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+  }
+  .info-details {
+    display: flex;
+    align-items: center;
+    margin-top: 18px;
+    font-size: 24px;
+    color: var(--text-3);
+  }
+  .d-star {
+    width: 22px;
+    height: 22px;
+    margin-right: 8px;
+    flex: none;
+  }
+  .sep {
+    padding: 0 12px;
+    color: rgba(255, 255, 255, 0.35);
+  }
+  .info-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 22px;
+  }
+  .abtn {
+    display: flex;
+    align-items: center;
+    height: 60px;
+    padding: 0 24px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text);
+    /* focus is the glow, not the theme's 3px hard border */
+    border: 0;
+  }
+  .abtn svg {
+    width: 22px;
+    height: 22px;
+    margin-right: 12px;
+    flex: none;
+  }
+  .abtn .val2 {
+    margin-left: 10px;
+    color: var(--text-2);
+    font-weight: 400;
+  }
+  :global(.abtn[data-state="active"]) {
+    box-shadow: var(--focus-shadow);
+    background: var(--accent-dim-solid);
+  }
+  /* the contextual skip pill (L2): its OWN surface — it stays when the
+     chrome auto-hides (NOT gated on showControls), right 72px / bottom
+     150px. A focus target, never auto-focused (the passive offer). */
+  .pill {
+    position: absolute;
+    right: 72px;
+    bottom: 150px;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    height: 60px;
+    padding: 0 26px 0 20px;
+    border-radius: 999px;
+    background: var(--accent-dim-solid);
+    box-shadow: var(--elev-md);
+    cursor: pointer;
+    /* focus is the glow, not the theme's 3px hard border */
+    border: 0;
+  }
+  .pill svg {
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+    flex: none;
+  }
+  .pill-label {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text);
     white-space: nowrap;
+  }
+  :global(.pill[data-state="active"]) {
+    box-shadow: var(--focus-shadow);
+  }
+  /* buffering (A6): 36px spinner, bottom-center, ~120px above the
+     transport row; above the chrome band, not a focus target */
+  .buf {
+    position: absolute;
+    left: 50%;
+    bottom: 256px;
+    transform: translateX(-50%);
+    z-index: 25;
+    pointer-events: none;
+  }
+  .buf .spinner {
+    width: 36px;
+    height: 36px;
+    border-width: 3px;
+  }
+  /* paused (A5): 96px circular play button, dead center, pointer-only
+     (the transport play is the single D-pad target); soft glow */
+  .pause-echo {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 15;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: rgba(8, 10, 14, 0.55);
+    box-shadow: var(--elev-lg), 0 0 40px rgba(77, 163, 255, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .pause-echo svg {
+    width: 40px;
+    height: 40px;
   }
   .center-panel {
     position: absolute;
@@ -1367,65 +2006,121 @@
     justify-content: center;
     z-index: 40;
   }
-  .pick-panel,
   .err-panel {
     width: 620px;
     padding: 28px 32px;
     max-height: 800px;
     overflow-y: auto;
   }
-  .pick-title,
   .err-title {
     font-size: var(--fs-h2);
     font-weight: 700;
     margin-bottom: 18px;
+    color: var(--danger);
   }
-  .pick-row {
+  /* NON-MODAL floating menus: no scrim, no dim. They float above the
+     chrome (right 72px = over the trailing icon group; 24px above its
+     top), the opener icon stays .sel, arrows are trapped inside. */
+  .menu {
+    position: absolute;
+    right: 72px;
+    bottom: 419px;
+    z-index: 30;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 16px;
+    box-shadow: var(--elev-md);
+    padding: 24px;
+    /* The subs menu can outgrow the headroom above the chrome (N track
+       rows + the text-size section: ~970px with 2 tracks, 661px of
+       1080p headroom) — without a cap its rows render above the top of
+       the screen, focused row included. Cap at the headroom (443 = 24px
+       top margin + 419px anchor) and scroll: the remote engine already
+       scrollIntoView's the focused element, so the focused row is always
+       visible without a scroll key. */
+    max-height: calc(100vh - 443px);
+    overflow-y: auto;
+  }
+  .menu::-webkit-scrollbar {
+    display: none;
+  }
+  .menu.source {
+    width: 640px;
+  }
+  .menu.audio {
+    width: 560px;
+  }
+  .menu.subs {
+    width: 560px;
+  }
+  .menu.speed {
+    width: 480px;
+  }
+  .menu-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 18px;
+  }
+  /* menu rows (scoped: .row is also the error modal's flex layout helper) */
+  .menu .row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 16px 20px;
-    margin-bottom: 8px;
-    border-radius: var(--r-md);
-    background: var(--surface);
+    padding: 18px 20px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
     border: 2px solid transparent;
-    font-size: var(--fs-body);
+    font-size: 28px;
     text-align: left;
   }
-  .pick-row[data-state="active"] {
-    border-color: var(--accent);
-    background: var(--surface-2);
+  .menu .row:last-child {
+    margin-bottom: 0;
   }
-  .pick-row.sel {
+  :global(.menu .row[data-state="active"]) {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .menu .row.sel {
     border-color: var(--accent);
     background: var(--accent-dim-solid);
   }
-  .pick-row.disabled {
+  .menu .row.disabled {
     opacity: 0.4;
   }
-  .pick-label {
+  .menu .row .label {
+    display: flex;
+    align-items: center;
+    font-size: 28px;
     font-weight: 600;
   }
-  .pick-hint {
-    color: var(--text-3);
-    font-size: var(--fs-small);
+  .menu .row .label .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 14px;
   }
-  .pick-hint.ok {
+  .menu .row .hint {
+    color: var(--text-3);
+    font-size: 24px;
+  }
+  .menu .row .hint.ok {
     color: var(--accent-2);
     font-weight: 700;
+  }
+  .menu-sub {
+    font-size: 24px;
   }
   .pad {
     padding: 8px 4px 16px;
   }
   .small {
-    font-size: var(--fs-small);
+    font-size: 24px; /* TV scale: menu helper text never below 24px */
   }
   .muted {
     color: var(--text-2);
-  }
-  .err-title {
-    color: var(--danger);
   }
   .row {
     display: flex;
@@ -1444,9 +2139,6 @@
     width: 28px;
     height: 28px;
     border-width: 3px;
-  }
-  .seg-panel {
-    width: 640px;
   }
   .legend-player {
     position: absolute;

@@ -124,6 +124,11 @@ export class MediaEngine {
   /** The current source delivered its first frame (a waiting event before
    *  this is a normal load, not a stall). Reset per source load. */
   private everPlayed = false;
+  /** The playhead's position on the PREVIOUS tick — the ratchet baseline
+   *  (onTime clears a stuck buffering when the time advances past it).
+   *  Reset per source load to the load target: a resume that lands at a
+   *  saved position is not "advancing". */
+  private lastTickTime = 0;
   /** set when a failed dance already triggered the same-source restore —
    * the restore is one chance, not a loop (if IT dies, the normal
    * fallback chain takes over) */
@@ -218,6 +223,7 @@ export class MediaEngine {
     this.onState({ error: null, buffering: true, source: kind, stalls: 0 });
     const v = this.v();
     const t = startAt ?? (v.currentTime || 0);
+    this.lastTickTime = t || 0; // the ratchet baseline is the LOAD target, not the old position
     // remember where we were so the swap doesn't reset to the start
     this.pendingSeek = t || undefined;
     this.recoveredAfterDance = false; // a fresh load is a fresh chance
@@ -273,6 +279,15 @@ export class MediaEngine {
   skip(delta: number): void {
     const v = this.v();
     v.currentTime = Math.max(0, Math.min(v.duration || v.currentTime + delta, v.currentTime + delta));
+  }
+  /** The playback rate (0.5–2). The Player owns the state (icon + menu) and
+   *  re-applies it per file; the engine only sets the element. The Player
+   *  offers it for seekable files only (VOD). Pitch is preserved — this is
+   *  a TV player, not a chipmunk. */
+  setSpeed(rate: number): void {
+    const v = this.v();
+    v.playbackRate = rate;
+    (v as any).playbackPreservesPitch = true;
   }
 
   get duration(): number {
@@ -879,13 +894,20 @@ export class MediaEngine {
   private onTime = () => {
     const v = this.v();
     const bEnd = v.buffered && v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0;
+    // THE RATCHET (one-way): a playhead that is visibly advancing is not
+    // buffering. The stall events own the truth (waiting → true, playing
+    // → false); this only CLEARS, in case a 'playing' event is ever
+    // missed (a stuck spinner on the TV — the old design's geometry
+    // recompute spun the spinner on every tight-buffer HLS stream).
+    const advancing = !v.paused && !v.seeking && v.currentTime > this.lastTickTime;
+    this.lastTickTime = v.currentTime;
     const s: Partial<MediaState> = {
       currentTime: v.currentTime,
       duration: v.duration || 0,
       paused: v.paused,
       buffered: bEnd, // buffer end (seconds) — the Player draws the buffer bar from this
-      buffering: isBuffering(v.currentTime, bEnd, v.duration),
     };
+    if (advancing) s.buffering = false;
     // auto-resume save (gated in saveResume by the resume lock)
     if (!v.paused && v.currentTime - this.lastSaved > 30) this.saveResume();
     this.onState(s);
@@ -1043,7 +1065,7 @@ export class MediaEngine {
 
 // small indirection so the class file doesn't import api twice (avoid cycle surprises)
 import * as apiRef from "./api";
-import { isBuffering } from "./progress";
+
 import { platform } from "../webos/platform";
 function platformToast(msg: string): void {
   platform.toast(msg);

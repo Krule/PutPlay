@@ -321,6 +321,27 @@
       window.__segCalls = window.__segCalls || [];
       var alBody = init && init.body ? String(init.body) : "";
       window.__segCalls.push({ host: "anilist", url: url, body: alBody });
+      // The info fallback POSTS twice to this URL — the query text
+      // distinguishes: SearchMedia (title → anime list) vs MediaInfo
+      // (the picked id → the SHOW shape, with the real schema field
+      // averageScore).
+      if (alBody.indexOf("MediaInfo") !== -1) {
+        return Promise.resolve(
+          new Response(JSON.stringify({
+            data: {
+              Media: {
+                averageScore: 72,
+                genres: ["Action", "Fantasy"],
+                description: "<p>A 15-year-old boy who cannot use magic dreams of becoming the next Magic King of the Black Clover kingdom.</p>",
+                coverImage: { large: "/test/e2e/wall-13.png" }
+              }
+            }
+          }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          })
+        );
+      }
       var alData = alBody.indexOf("Black Clover") !== -1 ? ANILIST_FAKE : { data: { Page: { media: [] } } };
       return Promise.resolve(
         new Response(JSON.stringify(alData), {

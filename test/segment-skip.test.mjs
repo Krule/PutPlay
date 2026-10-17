@@ -971,9 +971,11 @@ test("the Player runs the lookup and owns the per-segment action", async () => {
     /segAction\(/.test(source),
     "the boundary decision comes from the shared pure module (one rule, one place)"
   );
+  // TV redesign: the offer is the contextual PILL — no center modal button;
+  // Back while the pill is up settles the section (play through).
   assert.ok(
-    /Play through/.test(source),
-    "the offer lets the user play the section through"
+    /playSegThrough\(pill\.index\)/.test(source),
+    "Back on the pill lets the user play the section through (settles once)"
   );
   assert.match(
     source,

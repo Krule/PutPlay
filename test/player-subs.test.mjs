@@ -53,7 +53,7 @@ test("fullscreen button removed (the player IS the full screen on a TV)", () => 
 test("chrome auto-hide: pointer movement wakes, playback start schedules the hide", () => {
   const player = read("src/ui/screens/Player.svelte");
   assert.ok(
-    /<div class="player"[^>]*on:mousemove=\{wake\}/.test(player),
+    /<div[^>]*class="player"[^>]*on:mousemove=\{wake\}/.test(player),
     "the player root must wake the UI on pointer movement (Magic Remote)"
   );
   assert.ok(
@@ -61,7 +61,7 @@ test("chrome auto-hide: pointer movement wakes, playback start schedules the hid
     "a one-shot flag must schedule the first auto-hide when playback starts"
   );
   assert.ok(
-    /controlsPinned/.test(player),
-    "the pinned-state rule must be shared by the visibility class and the hide timer"
+    /surfaceVisibility/.test(player) && /\$\:\s*pinned\s*=\s*surface\.pinned/.test(player),
+    "the pinned-state rule (surfaceVisibility) must be shared by the visibility class and the hide timer"
   );
 });

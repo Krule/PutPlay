@@ -33,7 +33,9 @@ test("Player routes every overlay/modal surface through the shared panelFocus li
   // leavePanelEl is gone on purpose: Back no longer "leaves" — it docks
   // (lossless), and the only stop is the dock's ✕ (plan §9.1).
   // resumePanelEl is gone with the resume prompt (L1: pure auto-resume).
-  for (const panel of ["sourcePanelEl", "audioPanelEl", "subsPanelEl", "segPanelEl", "errPanelEl"]) {
+  // segPanelEl is gone with the TV redesign: the center skip-offer modal is
+  // now a bottom-right pill (pillState) with no focus lifecycle of its own.
+  for (const panel of ["sourcePanelEl", "audioPanelEl", "subsPanelEl", "speedPanelEl", "infoPanelEl", "errPanelEl"]) {
     assert.ok(
       new RegExp(`panelFocus\\(\\s*${panel}`).test(player),
       `${panel} must go through panelFocus() (registerAll + default focus + close-restore) — pick-rows/panel buttons are dead on the 5-way remote otherwise`

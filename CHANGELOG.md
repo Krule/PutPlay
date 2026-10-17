@@ -7,6 +7,18 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Added
+- Playback speed: a speed control on the full-screen player (the trailing
+  icon shows the current rate) opens a menu of 0.5×, 0.75×, 1×, 1.25×,
+  1.5× and 2×. A picked rate applies to the current file and carries to the
+  next one in the session, and the audio stays natural at higher rates.
+- An info tab on the full-screen player — D-pad down from the transport
+  row: the episode/film's still, synopsis, and a details line (rating,
+  genres and air date — or runtime for a movie), with the actions "Play
+  from beginning" (a seek to 0) and, for episodes, "Up next" (plays the
+  next video in the folder). The data comes from TMDb (anime from AniList)
+  and is fetched after playback starts, so it never delays the first frame;
+  a repeated play is answered from an on-device cache. No match or no data
+  simply leaves the panel empty — playback is never blocked.
 - Skip intro, recap and credits using real show data: the player looks up
   the episode's actual segment times from TheIntroDB (community data) —
   the file name is matched to the show automatically, with the TMDb key
@@ -14,9 +26,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   behavior: Auto-skip (default) jumps each section as playback reaches it
   — a fresh start begins after the intro and/or recap, and skipping the
   end credits ends the episode and moves on to the next video; Ask me
-  shows an offer over the player for each section instead, and you choose
-  skip or play through. A saved resume always wins; no match, or no data,
-  simply means nothing is skipped. Each play looks the episode up fresh
+  shows a small "Skip …" pill at the player's bottom right for each section
+  instead — it stays visible even while the player UI is hidden — and you
+  choose skip (OK) or play through (Back). A saved resume always wins; no
+  match, or no data, simply means nothing is skipped. Each play looks the episode up fresh
   from the live sources (on-device caching is suspended for now). Anime
   file names without
   an SxxEyy marker are resolved too — a bare episode number like
@@ -33,10 +46,51 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   the gap. A show no source carries simply gets nothing skipped.
 
 ### Changed
+- The full-screen player chrome was redesigned for the TV: the title row
+  now shows the file's identity — show title, the S·E line (the episode's
+  own title once it is known), and the LIVE/source badges — with the
+  source, audio and subtitle pickers as icon buttons above the bar (a
+  name-and-value tip appears while one is focused). The progress bar is
+  now a focusable control: D-pad up from the transport row, and left/right
+  while it is focused seek 10 seconds (a time bubble shows the position;
+  the thumb grows while focused). The source/audio/subtitle pickers open
+  as floating menus — no scrim, no dimming, the video plays at full
+  brightness — and closing one returns focus to its icon. The chrome now
+  hides itself 4 seconds after the last activity and stays while paused,
+  on an error, or with a menu or the info tab open; a buffering spinner
+  (never while paused) and a center pause echo (never on error) carry the
+  rest of the state.
 - The player no longer asks whether to resume: reopening a file with a
   saved position simply starts where you left off — no dialog, no
   waiting. (Starting over from the beginning is a seek on the player's
   scrubber — part of the full-screen player redesign in this release.)
+- The remote's color keys now map the way they were requested: red
+  opens the playback source, green the audio track, yellow the
+  subtitles, blue keeps play/pause (the on-screen legend follows).
+
+### Fixed
+- The info tab now finds movies whose file names still carry scene
+  noise after the obvious parts are stripped — a year that lives in the
+  name ("Kindergarten Cop 1990 …") is now used as the release year, a
+  release-group word at the end ("… All at Once … Licdom") is dropped
+  from the search, and titles where the year is part of the name
+  (Blade Runner 2049) resolve as well.
+- Anime get info-tab data too: when the movie database carries nothing
+  for the title, the player now looks the show up on AniList — the
+  anime community's database, no key needed — and shows the
+  show-level synopsis, rating, genres and cover.
+- The buffering spinner no longer keeps spinning during normal
+  playback of a stream whose buffer always runs tight (the everyday
+  1080p-on-TV case): it now mirrors real stalls only — it appears when
+  playback actually waits and clears as soon as the picture is
+  visibly moving.
+- On the icon row (source, audio, subs, speed) and the transport row
+  (rewind, play, forward), Left/Right now walk key by key instead of
+  jumping to the progress bar: on the icon row, Right from the last
+  icon goes to the bar and Left from the first does nothing; on the
+  transport row, Left from rewind goes to the bar and Right from
+  forward does nothing. Up/Down between the rows and the bar work as
+  before.
 
 ## [1.1.3] - 2026-10-15
 

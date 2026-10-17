@@ -45,8 +45,11 @@ test("Player renders .bar-buffer behind .bar-fill with a reactive width", () => 
     /style="width:\s*\{bufferPct\}%"/.test(player),
     "the buffer layer width must bind bufferPct"
   );
-  // both layers need to stack → absolute positioning on the track children
-  assert.ok(/\.bar-track\s*{[^}]*position:\s*relative/.test(player), ".bar-track must be the positioning context");
+  // both layers need to stack → absolute positioning on the track children.
+  // (TV redesign: the .bar hit area is the positioning context — the track
+  // is an absolute child inset 20px from the hit-area ends.)
+  assert.ok(/\.bar\s*{[^}]*position:\s*relative/.test(player), ".bar must be the positioning context");
+  assert.ok(/\.bar-track\s*{[^}]*position:\s*absolute/.test(player), ".bar-track must be absolutely positioned in the bar");
   assert.ok(/\.bar-buffer\s*{[^}]*position:\s*absolute/.test(player), ".bar-buffer must be absolutely stacked");
 });
 

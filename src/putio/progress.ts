@@ -14,20 +14,11 @@ export function progressPct(currentTime: number, duration: number): number {
   return Math.min(100, (t / duration) * 100);
 }
 
-
-/**
- * Is the playhead waiting on the network ("buffering")?
- *
- * Correct semantics: buffering = the playhead is within the last 2s of
- * buffered data (a stall) — UNLESS the media is fully buffered, where
- * reaching the buffer end is just end-of-file, not a stall. The old inline
- * condition in MediaEngine was inverted (it flagged *healthy* playback as
- * buffering), which broke anything gating on !buffering.
- */
-export function isBuffering(currentTime: number, bufferedEnd: number, duration: number): boolean {
-  // Fully buffered (buffer end reached the end of the file) → never "waiting".
-  if (duration > 0 && isFinite(duration) && bufferedEnd >= duration - 0.5) return false;
-  // No buffer yet → waiting by definition.
-  if (bufferedEnd === 0) return true;
-  return currentTime >= bufferedEnd - 2;
-}
+// NOTE (the deleted geometry heuristic): this module used to export
+// isBuffering(currentTime, bufferedEnd, duration) — "within 2s of the
+// buffer end". MediaEngine re-ran it on every timeupdate tick, and on a
+// just-in-time-buffered HLS stream (the buffer hugs the playhead) that
+// said "buffering" almost always: the spinner spun continuously on
+// perfectly smooth playback (user-reported on the TV, 2026-10-17).
+// Buffering is now EVENT-DRIVEN (waiting → true, playing → false, plus
+// the one-way advancing ratchet in onTime) — see test/buffering.test.mjs.

@@ -141,6 +141,166 @@ function inRange(n: number, lo: number, hi: number): boolean {
   return n >= lo && n <= hi;
 }
 
+export interface MovieId {
+  title: string;
+  /** A year tag in the name (paren or dot-separated) — for TMDb
+   *  disambiguation (absent when none). */
+  year?: number;
+}
+
+/** Codec/source words that ride after the title in a release name — the
+ *  KNOWN junk vocabulary. Only these words are stripped from the tail;
+ *  an unknown trailing word survives (it may be the title: "Web (1995)").
+ *
+ * This list OVERLAPS JUNK_TOKEN_RE on purpose: the movie tail loop peels
+ * known junk so a DOT-separated trailing year becomes visible
+ * ("Movie.2020.x264.1080p" — the year is under the junk); JUNK_TOKEN_RE
+ * cleans the same tags when they sit in the middle of the name. Two jobs,
+ * two passes. */
+const SCENE_WORD_RE =
+  /\b(?:x264|x265|h264|h265|hevc|avc|remux|web-?dl|web-?rip|bluray|blu-ray|brrip|dvdrip|hdtv|uhd|4k|proper|re-?encod\w*|internal|multi|10bit)\s*$/i;
+
+/**
+ * Scene junk that rides ANYWHERE in a release name, not just the tail.
+ *
+ * Real names stack codec/source/audio/language tags between the title and
+ * the group tail — "Kindergarten Cop 1990 1080p AMZN WEB-DL DDP2 0 H
+ * 264-GPRS". TMDb's search answers 0 results for a junk-laden query
+ * (verified live), so the title that becomes the query must be clean.
+ *
+ * The vocabulary is deliberately narrow — only tokens that would never
+ * stand alone as a title word. "web" alone is NOT junk ("Web (1995)" is a
+ * movie); "10" alone is NOT junk ("10 Cloverfield Lane") — only the
+ * compound/phrase forms ("web-dl", "10 bit", "5.1") count. An unknown word
+ * (a release group: "Licdom", "GPRS") survives; the lookup's query ladder
+ * drops it as a last resort (stripping an unknown word here could eat a
+ * real title word — the "Inception" bug).
+ */
+const JUNK_TOKEN_RE = new RegExp(
+  [
+    // resolutions
+    "\\b\\d{3,4}p\\b",
+    "\\b(?:480|720|1080|1440|2160|3840)\\b",
+    "\\b4k\\b",
+    "\\buhd\\b",
+    // codecs — incl. broken scene forms: "H 264", "264-GPRS", "x264-GOP"
+    "\\b[hx]\\s?26[45](?:-\\w+)?\\b",
+    "\\b26[45]-\\w+\\b",
+    "\\bhevc\\b",
+    "\\bavc\\b",
+    "\\bav1\\b",
+    "\\bvp9\\b",
+    // sources
+    "\\bweb-?dl\\b",
+    "\\bweb-?rip\\b",
+    "\\bwebdl\\b",
+    "\\bremux\\b",
+    "\\bbluray\\b",
+    "\\bblu-ray\\b",
+    "\\bbrrip\\b",
+    "\\bdvdrip\\b",
+    "\\bhdtv\\b",
+    "\\bamzn\\b",
+    "\\bamz\\b",
+    // audio
+    "\\bac3\\b",
+    "\\beac3\\b",
+    "\\baac\\b",
+    "\\bdts\\b",
+    "\\btruehd\\b",
+    "\\bflac\\b",
+    "\\bmp3\\b",
+    "\\bddp(?:\\s?\\d){0,2}\\b",
+    "\\batmos\\b",
+    "\\bdolby\\b",
+    "\\bdv\\b",
+    "\\bvision\\b",
+    "\\bhdr10\\+?\\b",
+    "\\bhdr\\b",
+    "\\bsdr\\b",
+    // channel counts: "5.1", "2.0", "7.1" — and their space-split forms
+    // ("5 1"): the dot→space pass runs before this one. A bare decimal
+    // like "1.5" is not a channel count.
+    "\\b(?:2|5|7)[.\\s]\\d\\b",
+    // language / subtitle tags
+    "\\beng\\b",
+    "\\bita\\b",
+    "\\b(?:subs?)\\b",
+    // quality flags
+    "\\bproper\\b",
+    "\\binternal\\b",
+    "\\bmulti\\b",
+    "\\b10bit\\b",
+    "\\b8bit\\b",
+    "\\b10\\s+bit\\b",
+  ].join("|"),
+  "gi" // global — a name stacks many tags; replace() must clear all of them
+);
+
+/**
+ * The MOVIE half of the name identity: a name with NO episode marker
+ * still needs a query for the Info tab's TMDb movie search — this gives
+ * the movie title, plus a year when the name carries one.
+ *
+ * Same tail-cleaning spirit as the episode parser, but the tail is
+ * stripped ITERATIVELY (scene junk can be stacked: "…1080p BluRay x264").
+ * Year rules: a (19xx/20xx) PAREN year always wins; otherwise a
+ * DOT-separated trailing year (1900–2099) — the common "Title.2010.1080p"
+ * form. A SPACE-separated trailing year is kept in the title (it may be
+ * part of the name).
+ *
+ * Known ambiguity (documented): "Blade.Runner.2049" — 2049 is inside the
+ * year range but is part of the title. The year is stripped anyway; the
+ * lookup degrades gracefully (the name search still runs, the exact-name
+ * matcher decides). A name left with no title (numbers, scene words,
+ * empty) is not a movie either — null.
+ */
+export function parseMovieName(name: string): MovieId | null {
+  const base = name.replace(EXT_RE, "").trim();
+  if (!base) return null;
+
+  const yearMatch = base.match(YEAR_RE);
+  const year = yearMatch ? parseInt(yearMatch[0].slice(1, -1), 10) : undefined;
+
+  let t = base.replace(GROUP_LEAD_RE, "").replace(YEAR_RE, " ");
+  let changed = true;
+  while (changed) {
+    changed = false;
+    // a strip can leave a dangling separator — trim it so the NEXT token
+    // is at the true tail (".Movie.720p." must see the 720p)
+    t = t.replace(/[.\s_-]+$/, "").trim();
+    if (TAG_TAIL_RE.test(t)) {
+      t = t.replace(TAG_TAIL_RE, "").trim();
+      changed = true;
+    } else if (QUALITY_TAIL_RE.test(t)) {
+      t = t.replace(QUALITY_TAIL_RE, "").trim();
+      changed = true;
+    } else if (SCENE_WORD_RE.test(t)) {
+      t = t.replace(SCENE_WORD_RE, "").trim();
+      changed = true;
+    }
+    // NOTE: no generic trailing-word strip — after the known junk is gone
+    // the last word is TITLE (the "Inception" bug), and the known-word
+    // list above is the junk vocabulary. An unknown trailing word survives
+    // into the title; the fuzzy TMDb search copes.
+  }
+
+  // dot-separated trailing year (only when the paren form did not win)
+  let dotYear: number | undefined;
+  if (!year) {
+    const dm = t.match(/(^|[._-])((19|20)\d{2})$/);
+    if (dm) {
+      dotYear = parseInt(dm[2], 10);
+      t = t.slice(0, dm.index);
+    }
+  }
+
+  const title = titleOf(t);
+  if (!title) return null;
+  const finalYear = year !== undefined ? year : dotYear;
+  return finalYear !== undefined ? { title, year: finalYear } : { title };
+}
+
 /** The text before the marker, normalized: release-group tag(s) and the
  *  year tag gone, dots/underscores as spaces, a stray "Season N" word
  *  dropped (the marker carried it), edge separators trimmed, whitespace
@@ -150,6 +310,9 @@ function titleOf(raw: string): string {
   t = t.replace(GROUP_LEAD_RE, ""); // leading [Group] tag(s)
   t = t.replace(/\bseason\s*\d{1,2}\b/i, " ");
   t = t.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
+  // scene junk anywhere (codec/source/audio/language tags between the
+  // title and the group tail) — the query must be the clean title
+  t = t.replace(JUNK_TOKEN_RE, " ").replace(/\s+/g, " ").trim();
   t = t.replace(/^[\s._-]+|[\s._-]+$/g, "");
   if (!t || /^\d{1,4}$/.test(t.replace(/\s+/g, ""))) return "";
   return t;

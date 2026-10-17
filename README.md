@@ -39,7 +39,8 @@ So I outlined this project, put together some resources, some rules and some lim
   with arrow panning
 - Music files play under a **now-playing strip** while you keep browsing,
   reading, and watching
-- Resumes where you left off; remembers your source and language preferences
+- Resumes where you left off (no prompt — it just starts where you left
+  off); remembers your source and language preferences
 - Skip intro, recap and credits: the episode's real segment times come
   from TheIntroDB, matched to your file automatically (the TMDb key is
   baked into the app — nothing to configure; anime names without an
@@ -47,9 +48,16 @@ So I outlined this project, put together some resources, some rules and some lim
   Settings → "Skip intro,
   recap and credits" picks the behavior: Auto-skip (default) jumps each
   section as playback reaches it — fresh starts begin after the
-  intro/recap and skipping the credits ends the episode; "Ask me" offers
-  the choice per section instead. A resume always wins; no match or no
+  intro/recap and skipping the credits ends the episode; "Ask me" shows a
+  small "Skip …" pill at the player's corner (OK skips, Back plays
+  through) instead. A resume always wins; no match or no
   data = nothing is skipped
+- An **info tab** on the player (D-pad down): the episode/film's still,
+  synopsis, rating · genres · air date (or runtime for a movie), plus
+  "Play from beginning" and "Up next" — data from TMDb (anime from
+  AniList), fetched after the first frame and cached on the device
+- **Playback speed** 0.5×–2× from the player's speed control (audio stays
+  natural at higher rates)
 - Sign-in is a device code: enter it on your phone, or scan the QR
 
 ## Screens
@@ -64,7 +72,9 @@ The library — a `.cbz` tile shows its real cover, cached locally.
 
 ![Player](docs/screenshots/player.png)
 
-The player — the file as uploaded, with source, audio, and subtitle controls. (Frame: Big Buck Bunny, Blender Foundation, CC-BY 3.0.)
+The player — the file as uploaded, with the focusable scrubber and the
+source / audio / subtitle / speed controls. (Frame: Big Buck Bunny,
+Blender Foundation, CC-BY 3.0.)
 
 ![Comic reader spread](docs/screenshots/comic.png)
 
