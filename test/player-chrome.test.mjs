@@ -356,7 +356,30 @@ test("the info data is fetched async and swaps in late (never blocks the first f
   );
 });
 
-/* ---------------- the contextual pill (replaces the offer modal) ---------------- */
+/* ---------------- the bar's segment overlays (skippable segments) ---------------- */
+
+test("the bar shows the skippable segments as subtle overlays (segSpans → .bar-seg)", () => {
+  assert.ok(
+    /segSpans\(/.test(player),
+    "the overlay positions come from segSpans (the tested decision)"
+  );
+  const track = between('<div class="bar-track">', '<div class="bubble"');
+  assert.ok(
+    /class="bar-seg"/.test(track),
+    "each segment renders as a .bar-seg span inside the track"
+  );
+  assert.ok(
+    track.indexOf('class="bar-seg"') < track.indexOf('class="bar-fill"'),
+    "the .bar-seg spans sit BELOW the fill (played segments stay marked; the fill never fights them)"
+  );
+  const segRule = rule(".bar-seg {");
+  assert.ok(
+    /background:\s*rgba\(77,\s*163,\s*255,\s*0\.3/.test(segRule),
+    "the segment tint is the accent hue at low alpha (subtle, distinct from the neutral track)"
+  );
+});
+
+/* ---------------- the contextual skip button (replaces the offer modal, then the bar-end pill) ---------------- */
 
 test("the offer is now a bottom-right PILL (pillState), not a center modal", () => {
   assert.ok(/pillState\(/.test(player), "the pill decision comes from pillState (tested)");

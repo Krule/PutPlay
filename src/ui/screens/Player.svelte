@@ -36,7 +36,7 @@
   import { pickerDefaultIndex, rowFocusState } from "../../putio/picker-default";
   import { buildTitleView } from "../../putio/title-view";
   import { parseEpisode, parseMovieName } from "../../putio/titles";
-  import { scrubSeek, scrubThumbPct } from "../../putio/scrub";
+  import { scrubSeek, scrubThumbPct, segSpans } from "../../putio/scrub";
   import { buildInfoPanel, type PanelAction } from "../../putio/info-tab";
   import { upNext } from "../../putio/upnext";
   import {
@@ -997,6 +997,8 @@
   // The bubble sits on the INSET track (20px off both hit-area ends), so
   // its position is the same fraction of (100% − 40px) plus the 20px inset.
   $: bubbleLeft = `calc(20px + (100% - 40px) * ${barPct / 100})`;
+  // Segment overlays on the bar: where each skippable section sits (segSpans)
+  $: segBars = segSpans(segs, duration);
 
   let barEl: HTMLDivElement;
   // modal panels (BUG 2: side-click dismiss needs the panel rect)
@@ -1228,6 +1230,9 @@
       <div class="bar" data-focus data-ctl="scrub" bind:this={barEl} on:click={onBarClick}>
         <div class="bar-track">
           <div class="bar-buffer" style="width: {bufferPct}%"></div>
+          {#each segBars as span (span.left + "-" + span.width)}
+          <div class="bar-seg" style="left: {span.left}%; width: {span.width}%"></div>
+          {/each}
           <div class="bar-fill" style="width: {barPct}%"></div>
           <div class="thumb" style="left: {barPct}%"></div>
         </div>
@@ -1732,6 +1737,15 @@
     background: rgba(255, 255, 255, 0.5);
     border-radius: 3px;
     transition: width 200ms linear;
+  }
+  .bar-seg {
+    /* the skippable segments: a subtle accent tint on the line, below the
+       fill (played sections stay marked, the fill never fights them) */
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 3px;
+    background: rgba(77, 163, 255, 0.30);
   }
   .bar-fill {
     position: absolute;

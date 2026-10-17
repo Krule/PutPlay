@@ -47,6 +47,9 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   checked and the current one wins where they disagree. Where sources
   report, TheIntroDB wins per section; where one misses, another fills
   the gap. A show no source carries simply gets nothing skipped.
+- The progress bar now marks the skippable sections (intro, recap, end
+  credits) with a subtle blue tint, so you can see where they are as you
+  watch; the played portion of the bar covers them as it fills in.
 
 ### Changed
 - The full-screen player chrome was redesigned for the TV: the title row

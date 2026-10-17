@@ -9,8 +9,10 @@
  *     time, clamped to [0, dur].
  *   - A live/unknown duration (0, negative, non-finite) means there is no
  *     bar to scrub — the row renders LIVE instead. So an unknown duration
- *     is a guard (no seek / 0%), not a feature.
+ *     is a guard (no seek / 0% / no segment spans), not a feature.
  */
+
+import type { Seg } from "./introdb.ts";
 
 export type ScrubDir = -1 | 1;
 
@@ -44,4 +46,33 @@ export function scrubThumbPct(t: number, dur: number): number {
   if (!seekableDuration(dur)) return 0;
   const pct = (t / dur) * 100;
   return clamp(pct, 100);
+}
+
+/** A segment's place on the bar, in percent of the bar's width. */
+export interface SegSpan {
+  /** Left edge of the span, [0, 100]. */
+  left: number;
+  /** Width of the span, [0, 100 - left]. */
+  width: number;
+}
+
+/**
+ * Where each skippable segment sits on the progress bar — one percentage
+ * span per segment, in input order, for the track's .bar-seg overlays.
+ * Unknown/live duration → [] (there is no bar to mark). A segment that
+ * starts at or after the duration is dropped (the data is wrong; the bar
+ * can't show what isn't in the file); a negative start clamps to 0 and a
+ * zero-length span is dropped (invisible).
+ */
+export function segSpans(segs: readonly Seg[], dur: number): SegSpan[] {
+  if (!seekableDuration(dur)) return [];
+  const spans: SegSpan[] = [];
+  for (const seg of segs) {
+    if (seg.start >= dur) continue; // at/past the end: not visible
+    const left = clamp((seg.start / dur) * 100, 100);
+    const endPct = clamp(((seg.end ?? dur) / dur) * 100, 100);
+    const width = endPct - left;
+    if (width > 0) spans.push({ left, width });
+  }
+  return spans;
 }
