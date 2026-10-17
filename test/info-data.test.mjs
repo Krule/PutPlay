@@ -16,8 +16,9 @@
 //          calendar date, no timezone math (the panel must not drift with
 //          the TV's clock zone); garbage → null
 //        - formatRuntime: 124 → "2h 04m", 45 → "45m"; 0/negative/NaN → null
-//        - stripHtml: tags gone, the common entities decoded, whitespace
-//          trimmed, empty result → null
+//        - stripHtml: tags gone, entities decoded (named vocabulary +
+//          numeric references — one pass), whitespace trimmed, empty
+//          result → null
 //        - normalizeAnilistScore: AniList's 0–100 → the panel's 0–10
 //          (85 → 8.5); out of range/null → null
 //   2. the networked lookups (canned TMDb/AniList responses via the swapped
@@ -174,7 +175,11 @@ const MOVIE_DETAIL = {
 const ANIME_MEDIA = {
   averageScore: 85,
   genres: ["Adventure", "Drama", "Fantasy"],
-  description: "<p>An elf mage who <b>lived a thousand years</b> &amp; outlasts her party.</p>",
+  // the description carries the LIVE AniList entity mix — a named
+  // typographic (&mdash;) and numeric (&#8216; &#8217;) references: the
+  // synopsis must arrive as clean text, no raw references
+  description:
+    "<p>An elf mage who <b>lived a thousand years</b> &amp; outlasts her party &mdash; time &#8216;itself&#8217; cannot stop her.</p>",
   coverImage: { large: "https://s4.anilist.co/large/img/cover/x.jpg" },
 };
 // Canned AniList SEARCH (Page { media } — the keyless title → anime step).
@@ -290,6 +295,28 @@ test("stripHtml: nested tags are removed and the common entities are decoded", (
 
 test("stripHtml: &nbsp; decodes; surrounding whitespace is trimmed", () => {
   assert.equal(stripHtml("  a&nbsp;b  "), "a b");
+});
+
+test("stripHtml: numeric entities decode — decimal and hex (AniList descriptions carry &#8211;-style references)", () => {
+  assert.equal(stripHtml("It&#8217;s a &#8220;test&#8221;"), "It’s a “test”");
+  assert.equal(stripHtml("mdash &#8212; and hex ndash &#x2013;"), "mdash — and hex ndash –");
+});
+
+test("stripHtml: the typographic named entities decode (the live AniList vocabulary: &mdash; &ndash; &rsquo;)", () => {
+  assert.equal(
+    stripHtml("one &mdash; two &ndash; three &rsquo;quoted&lsquo; &ldquo;more&rdquo; &hellip;"),
+    "one — two – three ’quoted‘ “more” …"
+  );
+});
+
+test("stripHtml: unknown entities and out-of-range codepoints survive as-is (never invent text)", () => {
+  assert.equal(stripHtml("keep &notanentity; here"), "keep &notanentity; here");
+  assert.equal(stripHtml("bad &#999999999999; ref"), "bad &#999999999999; ref");
+  assert.equal(stripHtml("bad &#xzz; ref"), "bad &#xzz; ref");
+});
+
+test("stripHtml: a double-escaped entity decodes ONCE (&amp;#8217; → &#8217;, the HTML single-pass rule)", () => {
+  assert.equal(stripHtml("&amp;#8217;"), "&#8217;");
 });
 
 test("stripHtml: an empty result → null (the panel omits, never placeholders)", () => {
@@ -433,7 +460,7 @@ test("episode: an empty TMDb search → the keyless AniList fallback (search →
   animeRoutes();
   const got = await lookupEpisodeInfo({ title: "Frieren", season: 1, episode: 1 });
   assert.deepEqual(got, {
-    synopsis: "An elf mage who lived a thousand years & outlasts her party.", // HTML stripped
+    synopsis: "An elf mage who lived a thousand years & outlasts her party — time ‘itself’ cannot stop her.", // HTML stripped, entities decoded
     rating: 8.5, // averageScore 85 (0–100) → 0–10
     genres: ["Adventure", "Drama", "Fantasy"],
     airDate: null, // show-level only

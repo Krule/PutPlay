@@ -94,26 +94,64 @@ export function formatRuntime(minutes: number | null | undefined): string | null
   return `${h}h ${String(total % 60).padStart(2, "0")}m`;
 }
 
-const ENTITIES: Record<string, string> = {
+/** The named entity vocabulary: the base six plus the typographic set
+ *  — the live AniList description mix (a 400-title scan: &mdash;, &ndash;
+ *  and &rsquo; are the ones that actually appear). */
+const NAMED_ENTITIES: Record<string, string> = {
   amp: "&",
   lt: "<",
   gt: ">",
   quot: '"',
-  "#39": "'",
-  "#039": "'",
+  apos: "'",
   nbsp: " ",
+  rsquo: "\u2019",
+  lsquo: "\u2018",
+  rdquo: "\u201d",
+  ldquo: "\u201c",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  hellip: "\u2026",
+  laquo: "\u00ab",
+  raquo: "\u00bb",
+  middot: "\u00b7",
 };
 
 /**
- * HTML → plain text for the panel: tags removed, the common entities
- * decoded, surrounding whitespace trimmed. An empty result → null (the
- * panel omits the synopsis, never shows a placeholder).
+ * One entity reference (the text between & and ;) → its character: the
+ * named vocabulary first, then the numeric forms (&#8217; decimal,
+ * &#x2019; hex) via codepoint. Unknown names and out-of-range codepoints
+ * survive as-is — the decoder never invents text and never throws.
+ */
+function decodeEntity(ref: string): string {
+  const named = NAMED_ENTITIES[ref];
+  if (named) return named;
+  if (ref.startsWith("#")) {
+    const code =
+      ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+    if (Number.isFinite(code) && code > 0 && code <= 0x10ffff) {
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        // a surrogate half — not a character
+      }
+    }
+  }
+  return `&${ref};`;
+}
+
+/**
+ * HTML → plain text for the panel: tags removed, entities decoded (named
+ * vocabulary + numeric references, one pass — a double-escaped &amp;#8217;
+ * decodes once, to &#8217;), surrounding whitespace trimmed. An empty
+ * result → null (the panel omits the synopsis, never shows a placeholder).
  */
 export function stripHtml(html: string | null | undefined): string | null {
   if (typeof html !== "string") return null;
   const text = html
     .replace(/<[^>]*>/g, "")
-    .replace(/&(#39|#039|amp|lt|gt|quot|nbsp);/g, (_, e: string) => ENTITIES[e]);
+    .replace(/&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z][a-zA-Z0-9]{1,31});/g, (_m, ref) =>
+      decodeEntity(ref)
+    );
   const trimmed = text.trim();
   return trimmed === "" ? null : trimmed;
 }

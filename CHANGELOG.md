@@ -69,6 +69,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   subtitles, blue keeps play/pause (the on-screen legend follows).
 
 ### Fixed
+- The info tab's synopsis showed raw HTML entities ("…&#8217;s…") for
+  descriptions that carry them — names like &rsquo; and &mdash;, and the
+  numeric forms (&#8217;), are decoded into real characters now; unknown
+  and out-of-range entities are left as-is instead of mangled.
 - The info tab now finds movies whose file names still carry scene
   noise after the obvious parts are stripped — a year that lives in the
   name ("Kindergarten Cop 1990 …") is now used as the release year, a
