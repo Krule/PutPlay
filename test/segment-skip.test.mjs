@@ -402,6 +402,23 @@ test("parseEpisode: ambiguous bare numbers stay null (a sequel or a tag is not a
   assert.equal(parseEpisode("Show 1.5.mkv"), null, "a decimal special");
 });
 
+test("parseEpisode: the broken scene codec form (H 264 / X 265) is not an episode number — the user's Kindergarten Cop movie", () => {
+  // the real file: the codec number (264) used to survive the GPRS word
+  // strip and read as S1 E264, the movie's title ending in a stray "H"
+  assert.equal(parseEpisode("Kindergarten Cop 1990 H 264-GPRS.mkv"), null, "the space-split form");
+  assert.equal(parseEpisode("Kindergarten.Cop.1990.H.264.GPRS.mkv"), null, "the dot-separated form");
+  assert.equal(parseEpisode("Movie 1990 X 265.mkv"), null, "the 265 variant");
+  assert.equal(parseEpisode("Movie 1990 H264.mkv"), null, "the solid form");
+});
+
+test("parseEpisode: a real bare episode number BEHIND a codec tail still resolves (the tail is peeled, not fatal)", () => {
+  assert.deepEqual(parseEpisode("[Group] Show 171 H 264.mkv"), {
+    title: "Show",
+    season: 1,
+    episode: 171,
+  });
+});
+
 test("parseEpisode: a (year) tag is captured for the TMDb disambiguation", () => {
   assert.deepEqual(parseEpisode("My.Show.(2021).S01E01.mkv"), {
     title: "My Show",

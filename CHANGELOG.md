@@ -84,6 +84,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   release-group word at the end ("… All at Once … Licdom") is dropped
   from the search, and titles where the year is part of the name
   (Blade Runner 2049) resolve as well.
+- Movies with a broken codec in the file name are no longer mistaken for
+  an anime episode: a "H 264" / "X 265" / "H.264" at the end of the name
+  ("… Kindergarten Cop 1990 H 264-GPRS.mkv") is the codec, not season 1
+  episode 264 — such files are matched as movies again.
 - Anime get info-tab data too: when the movie database carries nothing
   for the title, the player now looks the show up on AniList — the
   anime community's database, no key needed — and shows the

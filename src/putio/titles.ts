@@ -21,7 +21,9 @@
  *                                 [Group] tag — "Show 2" is a sequel, not
  *                                 an episode. Resolutions (720/1080/…),
  *                                 years (1900–2099) and decimals ("1.5")
- *                                 never count as episode numbers.
+ *                                 never count as episode numbers. Neither
+ *                                 does a broken codec tail ("H 264" — the
+ *                                 number is H.264, not an episode).
  *   "My.Show.(2021).S01E01.mkv"   an optional (year) tag, for disambiguation
  */
 
@@ -48,8 +50,14 @@ const GROUP_LEAD_RE = /^(?:\[[^\]]{1,40}\]\s*)+/;
 const TAG_TAIL_RE = /[\(\[][^()\[\]]{1,40}[\)\]]\s*$/;
 /** A trailing quality token: 1080p / 720 / 4k / uhd … (with its separator). */
 const QUALITY_TAIL_RE = /(?:^|[.\s_-])(?:\d{3,4}p|4k|uhd|480|720|1080|1440|2160|3840)$/i;
-/** Trailing scene words after the number: WEB-DL, REMUX, x264 … */
+/** A trailing scene word: the release-group tail (GPRS, Licdom …). */
 const WORD_TAIL_RE = /[A-Za-z][\w-]*\s*$/;
+/** The broken scene codec form at the tail: "H 264" / "X 265" — space OR
+ *  dot/hyphen splits ("H.264"), plus a dangling separator left behind by
+ *  the group-word strip ("…H 264-"). The number is the CODEC (H.264/
+ *  H.265), never an episode: "…1990 H 264-GPRS" is a movie, not S1 E264.
+ *  (The solid form "H264" is one word — WORD_TAIL_RE already peels it. */
+const CODEC_TAIL_RE = /(^|[.\s_-])[hx][.\s_-]?26[45][.\s_-]*$/i;
 
 /**
  * Case/punctuation-free form — "Black.Clover!" and "black clover" match.
@@ -114,17 +122,42 @@ export function parseEpisode(name: string): EpisodeId | null {
 
 /**
  * The anime-style bare episode number: the LAST number in the name, after
- * the trailing tags are gone — "…Title - 171", "…Title 171", "…Title.171".
- * A number that is a resolution (720/1080/…), a year (1900–2099), or the
- * tail of a decimal ("1.5") is not an episode; a 1–2 digit number is not
- * trusted without a [Group] tag (sequel risk — "Show 2"). Returns null when
- * the name carries no usable bare number.
+ * the trailing tags are peeled — "…Title - 171", "…Title 171",
+ * "…Title.171". A number that is a resolution (720/1080/…), a year
+ * (1900–2099), the tail of a decimal ("1.5"), or the half of a broken
+ * codec token ("H 264" / "X 265" — peeled off the tail, never a
+ * candidate) is not an episode; a 1–2 digit number is not trusted without
+ * a [Group] tag (sequel risk — "Show 2"). Returns null when the name
+ * carries no usable bare number.
  */
 function bareNumber(base: string): { episode: number; titleEnd: number } | null {
   const hadGroup = GROUP_LEAD_RE.test(base);
+  // The tail is peeled ONE TOKEN AT A TIME (bracket tags, quality, the
+  // broken codec form, group words) until nothing known is left — scene
+  // junk stacks ("…171 (1080p) [7AD4AFC7] GPRS"). The peel stops at a
+  // number tail: that number is the episode candidate, and the guards
+  // below decide whether it is one.
   let t = base;
-  while (TAG_TAIL_RE.test(t)) t = t.replace(TAG_TAIL_RE, "");
-  t = t.replace(QUALITY_TAIL_RE, "").replace(WORD_TAIL_RE, "");
+  let changed = true;
+  while (changed) {
+    changed = false;
+    while (TAG_TAIL_RE.test(t)) {
+      t = t.replace(TAG_TAIL_RE, "");
+      changed = true;
+    }
+    if (QUALITY_TAIL_RE.test(t)) {
+      t = t.replace(QUALITY_TAIL_RE, "");
+      changed = true;
+    }
+    if (CODEC_TAIL_RE.test(t)) {
+      t = t.replace(CODEC_TAIL_RE, "");
+      changed = true;
+    }
+    if (WORD_TAIL_RE.test(t)) {
+      t = t.replace(WORD_TAIL_RE, "");
+      changed = true;
+    }
+  }
   t = t.replace(/[.\s_-]+$/, "").trim();
   const m = t.match(/(^|[.\s_-])(\d{1,4})$/);
   if (!m) return null; // nothing number-shaped left at the end
