@@ -210,10 +210,17 @@
   /** Per segment: settled (skipped or played through) — a settled section
    *  never fires its action again. */
   let segConsumed: boolean[] = [];
-  /** The contextual skip pill (ctx-pill): the offer's display state.
-   *  Replaces the old center offer modal — a passive bottom-right surface
-   *  that joins the focus graph (OK = skip), Back settles it (play
-   *  through), and leaving the window settles it too. */
+  /** Any overlay/panel on top of the chrome: the focus owner while true. */
+  $: anyPanelOpen =
+    overlays.audio ||
+    overlays.subs ||
+    overlays.source ||
+    overlays.speed ||
+    infoOpen;
+  /** The contextual skip BUTTON (ctx-pill): the offer's display state.
+   *  A button above the title row in the player's own button material,
+   *  FOCUSED the moment it lands (OK alone = the instant skip), Back =
+   *  play through, leaving the window settles it too. */
   $: pill = pillState({
     segs,
     time: currentTime,
@@ -221,12 +228,7 @@
     consumed: segConsumed,
     mode,
     autoSkip: !!cfg?.skipSegments,
-    panelOpen:
-      overlays.audio ||
-      overlays.subs ||
-      overlays.source ||
-      overlays.speed ||
-      infoOpen,
+    panelOpen: anyPanelOpen,
   });
   /** The offer panel is up for this segment index (-1 = closed). At most
    *  one offer per section per file — "play through" or a natural end
@@ -1127,10 +1129,30 @@
   // next frame (registerAll is idempotent; the engine GCs the old rows)
   $: if (audioPanelEl && audioPanelRows.length) requestAnimationFrame(() => remote.registerAll(audioPanelEl));
   $: if (subsPanelEl && subtitles.length) requestAnimationFrame(() => remote.registerAll(subsPanelEl));
-  // the pill appears/disappears with the section window — register it when
-  // it lands (idempotent; the engine GCs it on the next press once gone).
-  // It is a focus target but never AUTO-focused (the passive offer).
-  $: if (pillEl) tick().then(() => remote.registerAll(pillEl));
+  // the skip button's focus lifecycle — it appears/disappears with the
+  // section window. APPEAR: register, then FOCUS — the moment the intro is
+  // detected, OK alone = the instant skip (that is the point). The guard:
+  // a panel open at that instant owns focus, so the button registers but
+  // does not steal from it. DISAPPEAR: if the button still holds focus
+  // (the window ended with nothing pressed), hand the remote back to the
+  // transport — via restoreIfStale, which never steals focus the user has
+  // already moved elsewhere.
+  let pillHadFocus = false;
+  $: if (pillEl) {
+    tick().then(() => {
+      remote.registerAll(pillEl);
+      if (!anyPanelOpen) {
+        remote.focusEl(pillEl);
+        pillHadFocus = true;
+      } else {
+        pillHadFocus = false; // a panel owns focus — the button is visible, passive
+      }
+    });
+  }
+  $: if (!pillEl && pillHadFocus) {
+    pillHadFocus = false;
+    tick().then(() => restoreIfStale(ctlEl("play")));
+  }
 
   // D-pad focus trap: while any panel is open, arrows stay inside the
   // topmost one (later template branch = higher z). FULL mode scopes the
@@ -1272,8 +1294,12 @@
     </div>
   </div>
 
-  <!-- the contextual skip pill: a passive bottom-right surface that stays
-       when the chrome auto-hides (it does NOT follow showControls). OK =
+  <!-- the contextual skip button: a button ABOVE the title row (the first
+       row of the chrome), RIGHT-ALIGNED — its right edge sits on the
+       speed button's right edge (the title row's rightmost icon). The
+       player's button material, larger than the transport, with text. It
+       stays when the chrome auto-hides (NOT gated on showControls).
+       FOCUSED the moment it lands (OK alone = the instant skip); OK =
        skip; Back = play through; leaving the window settles it. -->
   {#if pill}
   <div class="pill" bind:this={pillEl} data-focus data-ctl="skip" on:click={() => skipSegNow(pill.index)}>
@@ -1763,8 +1789,8 @@
     height: 16px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+    background: var(--scrub-thumb);
+    box-shadow: var(--scrub-thumb-shadow);
   }
   .bubble {
     position: absolute;
@@ -1788,7 +1814,7 @@
     /* the theme's generic focus scales 1.05 — an 80px bar jumping 4px is
        a flinch, not a focus; the ring + the thumb growth ARE the focus */
     transform: none;
-    box-shadow: inset 0 0 0 2px rgba(77, 163, 255, 0.45);
+    box-shadow: inset 0 0 0 2px var(--accent-ring);
   }
   :global(.bar[data-state="active"] .thumb) {
     width: 24px;
@@ -1859,20 +1885,10 @@
     flex: none;
     border-radius: var(--r-md);
     border: 1px solid var(--line-strong);
-    background: radial-gradient(
-        140px 90px at 70% 70%,
-        rgba(255, 190, 120, 0.45),
-        rgba(255, 190, 120, 0) 70%
-      ),
-      linear-gradient(160deg, #14242f 0%, #1d3a44 55%, #0d1a20 100%);
+    background: var(--ph-anime-glow), var(--ph-anime);
   }
   .info-thumb.movie {
-    background: radial-gradient(
-        160px 100px at 30% 60%,
-        rgba(140, 170, 255, 0.3),
-        rgba(140, 170, 255, 0) 70%
-      ),
-      linear-gradient(160deg, #101a2e 0%, #1c2a4a 55%, #0a111e 100%);
+    background: var(--ph-movie-glow), var(--ph-movie);
   }
   .info-text {
     margin-left: 36px;
@@ -1938,38 +1954,48 @@
     box-shadow: var(--focus-shadow);
     background: var(--accent-dim-solid);
   }
-  /* the contextual skip pill (L2): its OWN surface — it stays when the
-     chrome auto-hides (NOT gated on showControls), right 72px / bottom
-     150px. A focus target, never auto-focused (the passive offer). */
+  /* the contextual skip BUTTON (L2): the player's own button material
+     (same family as .icbtn/.tbtn — translucent white disc, the focus
+     triad glow + scale + brighter fill), but a LARGER pill, because it
+     carries icon + text. Its OWN surface — stays when the chrome
+     auto-hides (NOT gated on showControls). ABOVE the title row, the
+     first row of the chrome, right edge on the speed button's edge: the
+     title row's top edge sits ~355 from the bottom (the tall case: title
+     48 + subtitle 26 + margin) → + 22 gap → bottom 377; right 72 = the
+     controls' right padding (where the row's icons end). */
   .pill {
     position: absolute;
     right: 72px;
-    bottom: 150px;
+    bottom: 377px;
     z-index: 25;
     display: flex;
     align-items: center;
-    height: 60px;
-    padding: 0 26px 0 20px;
+    height: 80px;
+    padding: 0 28px;
     border-radius: 999px;
-    background: var(--accent-dim-solid);
+    background: rgba(255, 255, 255, 0.1);
     box-shadow: var(--elev-md);
     cursor: pointer;
     /* focus is the glow, not the theme's 3px hard border */
     border: 0;
   }
   .pill svg {
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     margin-right: 12px;
     flex: none;
   }
   .pill-label {
-    font-size: 26px;
+    font-size: 30px;
     font-weight: 600;
     color: var(--text);
     white-space: nowrap;
   }
   :global(.pill[data-state="active"]) {
+    /* the triad, mirroring .tbtn — a right-anchored button scales from
+       its own center, so no position transform to keep */
+    transform: scale(1.06);
+    background: rgba(255, 255, 255, 0.16);
     box-shadow: var(--focus-shadow);
   }
   /* buffering (A6): 36px spinner, bottom-center, ~120px above the

@@ -79,6 +79,26 @@
   /* focus indicator — soft ring + glow (a hard solid outline reads "crisp") */
   --focus-shadow: 0 0 0 6px rgba(77, 163, 255, 0.22), 0 0 24px rgba(77, 163, 255, 0.5);
 
+  /* player chrome: the scrubber thumb, the focused bar's accent ring,
+     and the info panel's placeholder (no still available) — the
+     placeholder's mood gradients live here so the component file stays
+     token-clean */
+  --scrub-thumb: #ffffff;
+  --scrub-thumb-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  --accent-ring: rgba(77, 163, 255, 0.45);
+  --ph-anime: linear-gradient(160deg, #14242f 0%, #1d3a44 55%, #0d1a20 100%);
+  --ph-anime-glow: radial-gradient(
+    140px 90px at 70% 70%,
+    rgba(255, 190, 120, 0.45),
+    rgba(255, 190, 120, 0) 70%
+  );
+  --ph-movie: linear-gradient(160deg, #101a2e 0%, #1c2a4a 55%, #0a111e 100%);
+  --ph-movie-glow: radial-gradient(
+    160px 100px at 30% 60%,
+    rgba(140, 170, 255, 0.3),
+    rgba(140, 170, 255, 0) 70%
+  );
+
   /* motion */
   --t-fast: 120ms;
   --t-med: 200ms;

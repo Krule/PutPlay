@@ -1,6 +1,7 @@
 /**
  * The contextual skip pill (pure — no DOM/webOS imports, testable in node):
- * the small bottom-right "Skip intro" offer the full-screen Player shows
+ * the small "Skip intro" offer at the bar's right end (above the track
+ * line) the full-screen Player shows
  * when the playhead crosses a known section window (intro / recap / end
  * credits) and the auto-skip switch is OFF.
  *

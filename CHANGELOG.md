@@ -26,8 +26,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   behavior: Auto-skip (default) jumps each section as playback reaches it
   — a fresh start begins after the intro and/or recap, and skipping the
   end credits ends the episode and moves on to the next video; Ask me
-  shows a small "Skip …" pill at the player's bottom right for each section
-  instead — it stays visible even while the player UI is hidden — and you
+  shows a "Skip …" button above the title row (the first row of the
+  player's controls) for each section instead — in the player's button
+  style, larger and with text, and focused the moment the section is
+  detected, so a single OK press skips it (Back plays through). It stays
+  visible even while the player UI is hidden, and you
   choose skip (OK) or play through (Back). A saved resume always wins; no
   match, or no data, simply means nothing is skipped. Each play looks the episode up fresh
   from the live sources (on-device caching is suspended for now). Anime

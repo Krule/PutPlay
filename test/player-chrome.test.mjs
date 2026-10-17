@@ -19,8 +19,9 @@
 // trapped inside, Back closes and restores the opener. The info panel
 // (D-pad DOWN from the transport row) says what the title view can't —
 // synopsis, details, actions (Play from beginning / Up next) — and Back
-// closes it and restores the transport. The contextual skip PILL
-// (bottom-right, visible with the chrome hidden) replaces the old
+// closes it and restores the transport. The contextual skip PILL (at the
+// bar's right end, above the scrub line, visible with the chrome hidden)
+// replaces the old
 // center offer modal: OK skips, Back plays through, it settles once.
 // The chrome hides 4s after the last activity unless PINNED (paused,
 // error, a menu open, or the info open — surfaceVisibility); the
@@ -381,14 +382,59 @@ test("the bar shows the skippable segments as subtle overlays (segSpans → .bar
 
 /* ---------------- the contextual skip button (replaces the offer modal, then the bar-end pill) ---------------- */
 
-test("the offer is now a bottom-right PILL (pillState), not a center modal", () => {
-  assert.ok(/pillState\(/.test(player), "the pill decision comes from pillState (tested)");
-  assert.ok(/class="pill"/.test(player), "the pill element exists");
+test("the skip offer is a BUTTON above the title row — the player's button material, larger, with text", () => {
+  assert.ok(/pillState\(/.test(player), "the offer decision comes from pillState (tested)");
+  assert.ok(/class="pill"/.test(player), "the offer element exists");
   assert.ok(!/seg-panel|segPanelEl/.test(player), "the old center offer modal (seg panel) is gone");
   const pillRule = rule(".pill {");
+  // Above the first chrome row (the title row), right edge on the speed
+  // button's edge. From the screen bottom: 64 (pad) + 72 (transport) + 22
+  // (gap) + 80 (scrub) + 22 (gap) = 260 (the title row's floor); the
+  // tallest row (title 48px + subtitle 26px + 6px margin, at 1.2 leading)
+  // ≈ 95 → its top edge is 355; + 22 gap → bottom 377. An 80px button
+  // spans 377–457 — taller than the 64px icons and the 72px play.
+  // right 72 = the controls' right padding, where the title row's right
+  // edge (and the speed button, its rightmost icon) ends.
   assert.ok(
-    /right:\s*72px/.test(pillRule) && /bottom:\s*150px/.test(pillRule),
-    "the pill sits at right 72px / bottom 150px"
+    /right:\s*72px/.test(pillRule) &&
+      /bottom:\s*377px/.test(pillRule) &&
+      /height:\s*80px/.test(pillRule) &&
+      !/left:\s*50%/.test(pillRule),
+    "above the title row (bottom 377px), 80px tall, right-aligned (right 72px — the speed button's right edge)"
+  );
+  assert.ok(
+    /background:\s*rgba\(255,\s*255,\s*255,\s*0\.1\)/.test(pillRule) &&
+      /border:\s*0/.test(pillRule),
+    "the player's button material (rgba(255,255,255,0.1), no border) — same family as the transport buttons"
+  );
+  assert.ok(
+    !/right:\s*208px/.test(pillRule) && !/var\(--accent-dim-solid\)/.test(pillRule),
+    "not the old bar-end pill: no bar-right offset, no accent material"
+  );
+  const activeRule = rule(":global(.pill[data-state=\"active\"]) {");
+  assert.ok(
+    /box-shadow:\s*var\(--focus-shadow\)/.test(activeRule) &&
+      /transform:\s*scale\(1\.06\)/.test(activeRule) &&
+      /background:\s*rgba\(255,\s*255,\s*255,\s*0\.16\)/.test(activeRule),
+    "the focus state is the player's button triad (glow + scale 1.06 + the lighter material)"
+  );
+  const labelRule = rule(".pill-label {");
+  assert.ok(/font-size:\s*30px/.test(labelRule), "the label is TV-scale (30px — the user's 'with text, just larger')");
+  const svgRule = rule(".pill svg {");
+  assert.ok(/width:\s*32px/.test(svgRule), "the icon is 32px (the play icon's size) — a button with text, not a pill");
+});
+
+test("the offer is FOCUSED the moment it lands (OK = the instant skip) — and when it vanishes still focused, the transport gets it back", () => {
+  assert.ok(
+    /registerAll\(\s*pillEl\s*\)[\s\S]{0,200}?remote\.focusEl\(\s*pillEl\s*\)/.test(player),
+    "registration is immediately followed by focusEl(pillEl) — focus lands as soon as the section is detected, so OK alone skips"
+  );
+  const restore = player.match(
+    /if\s*\(\s*!\s*pillEl\s*&&\s*pillHadFocus\s*\)[\s\S]{0,160}?restoreIfStale\(\s*ctlEl\(\s*"play"\s*\)\s*\)/
+  );
+  assert.ok(
+    restore,
+    "a vanished button that still held focus restores the transport (a detached active would make the next press edge-pick)"
   );
 });
 
@@ -469,7 +515,7 @@ test("the chrome uses SVG icons — no Unicode glyph icons in full mode", () => 
 // D-pad candidates: walking down from the chrome drops focus into the
 // invisible library (the ring "swallows" into the video). The locked
 // keymap (§2.9) is a closed walk on the player's own surface (transport →
-// up → scrubber; down from transport → info; pill bottom-right), so full
+// up → scrubber; down from transport → info; pill at the bar's right end), so full
 // mode must scope the graph to the player root, and opening the player
 // must take the remote from the covered background.
 
