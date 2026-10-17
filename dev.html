@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>PutPlay (dev)</title>
+</head>
+<body>
+  <div id="app"></div>
+  <!-- The Vite dev entry (pnpm dev → /dev.html): the module graph loads
+       from source (theme.css injected via the main.ts import). The SHIPPED
+       shell is index.html (js/bundle.js, the iife build) — webOS needs the
+       plain <script> form, so the two must stay separate. -->
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
