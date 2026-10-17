@@ -14,14 +14,11 @@
     if (location.search.indexOf("seedtoken") !== -1) {
       localStorage.setItem("putio.oauthToken", JSON.stringify(TOKEN));
     }
-    /* ?autofallback → the "use the put.io stream" audio-fallback setting;
-     * ?prefaudio=<code> → the preferred audio language. Both seed the config
-     * so e2e flows don't have to navigate the Settings screen. */
+    /* ?prefaudio=<code> → the preferred audio language. Seeded into the
+     * config so e2e flows don't have to navigate the Settings screen. */
     var cfgSeed = {};
     var prefM = location.search.match(/prefaudio=([a-z]{2,3})/);
     if (prefM) cfgSeed.audioLang = prefM[1];
-    if (location.search.indexOf("autofallback") !== -1)
-      cfgSeed.audioFallback = "auto-hls";
     if (Object.keys(cfgSeed).length)
       localStorage.setItem("putio.config", JSON.stringify(cfgSeed));
   } catch (e) {}

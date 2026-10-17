@@ -291,10 +291,12 @@
           : p.audioPickIndex !== undefined
           ? audioPanelRows.find((r) => r.nativeIndex === p.audioPickIndex)
           : undefined;
-      // "If the original can't switch audio: use the put.io stream" — go
-      // straight to the rendition of the chosen language, position kept.
-      const autoHls =
-        get(config).audioFallback === "auto-hls" && !!row && row.hlsIndex >= 0 && !autoHlsTried;
+      // A native switch the webview refuses ALWAYS falls back to the put.io
+      // rendition of the chosen language, position kept (the old "if the
+      // original can't switch audio" setting is gone — auto switch is the
+      // only behavior now). Single-flight: a second refusal in the same
+      // session toasts and stops, it cannot loop.
+      const autoHls = !!row && row.hlsIndex >= 0 && !autoHlsTried;
       if (autoHls) {
         autoHlsTried = true;
         platform.toast("The TV couldn't switch — using the put.io stream for this language.");

@@ -178,13 +178,19 @@ test("MediaEngine: enterHlsForRow is the auto-hls entry point", () => {
   );
 });
 
-test("Player: the auto-hls setting routes a refused native switch to the put.io stream", () => {
+test("Player: a refused native switch ALWAYS falls back to the put.io stream (the setting is gone)", () => {
+  // m00758: "remove 'If the original can't switch audio', use auto switch
+  // as default" — the fallback is now unconditional; single-flight kept.
   const player = read("src/ui/screens/Player.svelte");
   const m = player.match(/function applyEngineState[\s\S]*?\n  \}/);
   assert.ok(m, "applyEngineState must exist");
   assert.ok(
-    /audioFallback/.test(m[0]) && /enterHlsForRow/.test(m[0]),
-    "on audioSwitchFailed the Player must honor the audioFallback setting (auto-hls → enterHlsForRow)"
+    /enterHlsForRow/.test(m[0]),
+    "on audioSwitchFailed the Player must route to the put.io stream (enterHlsForRow)"
+  );
+  assert.ok(
+    !/audioFallback/.test(m[0]),
+    "the fallback must no longer read the removed audioFallback setting"
   );
   assert.ok(
     /autoHlsTried/.test(player),
@@ -192,15 +198,15 @@ test("Player: the auto-hls setting routes a refused native switch to the put.io 
   );
 });
 
-test("Settings: the 'if the original can't switch audio' option exists", () => {
+test("Settings: the 'if the original can't switch audio' option is gone", () => {
   const settings = read("src/ui/screens/Settings.svelte");
   assert.ok(
-    /If the original can't switch audio/i.test(settings),
-    "the setting must be worded in user terms (what happens, not which mechanism)"
+    !/If the original can't switch audio/i.test(settings),
+    "the card must be gone (m00758: the auto switch is the only behavior now)"
   );
   assert.ok(
-    /audioFallback/.test(settings),
-    "the setting must bind the audioFallback config key"
+    !/audioFallback/.test(settings),
+    "Settings must not reference the removed audioFallback key"
   );
 });
 

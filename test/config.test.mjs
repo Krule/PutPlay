@@ -115,23 +115,16 @@ test("pickSubtitleTrack: preference matches but that track has no cues → off",
   assert.equal(pickSubtitleTrack(tracks, "eng"), -1);
 });
 
-// ---------------- audioFallback (Phase 5) ----------------
+// ---------------- audioFallback REMOVED (m00758) ----------------
 //
-// When the original file can't switch audio (the webview vetoed even the
-// reload dance), what happens next is a user choice:
-//   "ask" (default)     → honest refusal + the row offers the put.io stream
-//   "auto-hls"          → go straight to the put.io rendition of the chosen
-//                         language, position preserved
+// The "if the original can't switch audio" setting is gone — a refused
+// native switch now ALWAYS falls back to the put.io rendition (the old
+// "auto-hls" choice, position preserved). Stale saves may still carry the
+// key; normalizeConfig must drop it so it can't leak into the state.
 
-test("normalizeConfig: audioFallback defaults to 'ask'", () => {
-  assert.equal(normalizeConfig({}).audioFallback, "ask");
-  assert.equal(normalizeConfig(null).audioFallback, "ask");
-});
-
-test("normalizeConfig: audioFallback keeps a valid value, coerces garbage to 'ask'", () => {
-  assert.equal(normalizeConfig({ audioFallback: "auto-hls" }).audioFallback, "auto-hls");
-  assert.equal(normalizeConfig({ audioFallback: "bogus" }).audioFallback, "ask");
-  assert.equal(normalizeConfig({ audioFallback: "" }).audioFallback, "ask");
+test("normalizeConfig: the removed audioFallback key is dropped (stale saves)", () => {
+  assert.equal(normalizeConfig({ audioFallback: "auto-hls" }).audioFallback, undefined);
+  assert.equal(normalizeConfig(null).audioFallback, undefined);
 });
 
 test("pickAudioTrack: a preference matching NO track is -1 (no silent track-0 force)", () => {

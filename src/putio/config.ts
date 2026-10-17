@@ -5,10 +5,8 @@
  *  - source: which stream to start from (original / put.io mp4 / hls)
  *  - audioLang / subtitleLang: preferred language code or display name
  *    ("" = no preference); they steer auto-selection of tracks
- *  - subScale: DOM-overlay subtitle font scale (1 = default)
- *  - audioFallback: what to do when the original file can't switch audio
- *    ("ask" = honest refusal + the row offers the put.io stream;
- *    "auto-hls" = go straight to the put.io rendition of the chosen language)
+ *  - subScale: DOM-overlay subtitle font scale (1 = default) — owned by
+ *    the player (the in-player subtitle panel), no longer a Settings card
  *  - playNext: when a video ends, auto-advance to the next video in the
  *    same folder (the docked player's queue walk). Music auto-next is
  *    always on — this gate is the video's (owner: configurable, default on).
@@ -26,7 +24,6 @@ export interface ConfigState {
   audioLang: string;
   subtitleLang: string;
   subScale: number;
-  audioFallback: "ask" | "auto-hls";
   playNext: boolean;
   /** The single segment-skip switch: ON = auto-skip intro/recap/credits at
    *  their (TheIntroDB) boundaries; OFF = the player offers the skip. */
@@ -38,7 +35,6 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   audioLang: "",
   subtitleLang: "",
   subScale: 1,
-  audioFallback: "ask",
   playNext: true,
   skipSegments: true,
   subScaleMin: 0.8,
@@ -60,7 +56,6 @@ export const SUB_SCALE_OPTIONS: { v: number; label: string }[] = [
 ];
 
 const SOURCE_KINDS = ["original", "mp4", "hls"] as const;
-const AUDIO_FALLBACKS = ["ask", "auto-hls"] as const;
 
 /** Merge user input onto defaults, coercing to the stored shape. */
 export function normalizeConfig(partial: Partial<ConfigState> | null | undefined): ConfigState {
@@ -70,9 +65,6 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
     ? (p.source as ConfigState["source"])
     : d.source;
   const scale = typeof p.subScale === "number" && !isNaN(p.subScale) ? p.subScale : d.subScale;
-  const audioFallback = (AUDIO_FALLBACKS as readonly string[]).includes(p.audioFallback || "")
-    ? (p.audioFallback as ConfigState["audioFallback"])
-    : d.audioFallback;
   const playNext = typeof p.playNext === "boolean" ? p.playNext : d.playNext;
   const skipSegments = typeof p.skipSegments === "boolean" ? p.skipSegments : d.skipSegments;
   return {
@@ -80,7 +72,6 @@ export function normalizeConfig(partial: Partial<ConfigState> | null | undefined
     audioLang: (p.audioLang ?? "").trim(),
     subtitleLang: (p.subtitleLang ?? "").trim(),
     subScale: Math.min(d.subScaleMax, Math.max(d.subScaleMin, scale)),
-    audioFallback,
     playNext,
     skipSegments,
   };

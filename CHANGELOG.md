@@ -121,6 +121,14 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   new skip-segments card, a card past the fold used to be unreachable
   with the D-pad (a clipped card is a card the remote can't reach).
 
+### Removed
+- The "Subtitle size" card in Settings: the size is set directly in the
+  player's subtitle menu, and the last size picked there is the default.
+- The "If the original can't switch audio" card in Settings: when a file
+  refuses an in-place audio switch, the player now always switches to
+  the matching put.io language itself (your position is kept) — there is
+  nothing left to choose.
+
 ## [1.1.3] - 2026-10-15
 
 ### Changed

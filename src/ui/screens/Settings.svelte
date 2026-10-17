@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { auth, signOut } from "../../store/auth";
-  import { config, saveConfig, SUB_SCALE_OPTIONS, type ConfigState } from "../../store/config";
+  import { config, saveConfig, type ConfigState } from "../../store/config";
   import { requestLibrary } from "../../store/nav";
   import { getRemote } from "../../webos/remote";
   import { fmtBytes } from "../../putio/api";
@@ -24,8 +24,6 @@
   $: cfgSource = c?.source ?? "original";
   $: cfgAudio = c?.audioLang ?? "";
   $: cfgSub = c?.subtitleLang ?? "";
-  $: cfgScale = c?.subScale ?? 1;
-  $: cfgFallback = c?.audioFallback ?? "ask";
   $: cfgPlayNext = c?.playNext ?? true;
   // skip segments (intro / recap / credits): ONE switch — auto-skip at each
   // section's boundary (TheIntroDB times) or ask per section. The TMDb key
@@ -61,22 +59,6 @@
     langPicker = null;
     // return the D-pad to the field that opened the picker
     if (field) requestAnimationFrame(() => remote.focusEl(field));
-  }
-
-  // the audio-fallback picker ("if the original can't switch audio")
-  let fallbackPicker = false;
-  let fallbackFieldEl: HTMLButtonElement;
-  const FALLBACK_OPTIONS: { value: string; label: string }[] = [
-    { value: "ask", label: "Ask me" },
-    { value: "auto-hls", label: "Use the put.io stream" },
-  ];
-  function pickFallback(v: string): void {
-    if (v === "ask" || v === "auto-hls") cfgFallback = v;
-    closeFallbackPicker();
-  }
-  function closeFallbackPicker(): void {
-    fallbackPicker = false;
-    if (fallbackFieldEl) requestAnimationFrame(() => remote.focusEl(fallbackFieldEl));
   }
 
   // ---------------- 5-way remote focus wiring ----------------
@@ -127,10 +109,6 @@
       closeLangPicker();
       return;
     }
-    if (fallbackPicker) {
-      closeFallbackPicker();
-      return;
-    }
     if (confirmSignOut) {
       confirmSignOut = false;
       return;
@@ -141,14 +119,16 @@
   }
 
   function persist() {
-    // fold any edited value back into the store and persist it
+    // fold any edited value back into the store and persist it — SPREADING
+    // the current config on purpose: keys this page no longer edits (the
+    // player-owned subScale, last picked in the player) must survive a save
+    // instead of being reset to defaults.
     if (c) {
       config.set({
+        ...c,
         source: cfgSource,
         audioLang: cfgAudio,
         subtitleLang: cfgSub,
-        subScale: cfgScale,
-        audioFallback: cfgFallback,
         playNext: cfgPlayNext,
         skipSegments: cfgSkipSegs,
       });
@@ -252,31 +232,11 @@
       </div>
 
       <div class="card">
-        <p class="card-title">If the original can't switch audio</p>
-        <button class="lang-field" bind:this={fallbackFieldEl} data-focus on:click={() => (fallbackPicker = true)}>
-          <span class="lf-value">{cfgFallback === "auto-hls" ? "Use the put.io stream" : "Ask me"}</span>
-        </button>
-        <p class="note">
-          Some files refuse in-place audio switches. Pick the put.io stream manually each time, or
-          switch to its matching language automatically (your position is kept).
-        </p>
-      </div>
-
-      <div class="card">
         <p class="card-title">Preferred subtitle language</p>
         <button class="lang-field" bind:this={subFieldEl} data-focus on:click={() => (langPicker = "sub")}>
           {#if cfgSub}<span class="lf-value">{langLabel(cfgSub) || cfgSub}</span>{:else}<span class="lf-empty">None (no auto-select)</span>{/if}
         </button>
         <p class="note">Only subtitles in this language turn on automatically. OpenSubtitles finds are labelled.</p>
-      </div>
-
-      <div class="card">
-        <p class="card-title">Subtitle size</p>
-        <div class="opt-row">
-          {#each SUB_SCALE_OPTIONS as o (o.v)}
-            <button class="chip" class:sel={cfgScale === o.v} data-focus on:click={() => (cfgScale = o.v)}>{o.label}</button>
-          {/each}
-        </div>
       </div>
 
       <div class="card">
@@ -306,16 +266,6 @@
       selected={langPicker === "audio" ? cfgAudio : cfgSub}
       on:pick={(e) => pickLang(e.detail)}
       on:close={closeLangPicker}
-    />
-  {/if}
-
-  {#if fallbackPicker}
-    <LangPicker
-      title="If the original can't switch audio"
-      options={FALLBACK_OPTIONS}
-      selected={cfgFallback}
-      on:pick={(e) => pickFallback(e.detail)}
-      on:close={closeFallbackPicker}
     />
   {/if}
 </div>

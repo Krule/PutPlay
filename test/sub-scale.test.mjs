@@ -91,14 +91,32 @@ test("the HLS ::cue rendering follows the scale (CSS variable on the video eleme
   );
 });
 
-test("Settings reuses the shared ladder (no private copy)", () => {
+test("Settings no longer offers a Subtitle size card — the player's pick is the setting", () => {
+  // m00758: the card duplicated the in-player control; the last pick made
+  // in the player IS the default (pickSubScale already persists subScale).
   const settings = read("src/ui/screens/Settings.svelte");
   assert.ok(
-    !/const SCALE_OPTIONS/.test(settings),
-    "the private SCALE_OPTIONS const must be gone"
+    !/Subtitle size/i.test(settings),
+    "the Subtitle size card must be gone from Settings"
   );
   assert.ok(
-    /SUB_SCALE_OPTIONS/.test(settings),
-    "Settings must render the shared SUB_SCALE_OPTIONS"
+    !/SUB_SCALE_OPTIONS/.test(settings) && !/cfgScale/.test(settings),
+    "Settings must not reference the ladder or a scale state anymore"
+  );
+});
+
+test("saving Settings keeps the player's last subtitle pick", () => {
+  // persist() used to re-stamp subScale from the card with a full
+  // config.set({...}) — once the card is gone that would silently reset
+  // the player's pick. It must fold the current config in instead.
+  const settings = read("src/ui/screens/Settings.svelte");
+  const body = bodyOf(settings, "persist");
+  assert.ok(
+    /\.\.\.c/.test(body),
+    "persist() must spread the current config (player-owned keys survive)"
+  );
+  assert.ok(
+    !/subScale:/.test(body) && !/audioFallback:/.test(body),
+    "persist() must not re-stamp the player-owned subScale or the removed audioFallback"
   );
 });
