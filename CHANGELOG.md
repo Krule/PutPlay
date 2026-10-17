@@ -35,7 +35,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   an SxxEyy marker are resolved too — a bare episode number like
   "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv" works (a 1–2
   digit number needs the release-group tag to be trusted; resolutions,
-  years and decimals are never mistaken for episodes). Anime is covered
+  years and decimals are never mistaken for episodes). Movies are covered
+  too: a file without an episode marker is matched as a film (the same
+  re-forming query ladder the Info tab uses) and gets the movie's own
+  intro and end credits from TheIntroDB. Anime is covered
   by a second, keyless source: the episode's title is resolved to its
   MyAnimeList id (AniList) and its opening/recap/ending come from
   AniSkip, the anime community's live skip database — new series are

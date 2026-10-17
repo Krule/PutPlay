@@ -15,6 +15,9 @@
 //      search (baked-in key, Bearer) → TheIntroDB media (no auth) → Seg[] —
 //      re-fetched on every play (caching suspended while the feature
 //      settles); no key → zero network; no match / no data → []
+//      A name WITHOUT an episode marker is a movie: parseMovieName → the
+//      TMDb movie query ladder (movieQueryStages) → TheIntroDB's
+//      MOVIE-level media (the film's own intro/credits).
 //   2. the engine (the REAL MediaEngine, bundled, driven by a minimal fake
 //      <video> — same harness as music-player.test.mjs):
 //        - a fresh start lands past the leading intro+recap block, reported
@@ -96,9 +99,13 @@ globalThis.fetch = (url, init) => {
   }
   if (u.startsWith("https://api.theintrodb.org/")) {
     net.tidbCalls.push({ url: u });
+    // The real API answers no-data with a 404 (verified live) — the canned
+    // `found: false` knob mimics it; a 200 with a segment-less body is the
+    // other honest shape (parseSegments yields []).
+    const found = !net.tidb || net.tidb.found !== false;
     return Promise.resolve(
       new Response(JSON.stringify(net.tidb || {}), {
-        status: 200,
+        status: found ? 200 : 404,
         headers: { "Content-Type": "application/json" },
       })
     );
@@ -531,6 +538,104 @@ test("the chain: an anime file with a bare number resolves (the user's Black Clo
   assert.ok(net.tidbCalls[0].url.includes("episode=171"), "the bare number is the episode");
 });
 
+// ---------------- 1b. the MOVIE chain (no episode marker in the name) ----------------
+//
+// A marker-less name is a movie, not an unresolvable episode: the title is
+// parsed by parseMovieName (the same function the Info tab's movie search
+// uses), looked up on TMDb's MOVIE search (the query ladder, movieQueryStages),
+// and the segments come from TheIntroDB's MOVIE-level media (no season/
+// episode in the URL). Same honesty: no key / no match / no data / any
+// failure → [] — the feature is off, never a throw, never a wrong skip.
+// The ids and segments below are the REAL live data (verified 2026-10-17):
+// Migration (de: "Raus aus dem Teich") is tmdb 940551 — TheIntroDB has no
+// data for it (a live 404); Spider-Man: No Way Home is tmdb 634649 with
+// intro 60–128s and credits 8918–9342s.
+
+const TMDB_MOVIE_MIGRATION = {
+  results: [{ id: 940551, title: "Raus aus dem Teich", release_date: "2023-12-06", popularity: 40 }],
+};
+const TMDB_MOVIE_SPIDER = {
+  results: [{ id: 634649, title: "Spider-Man: No Way Home", release_date: "2021-12-15", popularity: 950 }],
+};
+const TIDB_MOVIE_SPIDER = {
+  tmdb_id: 634649,
+  type: "movie",
+  intro: [{ start_ms: 60000, end_ms: 128000 }],
+  credits: [{ start_ms: 8918000, end_ms: 9342000 }],
+};
+
+test("movie chain (the user's exact file): title-only name → TMDb movie search (no year) → movie-level media; no data (a live 404) → []", async () => {
+  resetNet();
+  net.tmdb = TMDB_MOVIE_MIGRATION;
+  net.tidb = { found: false }; // the real API answers 404 for this film
+  const segs = await lookupSegments("fake-tmdb-key", "Raus aus dem Teich.mp4");
+  assert.deepEqual(segs, [], "nothing to skip — the film has no community data");
+  assert.equal(net.tmdbCalls.length, 1, "one TMDb search");
+  const tm = net.tmdbCalls[0];
+  assert.ok(
+    tm.url.startsWith("https://api.themoviedb.org/3/search/movie?"),
+    "the /3/search/movie endpoint — a movie, not a tv show"
+  );
+  assert.ok(!net.tmdbCalls.some((c) => c.url.includes("/3/search/tv?")), "no TV search for a marker-less name");
+  assert.ok(tm.url.includes("query=Raus+aus+dem+Teich"), "the parsed title (no extension, no junk) is the query");
+  assert.ok(!tm.url.includes("primary_release_year"), "no year in the name → no year filter");
+  assert.match(String(tm.headers && tm.headers.Authorization), /^Bearer fake-tmdb-key$/, "the key rides as Bearer");
+  assert.equal(net.tidbCalls.length, 1, "the id resolved → the media was asked for");
+  const tb = net.tidbCalls[0].url;
+  assert.ok(tb.includes("tmdb_id=940551"), "the id from the movie search");
+  assert.ok(!tb.includes("season=") && !tb.includes("episode="), "movie-level media (no season/episode params)");
+  assert.equal(net.anilistCalls.length, 0, "a movie name takes no anime chain");
+});
+
+test("movie chain with data: a (year) in the name rides as primary_release_year; movie-level media → segments", async () => {
+  resetNet();
+  net.tmdb = TMDB_MOVIE_SPIDER;
+  net.tidb = TIDB_MOVIE_SPIDER;
+  const segs = await lookupSegments("fake-tmdb-key", "Spider.Man.No.Way.Home.2021.1080p.BluRay.x264.mkv");
+  assert.deepEqual(segs, [
+    { type: "intro", start: 60, end: 128 },
+    { type: "credits", start: 8918, end: 9342 },
+  ]);
+  const tm = net.tmdbCalls[0];
+  assert.ok(tm.url.startsWith("https://api.themoviedb.org/3/search/movie?"), "the movie endpoint");
+  assert.ok(tm.url.includes("query=Spider+Man+No+Way+Home"), "the scene junk is stripped from the query");
+  assert.ok(tm.url.includes("primary_release_year=2021"), "the (year) from the name filters the search");
+  assert.equal(net.tmdbCalls.length, 1, "the first stage matched — the ladder stops");
+  const tb = net.tidbCalls[0].url;
+  assert.ok(tb.includes("tmdb_id=634649"), "the id from the movie search");
+  assert.ok(!tb.includes("season=") && !tb.includes("episode="), "movie-level media (no season/episode params)");
+});
+
+test("movie: TMDb returns results but nothing close → no media call, no segments (a wrong film's timings are worse than none)", async () => {
+  resetNet();
+  net.tmdb = { results: [{ id: 123, title: "Totally Different Film", release_date: "2019-01-01" }] };
+  const segs = await lookupSegments("fake-tmdb-key", "Raus aus dem Teich.mp4");
+  assert.deepEqual(segs, []);
+  assert.equal(net.tmdbCalls.length, 1, "the search happened");
+  assert.equal(net.tidbCalls.length, 0, "…but nothing was resolved, so no media call");
+});
+
+test("movie: no TMDb key → zero network on every side (the anime side has no marker to run on either)", async () => {
+  resetNet();
+  const segs = await lookupSegments("", "Some.Movie.2020.1080p.mkv");
+  assert.deepEqual(segs, []);
+  assert.equal(net.tmdbCalls.length, 0, "no TMDb call");
+  assert.equal(net.tidbCalls.length, 0, "no TheIntroDB call");
+  assert.equal(net.anilistCalls.length, 0, "no episode marker → no anime chain either");
+});
+
+test("movie: an episode marker still wins — the TV chain runs, never the movie search", async () => {
+  resetNet();
+  net.tmdb = TMDB_BBD;
+  net.tidb = TIDB_BBD;
+  const segs = await lookupSegments("fake-tmdb-key", "Breaking.Bad.S01E01.720p.mkv");
+  assert.deepEqual(segs, [
+    { type: "intro", start: 228.664, end: 246.143 },
+    { type: "credits", start: 3431, end: null },
+  ]);
+  assert.ok(!net.tmdbCalls.some((c) => c.url.includes("/3/search/movie?")), "no movie search for an SxxEyy name");
+});
+
 // ---------------- 1c. the anime sources: AniList (title → MAL id), AniSkip ----------------
 //
 // TheIntroDB's anime coverage is thin; the anime community's data lives
@@ -759,6 +864,30 @@ test("the chain: a TIDB-miss anime falls back to AniList → AniSkip (the user's
   assert.deepEqual(again, segs);
   assert.equal(net.anilistCalls.length, 2, "a second AniList search — caching is suspended");
   assert.equal(net.aniskipCalls.length, 2, "a second AniSkip call — caching is suspended");
+});
+
+test("the chain: a movie whose tail is a broken codec ('H 264') is NOT an episode — the movie chain runs instead", async () => {
+  resetNet();
+  const segs = await lookupSegments(
+    "fake-tmdb-key",
+    "Kindergarten Cop 1990 1080p AMZN WEB-DL DDP2 0 H 264-GPRS.mkv"
+  );
+  assert.deepEqual(segs, []);
+  assert.ok(
+    net.tmdbCalls.length >= 1 &&
+      net.tmdbCalls.every((c) => c.url.includes("/3/search/movie?")),
+    "only TMDb MOVIE searches ran (no TV search — it is not an episode)"
+  );
+  assert.equal(net.anilistCalls.length, 0, "no anime chain");
+  assert.equal(net.aniskipCalls.length + net.aniskip1Calls.length, 0, "no AniSkip");
+  assert.ok(
+    net.tmdbCalls[0].url.includes("query=Kindergarten+Cop+1990"),
+    "the codec junk ('H 264-GPRS') and the scene tags are stripped from the query"
+  );
+  assert.ok(
+    net.tmdbCalls.some((c) => c.url.includes("primary_release_year=1990")),
+    "the ladder re-tries with the space year as the year param"
+  );
 });
 
 test("the chain: both sources report → merged with TheIntroDB winning per section", async () => {

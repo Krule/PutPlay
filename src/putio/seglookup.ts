@@ -14,10 +14,16 @@
  *            v1 fills the gaps, since each DB covers different series.)
  *     → mergeSegments (TheIntroDB wins per section type)
  *
+ *   A name WITHOUT an episode marker is a movie: parseMovieName → the
+ *   TMDb movie query ladder (movieQueryStages + tmdbSearchMovie, the same
+ *   walk the Info tab's movie search runs) → pickTmdbMatch → TheIntroDB's
+ *   MOVIE-level media (no season/episode in the URL — the film's own
+ *   intro/credits). The anime chain never runs on a marker-less name.
+ *
  * The Player runs this ONCE per file (async, non-blocking: playback
  * starts immediately; if the data lands while the playhead is still near
  * the top, the engine applies the fresh skip late — see media.ts). Every
- * step degrades to "nothing to skip": no key, no episode marker, no
+ * step degrades to "nothing to skip": no key, no parseable name, no
  * match, no data, any network failure — all answer [], never a throw.
  *
  * CACHING IS SUSPENDED while the feature settles: every play re-looks-up
@@ -28,9 +34,9 @@
 
 import type { Seg } from "./introdb";
 import { introdbMedia } from "./introdb";
-import { parseEpisode } from "./titles";
+import { parseEpisode, parseMovieName } from "./titles";
 import type { TmdbShow } from "./tmdb";
-import { pickTmdbMatch, tmdbSearchTv } from "./tmdb";
+import { movieQueryStages, pickTmdbMatch, tmdbSearchMovie, tmdbSearchTv } from "./tmdb";
 import { anilistSearchAnime, pickAnilistMatch } from "./anilist";
 import { aniskipSegments, aniskipSegmentsV1 } from "./aniskip";
 
@@ -90,6 +96,33 @@ async function resolveAniChain(
 }
 
 /**
+ * The movie chain: the TMDb movie query ladder (the same walk the Info
+ * tab's movie search runs) → the film's MOVIE-level TheIntroDB media
+ * (no season/episode). A stage is retried only when its search came back
+ * EMPTY; a non-empty set ends the walk (matched or rejected): a rejected
+ * set is the honest "no such movie", and dropping further risks a
+ * containment false-match.
+ */
+async function resolveMovieChain(
+  title: string,
+  year: number | undefined,
+  tmdbKey: string,
+  doFetch: typeof fetch
+): Promise<{ segs: Seg[]; tmdbId: number | null }> {
+  for (const stage of movieQueryStages(title, year)) {
+    const results = await tmdbSearchMovie(tmdbKey, stage.title, stage.year, doFetch);
+    // empty OR a fetch failure (a 500 on one query does not doom the next)
+    // — a re-formed query may still hit; the ladder is bounded
+    if (results === null || results.length === 0) continue;
+    const show: TmdbShow | null = pickTmdbMatch(results, stage.title, stage.year);
+    if (!show) return { segs: [], tmdbId: null }; // nothing close — the honest no-match
+    const segs = await introdbMedia(show.id, undefined, undefined, doFetch);
+    return { segs, tmdbId: show.id };
+  }
+  return { segs: [], tmdbId: null };
+}
+
+/**
  * Merge the two sources into one ordered segment list: TheIntroDB wins
  * per section type (it measures the real file's show data), AniSkip fills
  * the types TheIntroDB lacks. Sorted by start.
@@ -114,19 +147,25 @@ export async function lookupSegments(
   /** Accepted but IGNORED while caching is suspended (see file header). */
   _cache?: SegCache
 ): Promise<Seg[]> {
-  const ep = parseEpisode(name);
-  if (!ep) return [];
-
   const doFetch = fetchImpl || fetch;
 
-  const [tidb, anime] = await Promise.all([
-    tmdbKey
-      ? resolveTmdbChain(ep.title, ep.season, ep.episode, ep.year, tmdbKey, doFetch)
-      : Promise.resolve({ segs: [] as Seg[], tmdbId: null }),
-    ep.season === 1
-      ? resolveAniChain(ep.title, ep.episode, ep.year, doFetch)
-      : Promise.resolve({ segs: [] as Seg[], malId: null }),
-  ]);
+  const ep = parseEpisode(name);
+  if (ep) {
+    const [tidb, anime] = await Promise.all([
+      tmdbKey
+        ? resolveTmdbChain(ep.title, ep.season, ep.episode, ep.year, tmdbKey, doFetch)
+        : Promise.resolve({ segs: [] as Seg[], tmdbId: null }),
+      ep.season === 1
+        ? resolveAniChain(ep.title, ep.episode, ep.year, doFetch)
+        : Promise.resolve({ segs: [] as Seg[], malId: null }),
+    ]);
+    return mergeSegments(tidb.segs, anime.segs);
+  }
 
-  return mergeSegments(tidb.segs, anime.segs);
+  // no episode marker → a movie (or an unparseable name): the movie chain.
+  // No key = zero network, same honesty as the episode chains.
+  const mv = parseMovieName(name);
+  if (!mv || !mv.title || !tmdbKey) return [];
+  const { segs } = await resolveMovieChain(mv.title, mv.year, tmdbKey, doFetch);
+  return segs;
 }
