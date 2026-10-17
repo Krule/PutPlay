@@ -335,6 +335,7 @@
                 averageScore: 72,
                 genres: ["Action", "Fantasy"],
                 description: "<p>A 15-year-old boy who cannot use magic dreams of becoming the next Magic King of the Black Clover kingdom.</p>",
+                title: { romaji: "Black Clover", english: "Black Clover" },
                 coverImage: { large: "/test/e2e/wall-13.png" }
               }
             }

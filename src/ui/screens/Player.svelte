@@ -114,6 +114,7 @@
     live,
     source,
     episodeName: tmdbEpisodeTitle,
+    showTitle: infoData?.showTitle ?? null, // late canonical title (the info lookup)
   });
 
   /** Playback speed: the Player owns the state (icon + menu) and re-applies

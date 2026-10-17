@@ -180,6 +180,7 @@ const ANIME_MEDIA = {
   // synopsis must arrive as clean text, no raw references
   description:
     "<p>An elf mage who <b>lived a thousand years</b> &amp; outlasts her party &mdash; time &#8216;itself&#8217; cannot stop her.</p>",
+  title: { romaji: "Frieren: Beyond Journey's End", english: "Frieren: Beyond Journey's End" },
   coverImage: { large: "https://s4.anilist.co/large/img/cover/x.jpg" },
 };
 // Canned AniList SEARCH (Page { media } — the keyless title → anime step).
@@ -359,6 +360,7 @@ test("episode: the full TV path merges show + episode into the exact InfoData", 
     runtime: null, // movies only
     thumbUrl: "https://image.tmdb.org/t/p/w780/hZkgoQYus5z3AFs8zUwBDLWnh7F.jpg", // the episode still
     episodeTitle: "One Minute", // the episode's TMDb name — the title-view enrichment
+    showTitle: "Breaking Bad", // the canonical show title — the title-view's movie/episode title
   });
   // the exact request chain: search (Bearer) → show detail → episode detail.
   // The EXACT name won over the more popular "Breaking Bad Stories" (13998).
@@ -458,6 +460,16 @@ test("episode: the AniList Media query asks for averageScore — the real schema
   assert.ok(!/\bscore\b/i.test(q.replace("averageScore", "")), "no bare `score` field anywhere in the query");
 });
 
+test("episode: the AniList Media query selects the title (romaji english) — the canonical title for the title view", () => {
+  const src = readFile("src/putio/info-data.ts");
+  const qm = src.match(/const ANILIST_MEDIA_QUERY = `([\s\S]*?)`;/);
+  assert.ok(qm, "the Media query constant is there");
+  assert.ok(
+    /title\s*\{\s*romaji\s+english\s*\}/.test(qm[1]),
+    "the canonical title needs both the romaji and the english fallback"
+  );
+});
+
 test("episode: an empty TMDb search → the keyless AniList fallback (search → pick → Media), show-level data only", async () => {
   route("/3/search/tv", { results: [] }); // the anime is not on TMDb
   animeRoutes();
@@ -470,6 +482,7 @@ test("episode: an empty TMDb search → the keyless AniList fallback (search →
     runtime: null, // show-level only
     thumbUrl: "https://s4.anilist.co/large/img/cover/x.jpg", // coverImage.large, as-is
     episodeTitle: null, // AniList Media is show-level only
+    showTitle: "Frieren: Beyond Journey's End", // romaji — the canonical title for the title view
   });
   assert.equal(net.calls.length, 3, "one TMDb search + AniList search + Media");
   const al = net.calls.filter((c) => c.url.includes("graphql.anilist.co"));
@@ -554,6 +567,7 @@ test("episode: detail cache hits skip both detail requests (only the search runs
     runtime: null,
     thumbUrl: "https://image.tmdb.org/t/p/w780/hZkgoQYus5z3AFs8zUwBDLWnh7F.jpg",
     episodeTitle: "One Minute",
+    showTitle: "Breaking Bad",
   });
   assert.equal(net.calls.length, 1, "the hit skips THAT request");
   assert.ok(net.calls[0].url.includes("/3/search/tv"), "the search still runs (it has no cache key)");
@@ -613,6 +627,7 @@ test("movie: the full path — search with the year tag, the exact name wins, ru
     runtime: "2h 04m", // 124 minutes, pre-formatted
     thumbUrl: "https://image.tmdb.org/t/p/w780/9gk7adHYeDv1kCB47lZCfKJb1ZD.jpg",
     episodeTitle: null, // movies have no episode title
+    showTitle: "Inception", // the canonical movie title — the title-view's title
   });
   assert.deepEqual(
     net.calls.map((c) => c.url),

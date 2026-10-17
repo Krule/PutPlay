@@ -10,6 +10,9 @@
  *     "S3 · E1 — The Zone".
  *   - a non-episode file (a movie) → the file name as the title, no
  *     subtitle line at all.
+ *   - when the late info lookup resolves the canonical title (TMDb's
+ *     show/movie name, AniList's romaji) it REPLACES the filename-derived
+ *     title — the scene-release junk ("… 1990 H") never reaches the chrome.
  *
  * Badges, in order: LIVE (accented) only for ∞-duration streams, then the
  * source badge for the CONVERTED sources only (mp4 → MP4, hls → HLS) — the
@@ -46,6 +49,11 @@ export interface TitleViewInput {
   source: SourceKind;
   /** TMDb-resolved episode title (late enrichment; may be absent/null). */
   episodeName?: string | null;
+  /** The source-resolved canonical title (late enrichment from the info
+   *  data — TMDb's show/movie name or AniList's romaji). When present it
+   *  REPLACES the filename-derived title: the chrome shows the show's
+   *  real name, not the scene-release parse ("Kindergarten Cop 1990 H"). */
+  showTitle?: string | null;
 }
 
 /** The badge a converted source wears; null = the original plays itself. */
@@ -56,9 +64,10 @@ const SOURCE_BADGES: Record<SourceKind, string | null> = {
 };
 
 export function buildTitleView(input: TitleViewInput): TitleView {
-  const { name, episode, live, source, episodeName } = input;
+  const { name, episode, live, source, episodeName, showTitle } = input;
+  const canonical = (showTitle ?? "").trim();
   return {
-    title: episode ? episode.title : name,
+    title: canonical || (episode ? episode.title : name),
     subtitle: subtitleFor(episode, episodeName),
     badges: badgesFor(live, source),
   };

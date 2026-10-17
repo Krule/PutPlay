@@ -30,9 +30,12 @@
  * write after success, a hit skips that request, a cache failure degrades
  * to a miss (a put failure is ignored).
  *
- * The output feeds InfoPanelInput (info-tab.ts): airDate and runtime arrive
- * PRE-FORMATTED ("May 12, 2021", "2h 04m") — the panel never formats, it
- * only picks which fields the row shows.
+ * The output feeds the Info panel (InfoPanelInput, info-tab.ts): airDate
+ * and runtime arrive PRE-FORMATTED ("May 12, 2021", "2h 04m") — the panel
+ * never formats, it only picks which fields the row shows. Two fields feed
+ * the TITLE VIEW (title-view.ts) instead: episodeTitle (the episode's
+ * em-dash part) and showTitle (the canonical title that replaces the
+ * filename-derived one).
  */
 
 import { TMDB_KEY } from "./tmdb-key";
@@ -180,6 +183,10 @@ export interface InfoData {
    *  Minute"). TMDb TV episodes only: null for anime (show-level) and
    *  movies. */
   episodeTitle: string | null;
+  /** The canonical show/movie title from the source (TMDb's name/title,
+   *  AniList's romaji) — the title view REPLACES its filename-derived
+   *  title with it. Null when the lookup found nothing. */
+  showTitle: string | null;
 }
 
 /** The cache contract the app fulfils with IndexedDB (info-cache.ts) and
@@ -323,6 +330,7 @@ query MediaInfo($id: Int!) {
     averageScore
     genres
     description
+    title { romaji english }
     coverImage { large }
   }
 }`;
@@ -362,6 +370,7 @@ async function anilistShowInfo(
 ): Promise<InfoData | null> {
   const media = await cachedDetail(cache, `al:${anime.id}`, () => anilistMedia(anime.id, doFetch));
   if (!media) return null;
+  const alTitle = asRecord(media.title);
   return {
     synopsis: stripHtml(typeof media.description === "string" ? media.description : null),
     rating: normalizeAnilistScore(asNumber(media.averageScore)),
@@ -370,6 +379,7 @@ async function anilistShowInfo(
     runtime: null,
     thumbUrl: asText(asRecord(media.coverImage)?.large),
     episodeTitle: null, // AniList Media is show-level only
+    showTitle: asText(alTitle?.romaji) ?? asText(alTitle?.english), // romaji, english as fallback
   };
 }
 
@@ -429,6 +439,7 @@ async function tmdbEpisodeInfo(
     runtime: null,
     thumbUrl: tmdbImageUrl(asText(epDetail.still_path) ?? asText(showDetail.backdrop_path)),
     episodeTitle: asText(epDetail.name),
+    showTitle: asText(showDetail.name), // the canonical show name
   };
 }
 
@@ -543,6 +554,7 @@ export async function lookupMovieInfo(args: {
       runtime: formatRuntime(asNumber(detail.runtime)),
       thumbUrl: tmdbImageUrl(asText(detail.backdrop_path)),
       episodeTitle: null, // movies have no episode title
+      showTitle: asText(detail.title), // the canonical movie title
     };
   }
   return null;

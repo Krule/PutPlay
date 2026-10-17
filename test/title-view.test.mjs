@@ -75,6 +75,24 @@ test("movie (no episode) → file name as title, empty subtitle", () => {
   assert.equal(v.subtitle, "");
 });
 
+test("movie with a resolved canonical title → the source title replaces the file name (the Kindergarten Cop case)", () => {
+  const v = buildTitleView({ ...movie, showTitle: "Kindergarten Cop" });
+  assert.equal(v.title, "Kindergarten Cop");
+  assert.equal(v.subtitle, "", "movies still get no subtitle line");
+});
+
+test("episode with a resolved canonical title → the source title wins over the parsed one", () => {
+  const v = buildTitleView({ ...base, showTitle: "Breaking Bad" });
+  assert.equal(v.title, "Breaking Bad");
+  assert.equal(v.subtitle, "S3 · E1");
+});
+
+test("an empty/whitespace showTitle is no title (the filename-derived fallback stays)", () => {
+  assert.equal(buildTitleView({ ...movie, showTitle: "   " }).title, MOVIE_NAME);
+  assert.equal(buildTitleView({ ...movie, showTitle: "" }).title, MOVIE_NAME);
+  assert.equal(buildTitleView({ ...base, showTitle: null }).title, "Breaking Bad");
+});
+
 test("movie with episodeName still shows no subtitle (movies have no episode line)", () => {
   const v = buildTitleView({ ...movie, episodeName: "ignored" });
   assert.equal(v.title, MOVIE_NAME);

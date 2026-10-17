@@ -118,6 +118,10 @@ test("the chrome shows the file's IDENTITY (buildTitleView), not the raw name", 
     "the chrome title must render the title view's title"
   );
   assert.ok(
+    /showTitle:\s*infoData\?\.showTitle/.test(player),
+    "the late canonical title (infoData) must feed buildTitleView's showTitle"
+  );
+  assert.ok(
     /class:accent=\{b\.accent\}/.test(player),
     "badges (LIVE accented) must render from the title view's badge list"
   );

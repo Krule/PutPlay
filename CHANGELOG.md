@@ -78,6 +78,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   descriptions that carry them — names like &rsquo; and &mdash;, and the
   numeric forms (&#8217;), are decoded into real characters now; unknown
   and out-of-range entities are left as-is instead of mangled.
+- The player's title row no longer shows the raw scene name: once the
+  info lookup resolves the show, the title switches to the database's
+  canonical name (TMDb's show/movie title, AniList's romaji), so
+  "Kindergarten Cop 1990 H" becomes "Kindergarten Cop".
 - The info tab now finds movies whose file names still carry scene
   noise after the obvious parts are stripped — a year that lives in the
   name ("Kindergarten Cop 1990 …") is now used as the release year, a
