@@ -183,13 +183,16 @@ const ANIME_MEDIA = {
   coverImage: { large: "https://s4.anilist.co/large/img/cover/x.jpg" },
 };
 // Canned AniList SEARCH (Page { media } — the keyless title → anime step).
+// The internal `id` and the `idMal` are DIFFERENT namespaces on purpose:
+// the bug this pins sent the MAL id to Media(id:), where it named another
+// show (live: MAL 34572 / Black Clover resolved to "Touch").
 const ANILIST_SEARCH = {
   data: {
     Page: {
       media: [
-        { idMal: 5114, title: { romaji: "Frieren: Beyond Journey's End" }, averageScore: 85, startDate: { year: 2023 } },
+        { id: 108799, idMal: 5114, title: { romaji: "Frieren: Beyond Journey's End" }, averageScore: 85, startDate: { year: 2023 } },
         // a LOWER-SCORED near-match must lose the pick
-        { idMal: 99999, title: { romaji: "Squishy! Frieren" }, averageScore: 40, startDate: { year: 2024 } },
+        { id: 99998, idMal: 99999, title: { romaji: "Squishy! Frieren" }, averageScore: 40, startDate: { year: 2024 } },
       ],
     },
   },
@@ -478,7 +481,9 @@ test("episode: an empty TMDb search → the keyless AniList fallback (search →
   const search = al.find((c) => c.body.includes("SearchMedia"));
   assert.deepEqual(JSON.parse(search.body).variables, { q: "Frieren", y: null });
   const media = al.find((c) => c.body.includes("MediaInfo"));
-  assert.equal(JSON.parse(media.body).variables.id, 5114, "the Media query carries the PICKED id (85 beats 40)");
+  // the INTERNAL id (the Media(id:) key) — NOT the MAL id 5114, which in
+  // Media(id:) names a different show (the Black Clover → Touch bug)
+  assert.equal(JSON.parse(media.body).variables.id, 108799, "the Media query carries the picked show's internal id (85 beats 40)");
 });
 
 test("episode: a TMDb hit never triggers the AniList fallback (no extra network for western TV)", async () => {
@@ -499,7 +504,7 @@ test("episode: an anime Media cache hit skips the GraphQL Media request (the sea
   keyState.key = "";
   animeRoutes();
   const fc = fakeCache();
-  fc.store.set("al:5114", ANIME_MEDIA);
+  fc.store.set("al:108799", ANIME_MEDIA);
   try {
     const got = await lookupEpisodeInfo({ title: "Frieren", season: 1, episode: 1, cache: fc.cache });
     assert.equal(got.rating, 8.5, "the cached Media serves the data");
@@ -525,7 +530,7 @@ test("episode: the anime Media is written after a successful query (al:{id})", a
   try {
     const got = await lookupEpisodeInfo({ title: "Frieren", season: 1, episode: 1, cache: fc.cache });
     assert.equal(got.rating, 8.5);
-    assert.deepEqual(fc.store.get("al:5114"), ANIME_MEDIA, "write-after-success");
+    assert.deepEqual(fc.store.get("al:108799"), ANIME_MEDIA, "write-after-success (keyed by the internal id)");
   } finally {
     keyState.key = "test-bearer-token";
   }

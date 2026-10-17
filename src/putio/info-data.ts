@@ -327,15 +327,16 @@ query MediaInfo($id: Int!) {
   }
 }`;
 
-/** One keyless AniList Media(id:) query; a non-OK / GraphQL / shape
- *  failure is null. */
-async function anilistMedia(id: number, doFetch: typeof fetch): Promise<Detail | null> {
+/** One keyless AniList Media(id:) query; `internalId` is AniList's
+ *  internal id (NOT the MAL id — see AnilistShow.id). A non-OK / GraphQL /
+ *  shape failure is null. */
+async function anilistMedia(internalId: number, doFetch: typeof fetch): Promise<Detail | null> {
   let res: Response;
   try {
     res = await doFetch(ANILIST_GRAPHQL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: ANILIST_MEDIA_QUERY, variables: { id } }),
+      body: JSON.stringify({ query: ANILIST_MEDIA_QUERY, variables: { id: internalId } }),
     });
   } catch {
     return null;
@@ -359,7 +360,7 @@ async function anilistShowInfo(
   cache: InfoCache | undefined,
   doFetch: typeof fetch
 ): Promise<InfoData | null> {
-  const media = await cachedDetail(cache, `al:${anime.malId}`, () => anilistMedia(anime.malId, doFetch));
+  const media = await cachedDetail(cache, `al:${anime.id}`, () => anilistMedia(anime.id, doFetch));
   if (!media) return null;
   return {
     synopsis: stripHtml(typeof media.description === "string" ? media.description : null),

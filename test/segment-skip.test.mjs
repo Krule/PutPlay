@@ -286,12 +286,17 @@ const ANILIST_BCL = {
     Page: {
       media: [
         {
+          // REAL pair (live-verified): the internal id (97940) and the MAL
+          // id (34572) are DIFFERENT namespaces — Media(id:) takes the
+          // internal one, AniSkip the MAL one.
+          id: 97940,
           idMal: 34572,
           title: { romaji: "Black Clover", english: "Black Clover" },
           averageScore: 72,
           startDate: { year: 2017 },
         },
         {
+          id: 43318,
           idMal: 43317,
           title: { romaji: "Squishy! Black Clover", english: "Squishy! Black Clover" },
           averageScore: 40,
@@ -523,7 +528,8 @@ test("anilistSearchAnime: a Page.media list parses into shows with MAL ids", asy
   const shows = await anilistSearchAnime("Black Clover");
   assert.equal(shows.length, 2);
   assert.deepEqual(shows[0], {
-    malId: 34572,
+    id: 97940, // the internal id — the Media(id:) query's key
+    malId: 34572, // the MAL id — AniSkip's key
     title: "Black Clover",
     year: 2017,
     score: 72,
@@ -533,6 +539,24 @@ test("anilistSearchAnime: a Page.media list parses into shows with MAL ids", asy
             JSON.parse(net.anilistCalls[0].body).query.includes("media"),
     "a search query");
   assert.ok(String(net.anilistCalls[0].body).includes("Black Clover"), "the title is the search term");
+});
+
+test("anilistSearchAnime: an entry without a numeric internal id is skipped (the Media query needs it)", async () => {
+  resetNet();
+  net.anilist = {
+    data: {
+      Page: {
+        media: [
+          { idMal: 34572, title: { romaji: "No Internal Id" }, averageScore: 72 },
+          { id: null, title: { romaji: "Null Internal Id" }, averageScore: 70 },
+          { id: 97940, idMal: 34572, title: { romaji: "Black Clover" }, averageScore: 72, startDate: { year: 2017 } },
+        ],
+      },
+    },
+  };
+  const shows = await anilistSearchAnime("Black Clover");
+  assert.equal(shows.length, 1, "only the well-formed entry survives");
+  assert.equal(shows[0].id, 97940);
 });
 
 test("anilistSearchAnime: no match, GraphQL errors and network failures degrade to [] — never a throw", async () => {
@@ -728,7 +752,7 @@ test("the chain: both sources report → merged with TheIntroDB winning per sect
     data: {
       Page: {
         media: [
-          { idMal: 1360, title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } },
+          { id: 1361, idMal: 1360, title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } },
         ],
       },
     },

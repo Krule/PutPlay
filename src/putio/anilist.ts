@@ -1,5 +1,9 @@
 /**
- * AniList GraphQL (free, no key): title → anime entries with MAL ids.
+ * AniList GraphQL (free, no key): title → anime entries with both ids —
+ * the INTERNAL id (the Media(id:) query's key) and the MAL id
+ * (AniSkip's key). The two are different namespaces: feeding the MAL id
+ * to Media(id:) names a different show (live: MAL 34572 / Black Clover
+ * resolved to "Touch").
  *
  * Why AniList: TheIntroDB's anime coverage is thin, and the anime
  * community's skip data (AniSkip) is keyed by MyAnimeList id. AniList is
@@ -11,6 +15,10 @@
 import { normTitle } from "./titles";
 
 export interface AnilistShow {
+  /** AniList's INTERNAL id — the Media(id:) GraphQL query's key.
+   *  NOT the MAL id: in Media(id:) the MAL number names a different show
+   *  (live: MAL 34572 / Black Clover resolved to "Touch"). */
+  id: number;
   /** The MyAnimeList id — AniSkip's key. */
   malId: number;
   /** Romaji title (the english name as fallback). */
@@ -27,6 +35,7 @@ const SEARCH_QUERY = `
 query SearchMedia($q: String!, $y: Int) {
   Page(perPage: 10) {
     media(search: $q, type: ANIME, sort: POPULARITY_DESC, isAdult: false, seasonYear: $y) {
+      id
       idMal
       title { romaji english }
       averageScore
@@ -66,10 +75,11 @@ export async function anilistSearchAnime(
   if (!Array.isArray(media)) return [];
   const shows: AnilistShow[] = [];
   for (const m of media) {
+    const id = m?.id;
     const malId = m?.idMal;
     const name = m?.title?.romaji || m?.title?.english;
-    if (typeof malId !== "number" || typeof name !== "string" || !name) continue;
-    const show: AnilistShow = { malId, title: name };
+    if (typeof id !== "number" || typeof malId !== "number" || typeof name !== "string" || !name) continue;
+    const show: AnilistShow = { id, malId, title: name };
     if (typeof m?.startDate?.year === "number") show.year = m.startDate.year;
     if (typeof m?.averageScore === "number") show.score = m.averageScore;
     shows.push(show);

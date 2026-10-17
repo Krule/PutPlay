@@ -280,7 +280,9 @@
     data: {
       Page: {
         media: [
-          { idMal: 555, title: { romaji: "Black Clover", english: "Black Clover" }, averageScore: 72, startDate: { year: 2017 } }
+          // the internal `id` (Media(id:) key) and `idMal` (AniSkip key)
+          // are different namespaces — the e2e world keeps both, distinct
+          { id: 999, idMal: 555, title: { romaji: "Black Clover", english: "Black Clover" }, averageScore: 72, startDate: { year: 2017 } }
         ]
       }
     }

@@ -69,6 +69,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   subtitles, blue keeps play/pause (the on-screen legend follows).
 
 ### Fixed
+- Anime info was sometimes pulled for the wrong show: the player handed
+  the MyAnimeList id to a database that wants its own internal id, so a
+  search that found the right anime still fetched a different one (live:
+  Black Clover came back as Touch). The right id is looked up and used
+  now.
 - The info tab's synopsis showed raw HTML entities ("…&#8217;s…") for
   descriptions that carry them — names like &rsquo; and &mdash;, and the
   numeric forms (&#8217;), are decoded into real characters now; unknown
