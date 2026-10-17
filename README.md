@@ -101,8 +101,13 @@ the shots is open content — see
 Pointer (Magic Remote) and 5-way both work. **OK** confirms, **Back**
 cancels — double-press exits.
 
-In the player: **blue** play/pause · **red** subtitles · **yellow** audio ·
-**green** playback source.
+In the player: **blue** play/pause · **red** playback source · **green**
+audio · **yellow** subtitles.
+
+Left/Right walk the player's control rows key by key (source · audio ·
+subs · speed, and rewind · play · forward); from the last icon, Right
+goes to the progress bar, and from rewind, Left — Up/Down between the
+rows and the bar work as before.
 
 In the reader and the image viewer: **OK** zooms (fit → 2× → 4×), the
 **arrows** pan while zoomed, and **Up** flips a comic's reading direction.

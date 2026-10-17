@@ -91,6 +91,9 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   transport row, Left from rewind goes to the bar and Right from
   forward does nothing. Up/Down between the rows and the bar work as
   before.
+- The Settings screen now scrolls when its column overflows: with the
+  new skip-segments card, a card past the fold used to be unreachable
+  with the D-pad (a clipped card is a card the remote can't reach).
 
 ## [1.1.3] - 2026-10-15
 
