@@ -10,13 +10,18 @@
 // reload re-arms the pipeline (exactly the behavior the e2e fake emulates).
 // The hls.js import is stubbed — the native path never instantiates it.
 //
+// TIMING: the engine and the fake video are 100% timer-driven, so the file
+// runs on FAKE timers (only timers + Date are faked — microtasks stay real):
+// every await advances deterministic fake time instead of burning wall
+// clock. A regression still fails (the budgets throw), just ~100× faster.
+//
 // Run: pnpm test
 
 // platform.ts guards with isWebOS() at RUNTIME, but module-scope code in
 // the media.ts chain (webostvjs) references `window` — the shim (imported
 // first) gives node a minimal one.
 import "./shims/node-window.mjs";
-import { vi, test } from "vitest";
+import { vi, test, beforeEach, afterEach } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { MediaEngine } from "../src/putio/media.ts";
@@ -26,8 +31,34 @@ import { MediaEngine } from "../src/putio/media.ts";
 vi.mock("hls.js", () => ({ default: class Hls {} }));
 
 // The constructor's media_info fetch must never hit the network in tests.
+// REAL reason (caught under fake timers): a few early tests restore the
+// real fetch in their finally blocks, and the preference tests need the
+// metadata to SETTLE (metaSettled) before they can run — with the real
+// fetch that meant a real ~1 s 401 round-trip to api.putio.com per test
+// (the hidden cost of the old 28 s runtime, and a network dependency).
+// So every test starts with a deterministic immediate-reject stub; tests
+// that need metadata install metaInfoStub() over it inside the body.
 const realFetch = globalThis.fetch;
 globalThis.fetch = () => Promise.reject(new Error("no network in unit tests"));
+
+// The escalation ladder (wait(250/300) steps, the 5 ms reload populates,
+// the 5 s confirm bail) is entirely setTimeout-driven — fake it, and let
+// the tests advance it. toFake stays minimal: faking queueMicrotask would
+// stall the plain Promise chains the engine is built from.
+beforeEach(() => {
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+  });
+  // deterministic per-test network: the real fetch must never be in play
+  globalThis.fetch = () => Promise.reject(new Error("no network in unit tests"));
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  vi.useRealTimers();
+});
+
+/** Advance fake time by N ms (each step flushes the timers' microtasks). */
+const advance = (ms) => vi.advanceTimersByTimeAsync(ms);
 
 /** A track object whose `enabled` write is silently vetoed while the
  *  element's pipeline is "un-armed" (the webOS 6 stubborn behavior). */
@@ -212,32 +243,24 @@ function makeFakeVideo(options = {}) {
 /** Collect engine state patches; resolve when a predicate holds or timeout. */
 function recorder() {
   const patches = [];
-  let resolveWait = null;
-  const seen = (p) => {
-    patches.push(p);
-    if (resolveWait) resolveWait(p);
-  };
-  const waitFor = (label, pred, ms = 15000) =>
-    new Promise((resolve, reject) => {
-      const t = setTimeout(
-        () => reject(new Error(`timeout waiting for state (${label})`)),
-        ms
-      );
-      resolveWait = (p) => {
-        if (pred(p)) {
-          clearTimeout(t);
-          resolveWait = null;
-          resolve(p);
-        }
-      };
-      for (const p of patches) {
-        if (pred(p)) {
-          clearTimeout(t);
-          resolve(p);
-          return;
-        }
+  const seen = (p) => patches.push(p);
+  /** Advance FAKE time in 25 ms steps until a patch satisfies pred. The
+   *  engine and fake video only progress on timers, so nothing happens
+   *  between advances; the budget is in FAKE ms — a regression fails fast
+   *  on wall clock too. */
+  const waitFor = (label, pred, budgetMs = 30000) =>
+    (async () => {
+      let advanced = 0;
+      for (;;) {
+        if (patches.some(pred)) return;
+        if (advanced >= budgetMs)
+          throw new Error(
+            `timeout waiting for state (${label}) after ${advanced} fake ms`
+          );
+        await vi.advanceTimersByTimeAsync(25);
+        advanced += 25;
       }
-    });
+    })();
   return { patches, seen, waitFor };
 }
 
@@ -368,7 +391,7 @@ test("a dance whose reload dies restores the ORIGINAL (no transcode jump, no dea
       (p) => p.audioSwitchFailed,
       20000
     );
-    await new Promise((r) => setTimeout(r, 1500)); // let recovery run
+    await advance(2000); // let recovery run (fake ms)
     const sources = rec.patches
       .filter((p) => p.source !== undefined)
       .map((p) => p.source);
@@ -407,7 +430,7 @@ test("if the post-dance restore also dies, the fallback chain still runs", async
       (p) => p.audioSwitchFailed,
       20000
     );
-    await new Promise((r) => setTimeout(r, 2500)); // let recovery + fallback run
+    await advance(5000); // let recovery + fallback run (fake ms)
     const sources = rec.patches
       .filter((p) => p.source !== undefined)
       .map((p) => p.source);
@@ -624,7 +647,7 @@ test("a refused preference never re-escalates in a loop (recovery resets the arm
     engine.setAudioPreference("spa");
     engine.setSource("original");
     await rec.waitFor("fail", (p) => p.audioSwitchFailed, 20000);
-    await new Promise((r) => setTimeout(r, 3500)); // time for a (wrong) 2nd escalation
+    await advance(3500); // time for a (wrong) 2nd escalation (fake ms)
     const switches = rec.patches.filter((p) => p.audioSwitching === true).length;
     assert.ok(
       switches <= 1,
@@ -665,12 +688,12 @@ test("a pause the engine did not request (TV side, e.g. a volume change) auto-re
     { onState: () => {} }
   );
   engine.setSource("original");
-  await new Promise((r) => setTimeout(r, 30));
+  await advance(30);
   assert.equal(video.paused, false, "must be playing before the simulated TV pause");
   // The webview pauses the element on its own — no user gesture involved,
   // exactly what a system volume change can do on webOS.
   video.pause();
-  await new Promise((r) => setTimeout(r, 80));
+  await advance(80);
   assert.equal(
     video.paused,
     false,
@@ -687,9 +710,9 @@ test("a user pause (blue key) is never auto-resumed", async () => {
     { onState: () => {} }
   );
   engine.setSource("original");
-  await new Promise((r) => setTimeout(r, 30));
+  await advance(30);
   engine.pause();
-  await new Promise((r) => setTimeout(r, 80));
+  await advance(80);
   assert.equal(video.paused, true, "a user-requested pause must stick");
 });
 
@@ -708,16 +731,16 @@ test("a pause storm from the TV is bounded and recovers", async () => {
     { onState: () => {} }
   );
   engine.setSource("original");
-  await new Promise((r) => setTimeout(r, 30));
+  await advance(30);
   const baseline = plays;
   // The TV holds the element paused for a beat (a long volume press).
   for (let i = 0; i < 3; i++) {
     video.pause();
-    await new Promise((r) => setTimeout(r, 15));
+    await advance(15);
   }
   const extra = plays - baseline;
   assert.ok(extra <= 3, `at most one resume attempt per TV pause (saw ${extra})`);
-  await new Promise((r) => setTimeout(r, 80));
+  await advance(80);
   assert.equal(video.paused, false, "must end up playing once the TV stops holding it");
 });
 
@@ -742,11 +765,11 @@ test("stalls: counted only during playback, reported in state, reset per source"
     { onState: (p) => rec.seen(p) }
   );
   engine.setSource("original");
-  await new Promise((r) => setTimeout(r, 30));
+  await advance(30);
   // pre-first-frame buffering is a normal load — NOT a stall (a stalls: 0
   // reset patch from the source load is fine; a COUNT is not)
   video.dispatch("waiting");
-  await new Promise((r) => setTimeout(r, 10));
+  await advance(10);
   assert.ok(
     !rec.patches.some((p) => (p.stalls ?? 0) > 0),
     "waiting before the first frame must not count as a stall"
@@ -760,14 +783,14 @@ test("stalls: counted only during playback, reported in state, reset per source"
   video.dispatch("playing");
   video.dispatch("waiting");
   video.dispatch("waiting");
-  await new Promise((r) => setTimeout(r, 10));
+  await advance(10);
   let last = rec.patches.filter((p) => p.stalls !== undefined).pop();
   assert.equal(last.stalls, 2, "mid-playback stalls are counted and reported in state");
   // a fresh source load: the count starts over
   engine.setSource("original");
-  await new Promise((r) => setTimeout(r, 30));
+  await advance(30);
   video.dispatch("waiting");
-  await new Promise((r) => setTimeout(r, 10));
+  await advance(10);
   last = rec.patches.filter((p) => p.stalls !== undefined).pop();
   assert.equal(last.stalls, 1, "a new source load resets the stall count");
 });
