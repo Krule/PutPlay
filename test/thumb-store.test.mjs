@@ -6,6 +6,10 @@
 // BLOBS (no base64 bloat), and eviction walks a savedAt index (oldest
 // first). The 30-day TTL and the sign-out clear keep their rules.
 //
+// The cap VALUE is pinned by the constants test; the eviction POLICY is
+// tested at a small cap (the __setMaxEntriesForTests seam) — proving
+// "oldest yields" does not require 2001 sequential IDB puts.
+//
 // The store NEVER rejects into the grid: an IDB failure degrades to an
 // in-memory session (covers still display; they just won't persist).
 //
@@ -28,6 +32,7 @@ import {
   THUMB_MAX_ENTRIES,
   THUMB_DB_NAME,
   __resetForTests,
+  __setMaxEntriesForTests,
 } from "../src/store/thumb-store.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,19 +86,23 @@ test("get: an entry exactly at the TTL is expired — and pruned from the store 
   h.close();
 });
 
-test("cap: 2001 covers -> the OLDEST by savedAt yields; the freshest 2000 stay", async () => {
+test("cap policy: over the cap the OLDEST by savedAt yields (small cap via the seam)", async () => {
   await fresh();
-  for (let i = 1; i <= THUMB_MAX_ENTRIES + 1; i += 1) {
-    // i=1 is the oldest (lowest savedAt); i=2001 the freshest
-    await putThumb(i, entry(NOW - (THUMB_MAX_ENTRIES + 1 - i) * DAY, `c${i}`));
+  __setMaxEntriesForTests(4);
+  try {
+    for (let i = 1; i <= 5; i += 1) {
+      // i=1 is the oldest (lowest savedAt); i=5 the freshest
+      await putThumb(i, entry(NOW - (5 - i) * DAY, `c${i}`));
+    }
+    const h = await openIdb(THUMB_DB_NAME, 1);
+    assert.equal(await h.count(), 4, "the cap holds");
+    // (the store keys by String(fileId) — IDB treats 1 and "1" as different keys)
+    assert.equal(await h.get(String(1)), undefined, "the oldest cover is evicted");
+    assert.ok(await h.get(String(5)), "…not the freshest");
+    h.close();
+  } finally {
+    __resetForTests();
   }
-  const h = await openIdb(THUMB_DB_NAME, 1);
-  assert.equal(await h.count(), THUMB_MAX_ENTRIES, "the cap holds");
-  // (the store keys by String(fileId) — IDB treats 1 and "1" as different keys)
-  assert.equal(await h.get(String(1)), undefined, "the oldest cover is evicted");
-  assert.ok(await h.get(String(THUMB_MAX_ENTRIES)), "…not a recent one");
-  assert.ok(await h.get(String(THUMB_MAX_ENTRIES + 1)), "…nor the freshest");
-  h.close();
 });
 
 test("clear: the store AND the session memory go (sign-out)", async () => {

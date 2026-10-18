@@ -22,6 +22,10 @@ import { openIdb, type IdbHandle } from "../putio/idb";
 
 export const THUMB_TTL_MS = 30 * 24 * 3600 * 1000;
 export const THUMB_MAX_ENTRIES = 2000;
+/** The session's eviction cap — the product value by default; tests run the
+ * policy at a small cap (see __setMaxEntriesForTests) instead of putting
+ * 2001 covers through IDB. */
+let maxEntries = THUMB_MAX_ENTRIES;
 export const THUMB_DB_NAME = "putplay.thumbs";
 const DB_VERSION = 1;
 const SAVED_AT_INDEX = "savedAt";
@@ -42,13 +46,21 @@ const memory = new Map<string, ThumbEntry>();
 
 /**
  * Test seam: drop the connection and the session memory so a test can
- * start from a clean slate (and recover from the IDB-failure test).
+ * start from a clean slate (and recover from the IDB-failure test);
+ * restores the eviction cap to the product value as well.
  */
 export function __resetForTests(): void {
   db?.close();
   db = null;
   dbFailed = false;
+  maxEntries = THUMB_MAX_ENTRIES;
   memory.clear();
+}
+
+/** Test seam: run the eviction policy at a small cap (the 2000 value
+ * stays pinned by the constants test; the policy needs no 2001-put loop). */
+export function __setMaxEntriesForTests(n: number): void {
+  maxEntries = n;
 }
 
 /** Open (creating if needed); a refusal means memory-only for the session. */
@@ -121,7 +133,7 @@ export function putThumb(fileId: number | string, entry: ThumbEntry): Promise<bo
 /** Keep the store at or under the cap: the oldest cover yields. */
 async function evictOverCap(handle: IdbHandle): Promise<void> {
   for (;;) {
-    if ((await handle.count()) <= THUMB_MAX_ENTRIES) return;
+    if ((await handle.count()) <= maxEntries) return;
     const oldest = await handle.firstKeyBy(SAVED_AT_INDEX);
     if (oldest === undefined) return; // concurrent deletion; re-count
     await handle.delete(oldest);
