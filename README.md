@@ -41,17 +41,19 @@ So I outlined this project, put together some resources, some rules and some lim
   reading, and watching
 - Resumes where you left off (no prompt — it just starts where you left
   off); remembers your source and language preferences
-- Skip intro, recap and credits: the episode's real segment times come
-  from TheIntroDB, matched to your file automatically (the TMDb key is
-  baked into the app — nothing to configure; anime names without an
-  SxxEyy marker, like "…Black Clover - 171 (1080p)…", are recognized).
-  Settings → "Skip intro,
+- Skip intro, recap and credits: the real segment times come from
+  TheIntroDB, matched to your file automatically — episodes by their
+  marker, marker-less anime names (like "…Black Clover - 171 (1080p)…"),
+  and movies by their title (the TMDb key is baked into the app —
+  nothing to configure). Settings → "Skip intro,
   recap and credits" picks the behavior: Auto-skip (default) jumps each
   section as playback reaches it — fresh starts begin after the
-  intro/recap and skipping the credits ends the episode; "Ask me" shows a
-  small "Skip …" pill at the player's corner (OK skips, Back plays
-  through) instead. A resume always wins; no match or no
-  data = nothing is skipped
+  intro/recap and skipping the credits ends the episode; "Ask me"
+  instead shows a "Skip …" button above the title row (the player's
+  button style, larger, with text) that takes focus the moment the
+  section is detected, so a single OK skips it (Back plays through), and
+  the progress bar marks where the sections sit. A resume always wins;
+  no match or no data = nothing is skipped
 - An **info tab** on the player (D-pad down): the episode/film's still,
   synopsis, rating · genres · air date (or runtime for a movie), plus
   "Play from beginning" and "Up next" — data from TMDb (anime from

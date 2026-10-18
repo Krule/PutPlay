@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-18
+
 ### Added
 - Playback speed: a speed control on the full-screen player (the trailing
   icon shows the current rate) opens a menu of 0.5×, 0.75×, 1×, 1.25×,
