@@ -6,6 +6,15 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Skip-segment data now also comes from the community consensus database
+  introdb.app: the show is resolved to its IMDb id (from the TMDb match,
+  or from AniList when no TMDb key is set), so segment times land for far
+  more episodes — and for movies — than before. When several databases
+  measure the same section, their times are fused into a single window
+  (an agreeing majority wins over a lone outlier), so a wrong timing in
+  one database no longer produces a wrong skip.
+
 ## [1.2.0] - 2026-10-18
 
 ### Added

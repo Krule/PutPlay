@@ -19,6 +19,8 @@ export interface TmdbShow {
   name: string;
   first_air_date?: string;
   popularity?: number;
+  /** The IMDb id (tt…) when TMDb has one — introdb.app's key. */
+  imdbId?: string;
 }
 
 const API_BASE = "https://api.themoviedb.org";
@@ -58,12 +60,18 @@ export async function tmdbSearchTv(
         name: r.name,
         first_air_date: typeof r.first_air_date === "string" ? r.first_air_date : undefined,
         popularity: typeof r.popularity === "number" ? r.popularity : undefined,
+        imdbId: asImdbId(r.imdb_id),
       });
     }
     return out;
   } catch {
     return null;
   }
+}
+
+/** TMDb's imdb_id is a bare "tt…" string or null; anything else is not one. */
+function asImdbId(v: unknown): string | undefined {
+  return typeof v === "string" && /^tt\d{4,10}$/.test(v) ? v : undefined;
 }
 
 /**
@@ -105,6 +113,7 @@ export async function tmdbSearchMovie(
         name: rawName,
         first_air_date: typeof r.release_date === "string" ? r.release_date : undefined,
         popularity: typeof r.popularity === "number" ? r.popularity : undefined,
+        imdbId: asImdbId(r.imdb_id),
       });
     }
     return out;

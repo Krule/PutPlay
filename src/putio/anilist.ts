@@ -1,9 +1,9 @@
 /**
- * AniList GraphQL (free, no key): title → anime entries with both ids —
- * the INTERNAL id (the Media(id:) query's key) and the MAL id
- * (AniSkip's key). The two are different namespaces: feeding the MAL id
- * to Media(id:) names a different show (live: MAL 34572 / Black Clover
- * resolved to "Touch").
+ * AniList GraphQL (free, no key): title → anime entries with the ids the
+ * segment sources need — the INTERNAL id (the Media(id:) query's key),
+ * the MAL id (AniSkip's key) and the IMDb id (introdb.app's key). The
+ * three are different namespaces: feeding the MAL id to Media(id:) names
+ * a different show (live: MAL 34572 / Black Clover resolved to "Touch").
  *
  * Why AniList: TheIntroDB's anime coverage is thin, and the anime
  * community's skip data (AniSkip) is keyed by MyAnimeList id. AniList is
@@ -21,6 +21,8 @@ export interface AnilistShow {
   id: number;
   /** The MyAnimeList id — AniSkip's key. */
   malId: number;
+  /** The IMDb id (tt…) when AniList has one — introdb.app's key. */
+  imdbId?: string;
   /** Romaji title (the english name as fallback). */
   title: string;
   /** First-air year, for disambiguation (absent when unknown). */
@@ -37,6 +39,7 @@ query SearchMedia($q: String!, $y: Int) {
     media(search: $q, type: ANIME, sort: POPULARITY_DESC, isAdult: false, seasonYear: $y) {
       id
       idMal
+      idImdb
       title { romaji english }
       averageScore
       startDate { year }
@@ -80,6 +83,7 @@ export async function anilistSearchAnime(
     const name = m?.title?.romaji || m?.title?.english;
     if (typeof id !== "number" || typeof malId !== "number" || typeof name !== "string" || !name) continue;
     const show: AnilistShow = { id, malId, title: name };
+    if (typeof m?.idImdb === "string" && /^tt\d{4,10}$/.test(m.idImdb)) show.imdbId = m.idImdb;
     if (typeof m?.startDate?.year === "number") show.year = m.startDate.year;
     if (typeof m?.averageScore === "number") show.score = m.averageScore;
     shows.push(show);

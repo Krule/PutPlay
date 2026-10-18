@@ -55,7 +55,8 @@ import { parseSegments } from "../src/putio/introdb.ts";
 import { pickTmdbMatch } from "../src/putio/tmdb.ts";
 import { anilistSearchAnime, pickAnilistMatch } from "../src/putio/anilist.ts";
 import { aniskipSegments, aniskipSegmentsV1 } from "../src/putio/aniskip.ts";
-import { lookupSegments, mergeSegments } from "../src/putio/seglookup.ts";
+import { parseIntrodbAppSegments } from "../src/putio/introdb-app.ts";
+import { lookupSegments, mergeSegments, fuseSegments } from "../src/putio/seglookup.ts";
 
 // The fake <video> drives the engine — hls.js is stubbed, as the old
 // esbuild alias did.
@@ -75,11 +76,13 @@ const net = {
   anilistCalls: [],
   aniskipCalls: [],
   aniskip1Calls: [],
+  idbaCalls: [],
   tmdb: null, // canned TMDb search response (or null = {})
   tidb: null, // canned TheIntroDB media response (or null = {})
   anilist: null, // canned AniList GraphQL response (or null = {})
   aniskip: null, // canned AniSkip v2 skip-times response (or null = {})
   aniskip1: null, // canned AniSkip v1 (legacy DB) response (or null = {})
+  idba: null, // canned introdb.app segments response (or null = {})
 };
 globalThis.fetch = (url, init) => {
   const u = String(url);
@@ -135,6 +138,15 @@ globalThis.fetch = (url, init) => {
     return Promise.resolve(
       new Response(JSON.stringify(net.aniskip || {}), {
         status: found ? 200 : 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+  }
+  if (u.startsWith("https://api.introdb.app/")) {
+    net.idbaCalls.push({ url: u });
+    return Promise.resolve(
+      new Response(JSON.stringify(net.idba || {}), {
+        status: 200,
         headers: { "Content-Type": "application/json" },
       })
     );
@@ -242,19 +254,21 @@ function resetNet() {
   net.anilistCalls.length = 0;
   net.aniskipCalls.length = 0;
   net.aniskip1Calls.length = 0;
+  net.idbaCalls.length = 0;
   net.tmdb = null;
   net.tidb = null;
   net.anilist = null;
   net.aniskip = null;
   net.aniskip1 = null;
+  net.idba = null;
 }
 
 // Canned world: the TMDb search for "Breaking Bad" returns the real show
 // (id 1396) plus a near-miss; TheIntroDB carries the real S01E01 shape.
 const TMDB_BBD = {
   results: [
-    { id: 1396, name: "Breaking Bad", first_air_date: "2008-01-20", popularity: 900 },
-    { id: 4149034, name: "Breaking Bad Season 2", first_air_date: "2015-01-01", popularity: 50 },
+    { id: 1396, name: "Breaking Bad", first_air_date: "2008-01-20", popularity: 900, imdb_id: "tt0903747" },
+    { id: 4149034, name: "Breaking Bad Season 2", first_air_date: "2015-01-01", popularity: 50, imdb_id: "tt9999003" },
   ],
 };
 const TIDB_BBD = {
@@ -267,15 +281,15 @@ const TIDB_BBD = {
 };
 const TMDB_ANIME = {
   results: [
-    { id: 7, name: "Test Anime", first_air_date: "2020-01-05", popularity: 10 },
+    { id: 7, name: "Test Anime", first_air_date: "2020-01-05", popularity: 10, imdb_id: "tt9999001" },
   ],
 };
 // The user's actual put.io file: an anime with a BARE episode number and a
 // release-group tag. TMDb id 73223 is Black Clover's real id.
 const TMDB_BCL = {
   results: [
-    { id: 73223, name: "Black Clover", first_air_date: "2017-10-03", popularity: 63 },
-    { id: 97067, name: "Squishy! Black Clover", first_air_date: "2019-07-01", popularity: 4 },
+    { id: 73223, name: "Black Clover", first_air_date: "2017-10-03", popularity: 63, imdb_id: "tt7441658" },
+    { id: 97067, name: "Squishy! Black Clover", first_air_date: "2019-07-01", popularity: 4, imdb_id: "tt9999004" },
   ],
 };
 const TIDB_BCL = {
@@ -298,6 +312,7 @@ const ANILIST_BCL = {
           // internal one, AniSkip the MAL one.
           id: 97940,
           idMal: 34572,
+          idImdb: "tt7441658", // REAL (live-verified 2026-10-18)
           title: { romaji: "Black Clover", english: "Black Clover" },
           averageScore: 72,
           startDate: { year: 2017 },
@@ -552,10 +567,10 @@ test("the chain: an anime file with a bare number resolves (the user's Black Clo
 // intro 60–128s and credits 8918–9342s.
 
 const TMDB_MOVIE_MIGRATION = {
-  results: [{ id: 940551, title: "Raus aus dem Teich", release_date: "2023-12-06", popularity: 40 }],
+  results: [{ id: 940551, title: "Raus aus dem Teich", release_date: "2023-12-06", popularity: 40, imdb_id: "tt9999002" }],
 };
 const TMDB_MOVIE_SPIDER = {
-  results: [{ id: 634649, title: "Spider-Man: No Way Home", release_date: "2021-12-15", popularity: 950 }],
+  results: [{ id: 634649, title: "Spider-Man: No Way Home", release_date: "2021-12-15", popularity: 950, imdb_id: "tt18256836" }],
 };
 const TIDB_MOVIE_SPIDER = {
   tmdb_id: 634649,
@@ -652,6 +667,7 @@ test("anilistSearchAnime: a Page.media list parses into shows with MAL ids", asy
   assert.deepEqual(shows[0], {
     id: 97940, // the internal id — the Media(id:) query's key
     malId: 34572, // the MAL id — AniSkip's key
+    imdbId: "tt7441658", // the IMDb id — introdb.app's key
     title: "Black Clover",
     year: 2017,
     score: 72,
@@ -898,7 +914,7 @@ test("the chain: both sources report → merged with TheIntroDB winning per sect
     data: {
       Page: {
         media: [
-          { id: 1361, idMal: 1360, title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } },
+          { id: 1361, idMal: 1360, idImdb: "tt0903747", title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } },
         ],
       },
     },
@@ -927,6 +943,219 @@ test("the chain: a season-2 file never queries the anime sources (MAL ids have n
   assert.equal(net.anilistCalls.length, 0, "no AniList search for S>1");
   assert.equal(net.aniskipCalls.length, 0, "no AniSkip v2 call for S>1");
   assert.equal(net.aniskip1Calls.length, 0, "no AniSkip v1 call for S>1");
+  assert.equal(net.idbaCalls.length, 0, "no identity → no IMDb id → no introdb.app call");
+});
+
+/* ================= the consensus source: introdb.app (IMDb-keyed) + fusion =================
+
+   introdb.app (api.introdb.app/segments?imdb_id=…) is the corpus's strongest
+   single source (measured: 93–100% of the consensus labels, where the app's
+   two-source chain reaches ~46–49%). It keys on the IMDb id, which arrives
+   from either search (TMDb's imdb_id, else AniList's idImdb) — so it works
+   even without a TMDb key. Its data fuses with the existing sources:
+   within-window agreement collapses to ONE window (the higher-priority
+   source's values), disagreement keeps the consensus cluster, and a lone
+   source's own entries pass through unsquashed. */
+
+test("the chain: TheIntroDB misses the episode but introdb.app has it → the segment lands", async () => {
+  resetNet();
+  net.tmdb = TMDB_BBD;
+  net.tidb = { found: false }; // 404 — no TheIntroDB data for this episode
+  net.idba = { intro: { start_sec: 120, end_sec: 200 }, recap: null, outro: null, post_credits: null };
+  const segs = await lookupSegments("fake-tmdb-key", "Breaking.Bad.S01E01.720p.mkv");
+  assert.deepEqual(segs, [{ type: "intro", start: 120, end: 200 }]);
+  assert.equal(net.idbaCalls.length, 1);
+  assert.equal(
+    net.idbaCalls[0].url,
+    "https://api.introdb.app/segments?imdb_id=tt0903747&season=1&episode=1",
+    "the TMDb identity's IMDb id, TV shape (season + episode)"
+  );
+});
+
+test("the chain: no TMDb key — introdb.app still resolves via the AniList IMDb id", async () => {
+  resetNet();
+  net.anilist = ANILIST_BCL;
+  net.aniskip = { found: false };
+  net.aniskip1 = { found: false };
+  net.idba = { intro: null, recap: null, outro: { start_sec: 1347.137, end_sec: 1437.561 }, post_credits: null };
+  const segs = await lookupSegments("", "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv");
+  assert.deepEqual(segs, [{ type: "credits", start: 1347.137, end: 1437.561 }], "outro maps to credits");
+  assert.equal(net.tmdbCalls.length, 0, "no key → no TMDb search");
+  assert.equal(net.idbaCalls.length, 1, "the anime-side identity (AniList's idImdb) feeds introdb.app");
+  assert.equal(
+    net.idbaCalls[0].url,
+    "https://api.introdb.app/segments?imdb_id=tt7441658&season=1&episode=171"
+  );
+});
+
+test("the chain: three sources agree within the window → ONE window, the top-priority source's values", async () => {
+  resetNet();
+  net.tmdb = TMDB_BCL;
+  net.tidb = TIDB_BCL; // intro 200–230
+  net.anilist = ANILIST_BCL;
+  net.aniskip = { found: true, results: [{ interval: { startTime: 201, endTime: 229 }, skipType: "op" }] };
+  net.aniskip1 = { found: false };
+  net.idba = { intro: { start_sec: 202, end_sec: 228 }, recap: null, outro: null, post_credits: null };
+  const segs = await lookupSegments("fake-tmdb-key", "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv");
+  assert.deepEqual(segs, [{ type: "intro", start: 200, end: 230 }], "agreement → one window, TheIntroDB's values");
+  assert.equal(net.idbaCalls.length, 1, "exactly one introdb.app call (the TMDb identity's id); the anime side does not refetch");
+});
+
+test("the chain: sources disagree past the window → the consensus cluster wins, one window per type", async () => {
+  resetNet();
+  net.tmdb = TMDB_BBD;
+  net.tidb = { intro: [{ start_ms: 120000, end_ms: 200000 }], credits: [] };
+  net.anilist = {
+    data: { Page: { media: [{ id: 1361, idMal: 1360, idImdb: "tt0903747", title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } }] } },
+  };
+  net.aniskip = { found: true, results: [{ interval: { startTime: 405, endTime: 510 }, skipType: "op" }] };
+  net.aniskip1 = { found: false };
+  net.idba = { intro: { start_sec: 400, end_sec: 500 }, recap: null, outro: null, post_credits: null };
+  const segs = await lookupSegments("fake-tmdb-key", "Breaking.Bad.S01E01.720p.mkv");
+  assert.deepEqual(
+    segs,
+    [{ type: "intro", start: 405, end: 510 }],
+    "the 2-member cluster {400, 405} beats TheIntroDB's lone 120; the representative is AniSkip's (higher priority than introdb.app)"
+  );
+});
+
+test("the chain: a single source's own multiple entries of one type pass through unsquashed", async () => {
+  resetNet();
+  net.tmdb = TMDB_ANIME;
+  net.tidb = { intro: [], recap: [{ start_ms: 300000, end_ms: 330000 }, { start_ms: 2400000, end_ms: 2450000 }], credits: [] };
+  const segs = await lookupSegments("fake-tmdb-key", "Test.Anime.S01E05.mkv");
+  assert.deepEqual(
+    segs,
+    [
+      { type: "recap", start: 300, end: 330 },
+      { type: "recap", start: 2400, end: 2450 },
+    ],
+    "only TheIntroDB timed recaps → both entries survive (the only source with that information)"
+  );
+});
+
+test("the chain: a search result without an IMDb id → introdb.app is never called", async () => {
+  resetNet();
+  net.tmdb = { results: [{ id: 12345, name: "No Imdb Show", first_air_date: "2019-04-02", popularity: 3 }] };
+  net.tidb = { intro: [{ start_ms: 120000, end_ms: 200000 }], credits: [] };
+  const segs = await lookupSegments("fake-tmdb-key", "No.Imdb.Show.S01E03.mkv");
+  assert.deepEqual(segs, [{ type: "intro", start: 120, end: 200 }]);
+  assert.equal(net.idbaCalls.length, 0, "no IMDb id on either search result → no introdb.app request");
+});
+
+test("the movie chain: introdb.app's movie call (is_movie=true, no season/episode)", async () => {
+  resetNet();
+  net.tmdb = TMDB_MOVIE_SPIDER;
+  net.tidb = TIDB_MOVIE_SPIDER; // intro 60–128, credits 8918–9342
+  net.idba = { intro: { start_sec: 61, end_sec: 127 }, recap: null, outro: { start_sec: 8919, end_sec: 9341 }, post_credits: null };
+  const segs = await lookupSegments("fake-tmdb-key", "Spider.Man.No.Way.Home.2021.1080p.BluRay.x264.mkv");
+  assert.deepEqual(
+    segs,
+    [
+      { type: "intro", start: 60, end: 128 },
+      { type: "credits", start: 8918, end: 9342 },
+    ],
+    "agreement → TheIntroDB's values win per type"
+  );
+  assert.equal(net.idbaCalls.length, 1);
+  assert.equal(
+    net.idbaCalls[0].url,
+    "https://api.introdb.app/segments?imdb_id=tt18256836&is_movie=true",
+    "movie shape: is_movie=true, no season=/episode= parameters"
+  );
+});
+
+/* ---------------- the fusion itself (pure) ---------------- */
+
+test("fuseSegments: a single reporting source passes through unchanged", () => {
+  assert.deepEqual(
+    fuseSegments([
+      { source: "theintrodb", segs: [{ type: "intro", start: 30, end: 120 }] },
+      { source: "aniskip", segs: [] },
+      { source: "introdb_app", segs: [] },
+    ]),
+    [{ type: "intro", start: 30, end: 120 }]
+  );
+});
+
+test("fuseSegments: within-window agreement across sources collapses to one window (top-priority values)", () => {
+  assert.deepEqual(
+    fuseSegments([
+      { source: "theintrodb", segs: [{ type: "intro", start: 200, end: 230 }] },
+      { source: "aniskip", segs: [{ type: "intro", start: 201, end: 229 }, { type: "credits", start: 3400, end: 3450 }] },
+      { source: "introdb_app", segs: [{ type: "intro", start: 202, end: 228 }, { type: "credits", start: 3405, end: 3460 }] },
+    ]),
+    [
+      { type: "intro", start: 200, end: 230 }, // TheIntroDB's — highest priority
+      { type: "credits", start: 3400, end: 3450 }, // AniSkip's — beats introdb.app
+    ]
+  );
+});
+
+test("fuseSegments: a multi-member consensus cluster beats a singleton, even from the top-priority source", () => {
+  assert.deepEqual(
+    fuseSegments([
+      { source: "theintrodb", segs: [{ type: "intro", start: 120, end: 200 }] },
+      { source: "aniskip", segs: [{ type: "intro", start: 405, end: 510 }] },
+      { source: "introdb_app", segs: [{ type: "intro", start: 400, end: 500 }] },
+    ]),
+    [{ type: "intro", start: 405, end: 510 }],
+    "the 2-member cluster {400, 405} wins over the lone 120; its representative = AniSkip (priority over introdb.app)"
+  );
+});
+
+test("fuseSegments: all singletons disagreeing → the higher-priority source's window wins", () => {
+  assert.deepEqual(
+    fuseSegments([
+      { source: "theintrodb", segs: [{ type: "intro", start: 120, end: 200 }] },
+      { source: "aniskip", segs: [] },
+      { source: "introdb_app", segs: [{ type: "intro", start: 400, end: 500 }] },
+    ]),
+    [{ type: "intro", start: 120, end: 200 }],
+    "a tie on cluster size resolves to the cluster holding the better-priority source"
+  );
+});
+
+test("fuseSegments: no segments anywhere → []", () => {
+  assert.deepEqual(
+    fuseSegments([{ source: "theintrodb", segs: [] }, { source: "aniskip", segs: [] }, { source: "introdb_app", segs: [] }]),
+    []
+  );
+});
+
+test("parseIntrodbAppSegments: intro/recap/outro map to intro/recap/credits; post_credits is dropped", () => {
+  // the live FMA S1E4 shape (api.introdb.app, fetched 2026-10-18)
+  const segs = parseIntrodbAppSegments({
+    imdb_id: "tt1355642",
+    intro: { start_sec: 30, end_sec: 120, start_ms: 30000, end_ms: 120000, confidence: 0.9, submission_count: 5 },
+    recap: { start_sec: 120, end_sec: 153, start_ms: 120000, end_ms: 153000, confidence: 0.8, submission_count: 3 },
+    outro: { start_sec: 1347.137, end_sec: 1437.561, start_ms: 1347137, end_ms: 1437561, confidence: 0.7, submission_count: 2 },
+    post_credits: { start_sec: 1440, end_sec: 1460, start_ms: 1440000, end_ms: 1460000, confidence: 0.5, submission_count: 1 },
+    no_intro: false, no_recap: false, no_outro: false,
+  });
+  assert.deepEqual(segs, [
+    { type: "intro", start: 30, end: 120 },
+    { type: "recap", start: 120, end: 153 },
+    { type: "credits", start: 1347.137, end: 1437.561 },
+  ]);
+});
+
+test("parseIntrodbAppSegments: an all-null body (\"not timed yet\") and garbage map to nothing", () => {
+  assert.deepEqual(
+    parseIntrodbAppSegments({ intro: null, recap: null, outro: null, post_credits: null, no_intro: true, no_recap: true, no_outro: true }),
+    []
+  );
+  assert.deepEqual(
+    parseIntrodbAppSegments({ intro: { start_sec: "soon", end_sec: 100 }, recap: null, outro: { start_sec: 100, end_sec: 10 } }),
+    [], "non-numeric start and end-before-start are dropped"
+  );
+});
+
+test("parseIntrodbAppSegments: end_sec null = the segment runs to the end of the media", () => {
+  assert.deepEqual(
+    parseIntrodbAppSegments({ intro: null, recap: null, outro: { start_sec: 1300, end_sec: null } }),
+    [{ type: "credits", start: 1300, end: null }]
+  );
 });
 
 test("the chain: no TMDb key still resolves anime via AniList/AniSkip", async () => {
