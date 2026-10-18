@@ -121,6 +121,9 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 - The Settings screen now scrolls when its column overflows: with the
   new skip-segments card, a card past the fold used to be unreachable
   with the D-pad (a clipped card is a card the remote can't reach).
+- The info tab's artwork was stretched into the 16:9 thumb box: covers
+  with a different shape (a 2:3 poster) are now letterboxed, keeping
+  their original aspect ratio.
 - The player's color-key legend (bottom right) was cramped: the dots
   breathe from their labels now, and the keys are spread apart.
 

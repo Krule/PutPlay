@@ -401,6 +401,10 @@ test("the info geometry: full-width minus the chrome gutters, above the chrome",
     /width:\s*384px/.test(thumb) && /height:\s*216px/.test(thumb),
     "the thumb is 384×216"
   );
+  assert.ok(
+    /object-fit:\s*contain/.test(thumb),
+    "the artwork keeps its native aspect ratio (contain) — a 2:3 poster must not be stretched into the 16:9 box"
+  );
 });
 
 test("the info data is fetched async and swaps in late (never blocks the first frame)", () => {

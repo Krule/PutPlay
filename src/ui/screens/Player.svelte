@@ -1896,6 +1896,7 @@
     border-radius: var(--r-md);
     border: 1px solid var(--line-strong);
     background: var(--ph-anime-glow), var(--ph-anime);
+    object-fit: contain; /* native aspect ratio — a poster must not stretch into the 16:9 box */
   }
   .info-thumb.movie {
     background: var(--ph-movie-glow), var(--ph-movie);
