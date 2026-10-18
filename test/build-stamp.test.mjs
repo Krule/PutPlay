@@ -11,6 +11,9 @@
 //    in a scratch git repo — the real worktree is never mutated)
 //  - the REAL production build must contain the current short sha (runtime
 //    proof, not a pattern) and no leftover __BUILD__ identifier
+//    (build-once-per-tree-state via shims/build-fresh.mjs: the build runs
+//    only when js/ was not already built for this exact tree, and it is
+//    shared with the packaging gate instead of paid for twice)
 //  - the minified ARTIFACT css (js/bundle.css — the sheet the TV loads)
 //    must stay Chrome-79 safe: the minifier may not fold longhands into
 //    shorthands the TV silently ignores (see chrome79-css.test.mjs §4)
@@ -32,7 +35,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "node:os";
 import { gitBuildStamp, buildStamp } from "../build/build-stamp.mjs";
-import { withBuildLock } from "./shims/build-lock.mjs";
+import { withFreshBuild } from "./shims/build-fresh.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -173,8 +176,10 @@ test("Settings shows the build stamp (version + sha + dirty marker)", () => {
 
 test("RUNTIME: the real vite build carries this checkout's sha and Chrome-79-safe artifact CSS", { timeout: 180_000 }, () => {
   const sha = execSync("git rev-parse --short HEAD", { cwd: root, stdio: "pipe" }).toString().trim();
-  return withBuildLock(async () => {
-    execSync("pnpm exec vite build", { cwd: root, stdio: "pipe", timeout: 120_000 });
+  return withFreshBuild(root, async () => {
+    // withFreshBuild ran the real vite build if js/ did not already match
+    // this exact tree state (shims/build-fresh.mjs; under the build lock,
+    // so the packaging gate can't republish js/ mid-assertion)
     const bundle = read("js/bundle.js");
     assert.ok(bundle.includes(sha), `bundle must carry the build sha ${sha} (which-build-is-this answer)`);
     assert.ok(!bundle.includes("__BUILD__"), "the __BUILD__ identifier must be compiled out (replaced by define)");

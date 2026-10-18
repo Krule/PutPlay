@@ -14,7 +14,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "url";
 import { createHash } from "node:crypto";
-import { withBuildLock } from "./shims/build-lock.mjs";
+import { withFreshBuild } from "./shims/build-fresh.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -31,28 +31,43 @@ try {
   ARES_OK = true;
 } catch { /* not installed */ }
 
+// One pipeline per suite run: the second gate reuses the first's ipk as
+// long as js/ is still byte-identical to the snapshot taken when the ipk
+// was made (a same-tree rebuild by the other gate is byte-identical, so
+// the ipk stays the proof). Without this, each of the two tests paid for
+// a full build + ares package.
+let memo = null;
+
 /** Run the real packaging pipeline and locate the produced .ipk. */
 function packageApp() {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const id = JSON.parse(readFileSync(join(root, "appinfo.json"), "utf8")).id;
   const ipkName = `${id}_${pkg.version}_all.ipk`;
+  const ipk = join(root, ipkName);
 
-  return withBuildLock(async () => {
-    // Build first: package.mjs stages js/ VERBATIM, so the gate only means
-    // "the ipk ships the build output" when that output is fresh from the
-    // source. Without this, a stale js/ (last release's build) is what gets
-    // staged, and the compare fails on stale-vs-fresh hashes, not a bug.
-    // The whole build → snapshot → package sequence holds the build lock:
-    // a concurrent test (build-stamp rebuilds js/) must not republish the
-    // files between the snapshot and the ipk staging, and the assertion
-    // must hold against the build this ipk was made from.
-    execSync("pnpm exec vite build", { cwd: root, stdio: "pipe", timeout: 120_000 });
+  if (
+    memo &&
+    existsSync(memo.ipk) &&
+    sha(join(root, "js/bundle.js")) === memo.bundleSha &&
+    sha(join(root, "js/bundle.css")) === memo.cssSha
+  ) {
+    return Promise.resolve(memo);
+  }
+
+  return withFreshBuild(root, async () => {
+    // withFreshBuild ran the real vite build if js/ did not already match
+    // this exact tree state (shims/build-fresh.mjs — shared with the
+    // build-stamp gate instead of paid for twice), and holds the build
+    // lock for the whole snapshot → package sequence: a concurrent test
+    // must not republish the files between the snapshot and the ipk
+    // staging, and the assertion must hold against the build this ipk was
+    // made from.
     const bundleSha = sha(join(root, "js/bundle.js"));
     const cssSha = sha(join(root, "js/bundle.css"));
     execSync("node build/package.mjs", { cwd: root, stdio: "pipe", timeout: 90_000 });
-    const ipk = join(root, ipkName);
     assert.ok(existsSync(ipk), `${ipkName} not produced`);
-    return { id, ipk, bundleSha, cssSha };
+    memo = { id, ipk, bundleSha, cssSha };
+    return memo;
   });
 }
 
