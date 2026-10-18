@@ -33,7 +33,12 @@ const scratchRepo = () => {
   // ignore js/ exactly like the real repo (.gitignore:6): the build's output
   // must not count as tree content, or every build would "change" the tree
   writeFileSync(join(d, ".gitignore"), "js/\n");
-  out("git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm one", d);
+  out("git init -q", d);
+  // the machine's global git config signs commits (1Password, biometric) —
+  // scratch fixtures must not sign, or the commit hangs on a prompt
+  // (same rule as build-stamp.test.mjs's scratchRepo)
+  out("git config commit.gpgsign false", d);
+  out("git add -A && git -c user.email=t@t -c user.name=t commit -qm one", d);
   return d;
 };
 // a fake "build": stamps a counter file + the artifacts withFreshBuild expects
