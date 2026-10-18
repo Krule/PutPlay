@@ -64,7 +64,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   while it is focused seek 10 seconds (a time bubble shows the position;
   the thumb grows while focused). The source/audio/subtitle pickers open
   as floating menus — no scrim, no dimming, the video plays at full
-  brightness — and closing one returns focus to its icon. The chrome now
+  brightness — and a click anywhere else closes one (focus then returns
+  to its icon). The chrome now
   hides itself 4 seconds after the last activity and stays while paused,
   on an error, or with a menu or the info tab open; a buffering spinner
   (never while paused) and a center pause echo (never on error) carry the

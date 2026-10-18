@@ -1382,6 +1382,14 @@
 
   <!-- ================= overlays ================= -->
 
+  <!-- a pick menu open: a click that lands anywhere else misses every
+       control, so it dismisses the menu — the catcher is transparent
+       (no dim, no visible surface), above the chrome (z 20), below the
+       menu (z 30). Color keys / D-pad are key events: unaffected. -->
+  {#if overlays.source || overlays.audio || overlays.subs || overlays.speed}
+  <div class="menu-scrim" on:click={closeOverlays}></div>
+  {/if}
+
   {#if error}
     <div class="center-panel" on:click={(e) => onPanelScrimClick(e, errPanelEl)}>
       <div class="panel err-panel" bind:this={errPanelEl} on:click={(e) => e.stopPropagation()}>
@@ -2064,6 +2072,18 @@
   /* NON-MODAL floating menus: no scrim, no dim. They float above the
      chrome (right 72px = over the trailing icon group; 24px above its
      top), the opener icon stays .sel, arrows are trapped inside. */
+  /* the pick menus are click-modal: a transparent full-surface catcher
+     (above the chrome, below the menu) closes them on any side-click */
+  .menu-scrim {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 25;
+    background: transparent;
+  }
+
   .menu {
     position: absolute;
     right: 72px;

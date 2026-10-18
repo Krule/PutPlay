@@ -14,9 +14,10 @@
 //      focused is a REAL seek of ±10s (scrubSeek, clamped); the thumb
 //      grows 16→24 and a time bubble appears while focused.
 //   3. TRANSPORT ROW: transport only (−10s / play-pause / +30s).
-// Menus (source / audio / CC / speed) are NON-MODAL: no scrim, no dim —
-// they float above the chrome, the opener icon stays active, arrows are
-// trapped inside, Back closes and restores the opener. The info panel
+// Menus (source / audio / CC / speed) float above the chrome: no dim, no
+// visible surface, the opener icon stays active, arrows are trapped
+// inside; Back closes and restores the opener, and a click anywhere else
+// (a transparent full-surface catcher) dismisses the menu. The info panel
 // (D-pad DOWN from the transport row) says what the title view can't —
 // synopsis, details, actions (Play from beginning / Up next) — and Back
 // closes it and restores the transport. The contextual skip PILL (at the
@@ -248,7 +249,7 @@ test("the time bubble shows while the bar is focused", () => {
 
 /* ---------------- non-modal menus + speed ---------------- */
 
-test("the pick panels are floating menus (no scrim, no dim)", () => {
+test("the pick panels are floating menus (no visible scrim, no dim)", () => {
   for (const kind of ["source", "audio", "subs", "speed"]) {
     assert.ok(
       new RegExp(`class="menu ${kind}"`).test(player),
@@ -269,6 +270,35 @@ test("the menu geometry: right 72px, 24px above the chrome (bottom 419px)", () =
   assert.ok(/bottom:\s*419px/.test(menu), "the menu floats 24px above the chrome top");
   assert.ok(/width:\s*640px/.test(rule(".menu.source {")), "the source menu is 640px");
   assert.ok(/width:\s*480px/.test(rule(".menu.speed {")), "the speed menu is 480px");
+});
+
+test("a side-click (magic-remote click away from the panel) dismisses the open pick menu", () => {
+  // The four pick menus are click-modal: a transparent full-surface catcher
+  // sits above the chrome, below the menu — a click that lands on it missed
+  // the panel and every control, so it closes the menu. NO visible scrim, NO
+  // dim (the video keeps playing behind), and the color keys / D-pad are key
+  // events, unaffected by the catcher.
+  const open = '{#if overlays.source || overlays.audio || overlays.subs || overlays.speed}';
+  const i = player.indexOf(open);
+  assert.ok(i >= 0, "a single any-menu-open condition exists");
+  assert.ok(
+    /class="menu-scrim"[^>]*on:click=\{closeOverlays\}/.test(player.slice(i, i + 400)),
+    "the menu-scrim renders whenever any pick menu is open, and its click closes the overlays"
+  );
+  const scrim = rule(".menu-scrim {");
+  assert.ok(
+    /position:\s*absolute/.test(scrim) &&
+      /top:\s*0/.test(scrim) &&
+      /right:\s*0/.test(scrim) &&
+      /bottom:\s*0/.test(scrim) &&
+      /left:\s*0/.test(scrim),
+    "the catcher spans the whole player surface (top/right/bottom/left 0)"
+  );
+  assert.ok(/background:\s*transparent/.test(scrim), "it is invisible — no dim, no surface");
+  assert.ok(
+    /z-index:\s*25/.test(scrim) && /z-index:\s*30/.test(rule(".menu {")),
+    "z 25: above the chrome (20), below the menu (30) — the panel stays clickable"
+  );
 });
 
 test("the color legend spreads the keys a bit (dot–label and key–key air)", () => {
