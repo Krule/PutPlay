@@ -66,6 +66,18 @@ function between(a, b) {
   return player.slice(i, j);
 }
 
+/** The global theme, comments stripped (tokens + the shared chrome pieces). */
+const theme = read("src/ui/theme.css").replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** A theme.css rule's body by selector (unique literal match). */
+function themeRule(sel) {
+  const idx = theme.indexOf(sel);
+  assert.ok(idx >= 0, `a "${sel}" rule must exist in theme.css`);
+  const open = theme.indexOf("{", idx);
+  const close = theme.indexOf("}", open);
+  return theme.slice(open + 1, close);
+}
+
 test("Player.svelte compiles (Svelte 4 parse errors are invisible to every other gate)", async () => {
   const { compile, preprocess } = await import("svelte/compiler");
   const sveltePreprocess = (await import("svelte-preprocess")).default;
@@ -257,6 +269,19 @@ test("the menu geometry: right 72px, 24px above the chrome (bottom 419px)", () =
   assert.ok(/bottom:\s*419px/.test(menu), "the menu floats 24px above the chrome top");
   assert.ok(/width:\s*640px/.test(rule(".menu.source {")), "the source menu is 640px");
   assert.ok(/width:\s*480px/.test(rule(".menu.speed {")), "the speed menu is 480px");
+});
+
+test("the color legend spreads the keys a bit (dot–label and key–key air)", () => {
+  const dot = themeRule(".color-legend .dot {");
+  assert.ok(
+    /margin-right:\s*10px/.test(dot),
+    "the dot breathes from its label (margin-right 10px — flex gap is Chrome 84+, TV is 79)"
+  );
+  const cl = themeRule(".color-legend .cl + .cl {");
+  assert.ok(
+    /margin-left:\s*28px/.test(cl),
+    "adjacent keys are spread (margin-left 28px) — the cramped \"●Source●Audio\" row is gone"
+  );
 });
 
 test("the speed menu is the locked rate list and drives engine.setSpeed", () => {

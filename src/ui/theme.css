@@ -211,8 +211,15 @@ button {
   font-size: var(--fs-small);
   color: var(--text-2);
 }
+
+/* a bit of air: key–key 28px (flex gap is Chrome 84+; the TV's Chromium is 79) */
+.color-legend .cl + .cl {
+  margin-left: 28px;
+}
+
 .color-legend .dot {
   width: 14px; height: 14px; border-radius: 50%;
+  margin-right: 10px; /* dot–label air */
 }
 .color-legend .dot.c1 { background: var(--accent); }
 .color-legend .dot.c2 { background: var(--ok); }

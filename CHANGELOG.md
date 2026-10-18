@@ -120,6 +120,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 - The Settings screen now scrolls when its column overflows: with the
   new skip-segments card, a card past the fold used to be unreachable
   with the D-pad (a clipped card is a card the remote can't reach).
+- The player's color-key legend (bottom right) was cramped: the dots
+  breathe from their labels now, and the keys are spread apart.
 
 ### Removed
 - The "Subtitle size" card in Settings: the size is set directly in the
