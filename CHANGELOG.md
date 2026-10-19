@@ -29,6 +29,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   feature list now includes skip segments, the info tab, playback speed,
   docked video, and auto-advance, and the screenshots and captions show
   the current screens and name the open-content demo material in them.
+- Skip-segment data from TheIntroDB is now fetched from its v4 API: the
+  maintainer is retiring the v2/v3 endpoints the app previously called, and
+  v4 is the only surface under active development. Nothing changes for the
+  user today — the same databases, the same segments.
 
 ### Fixed
 - Subtitles with leftover ASS markup no longer show the markup: the

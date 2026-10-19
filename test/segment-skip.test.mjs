@@ -272,7 +272,7 @@ const TMDB_BBD = {
   ],
 };
 const TIDB_BBD = {
-  tmdb_id: 1396,
+  tvdb_id: 114921,
   type: "tv",
   season: 1,
   episode: 1,
@@ -293,7 +293,7 @@ const TMDB_BCL = {
   ],
 };
 const TIDB_BCL = {
-  tmdb_id: 73223,
+  tvdb_id: 71663,
   type: "tv",
   season: 1,
   episode: 171,
@@ -577,7 +577,7 @@ test("the chain: filename → TMDb → TheIntroDB → segments, re-fetched on ev
   assert.match(String(tm.headers && tm.headers.Authorization), /^Bearer fake-tmdb-key$/, "the user key rides as Bearer");
   assert.equal(net.tidbCalls.length, 1, "one TheIntroDB media call");
   const tb = net.tidbCalls[0].url;
-  assert.ok(tb.startsWith("https://api.theintrodb.org/v3/media?"), "the /v3/media endpoint");
+  assert.ok(tb.startsWith("https://api.theintrodb.org/v4/media?"), "the /v4/media endpoint");
   assert.ok(tb.includes("tmdb_id=1396"), "the TMDb id from the search result");
   assert.ok(tb.includes("season=1") && tb.includes("episode=1"), "the episode from the filename");
 
@@ -609,7 +609,7 @@ test("no TMDb match → TheIntroDB is never called, no segments", async () => {
 test("TheIntroDB has no data for the episode → empty list, and the next play asks again (caching suspended)", async () => {
   resetNet();
   net.tmdb = TMDB_ANIME;
-  net.tidb = { tmdb_id: 7, type: "tv", season: 1, episode: 1 };
+  net.tidb = { tvdb_id: 27, type: "tv", season: 1, episode: 1 };
   const cache = mapCache();
   const segs = await lookupSegments("fake-tmdb-key", "Test.Anime.S01E01.mkv", undefined, cache);
   assert.deepEqual(segs, []);
@@ -658,7 +658,7 @@ const TMDB_MOVIE_SPIDER = {
   results: [{ id: 634649, title: "Spider-Man: No Way Home", release_date: "2021-12-15", popularity: 950, imdb_id: "tt18256836" }],
 };
 const TIDB_MOVIE_SPIDER = {
-  tmdb_id: 634649,
+  tvdb_id: 169,
   type: "movie",
   intro: [{ start_ms: 60000, end_ms: 128000 }],
   credits: [{ start_ms: 8918000, end_ms: 9342000 }],
@@ -1319,6 +1319,24 @@ test("parseSegments: garbage in, empty list out (never a throw, never a fake seg
   assert.deepEqual(parseSegments({ intro: [{ start_ms: 90000, end_ms: 1000 }] }), [], "end before start");
   assert.deepEqual(parseSegments({ intro: [{ start_ms: -5, end_ms: 1000 }] }), [], "negative");
   assert.deepEqual(parseSegments({ intro: [{ start_ms: "soon", end_ms: 1000 }] }), [], "not a number");
+});
+
+// v4 wire contract (OpenAPI 4.0.0): every body is keyed by tvdb_id — tmdb_id is
+// gone from the response (it still rides in the QUERY as the addressing id) —
+// and a media with no submissions answers with an episode list instead of a
+// 404 (MediaEpisodeListResponse). Neither shape carries segment arrays.
+test("parseSegments: v4's episode-list fallback (no submissions for the media) → nothing to skip", () => {
+  assert.deepEqual(
+    parseSegments({
+      tvdb_id: 71663,
+      type: "tv",
+      episodes: [
+        { season: 1, episode: 1, intro_accepted_count: 0, recap_accepted_count: 0, credits_accepted_count: 0 },
+      ],
+    }),
+    [],
+    "the fallback body has no segment arrays — an honest 'nothing to skip'"
+  );
 });
 
 test("pickTmdbMatch: the normalized exact name wins, whatever the case or punctuation", () => {

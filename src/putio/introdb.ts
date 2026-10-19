@@ -1,9 +1,19 @@
 /**
  * TheIntroDB (theintrodb.org) — the community database of intro / recap /
- * credits / preview timestamps, keyed by TMDb id. The networked part is a
- * thin client (no auth needed to READ); the PURE part is parseSegments,
+ * credits / preview timestamps. The networked part is a thin client (no auth
+ * needed to READ); the PURE part is parseSegments,
  * which normalizes the API's raw {start_ms, end_ms} shape into the app's
  * own Seg model so the engine and Player never see raw API data.
+ *
+ * API v4 (theintrodb.org/openapi.yaml — the spec is the source of truth):
+ * TVDB is the identity — every RESPONSE is keyed by tvdb_id and tmdb_id no
+ * longer appears in a body. We still ADDRESS a media by tmdb_id (the app
+ * resolves shows through TMDb): v4 accepts tmdb_id as a query param and
+ * resolves it server-side. A media with no submissions answers with an
+ * episode list (MediaEpisodeListResponse) instead of a 404 — no segment
+ * arrays, so parseSegments degrades to [] as usual. The frozen v2/v3
+ * GET /media surfaces are being retired by the maintainer; v4 is the only
+ * surface under active development (Krule/PutPlay#1).
  *
  * Raw → normalized rules (the contract parseSegments's tests pin):
  *   - times are MILLISECONDS in the API, SECONDS in the app
@@ -26,7 +36,7 @@ export interface Seg {
   end: number | null;
 }
 
-const API_BASE = "https://api.theintrodb.org/v3";
+const API_BASE = "https://api.theintrodb.org/v4";
 /** The only segment types the feature acts on (preview is dropped). */
 const SEG_TYPES: SegType[] = ["intro", "recap", "credits"];
 
