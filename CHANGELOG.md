@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-19
+
 ### Added
 - Skip-segment data now also comes from the community consensus database
   introdb.app: the show is resolved to its IMDb id (from the TMDb match),

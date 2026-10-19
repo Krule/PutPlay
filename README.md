@@ -113,7 +113,9 @@ the shots is open content — see
 ## Controls
 
 Pointer (Magic Remote) and 5-way both work. **OK** confirms, **Back**
-cancels — double-press exits.
+cancels — double-press exits. Pointing at a control highlights it; on
+the progress bar, the pointer shows the seek time in a bubble before you
+click.
 
 In the player: **blue** play/pause · **red** playback source · **green**
 audio · **yellow** subtitles.
