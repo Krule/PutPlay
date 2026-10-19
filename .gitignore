@@ -12,3 +12,6 @@ build/deploy.mjs
 preview
 docs/mockups
 putplay*.svg
+# abandoned research work (kept on disk, never shipped)
+research/
+.knowledge/
