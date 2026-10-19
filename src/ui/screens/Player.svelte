@@ -259,7 +259,10 @@
       // the fallback's setSource clears the panel error a moment later —
       // toast the (descriptive) message so the source bounce is explained
       // instead of reading as a silent refusal
-      if (p.error) platform.toast(p.error);
+      if (p.error) {
+        platform.toast(p.error);
+        startMeta(); // no first frame on a broken stream — the info tab still wants its data
+      }
     }
     if (p.audioPanelRows !== undefined) audioPanelRows = p.audioPanelRows;
     if (p.audioActiveKey !== undefined) audioActiveKey = p.audioActiveKey;
@@ -343,6 +346,8 @@
       subCues = [];
       subText = "";
       startedPlaying = false;
+      metaStarted = false; // the new file's lookups haven't fired yet
+      abortMeta(); // the old file's in-flight lookups die with it
       segs = []; // a new file is a fresh segment decision
       segConsumed = [];
     }
@@ -386,9 +391,50 @@
     engine.setAudioPreference(cfg?.audioLang || null);
     engine.setSpeed(speed); // the session's rate applies to the new file too
     sourceOptions = engine.sourceOptions().map((o) => ({ ...o }));
-    loadInfo(); // the info data arrives late; it never blocks the first frame
     engine.setSource(prefSource, undefined, true); // silent: don't pop the source overlay on entry
+    // the metadata lookups (segments + info) wait for the first frame —
+    // startMeta(): 6-10 small requests racing the stream's first bytes is
+    // the "starting feels slower" cost, and by the first frame the
+    // connection is already established
+  }
+
+  /**
+   * The per-file metadata session: the segment lookup and the info load
+   * share ONE AbortController, created lazily when the lookups fire and
+   * aborted when the file is abandoned (a new file, or the player's
+   * unmount) — in-flight requests die instead of contending with the
+   * next stream. (The chain degrades an abort to "nothing to skip" —
+   * pinned in test/segment-skip.test.mjs — so it never rejects.)
+   */
+  let metaCtrl: AbortController | null = null;
+  /** startMeta fired for this file (the first-frame reactive and the
+   *  error branch can both reach it — once is enough). */
+  let metaStarted = false;
+
+  /** The fetch both lookups get: the session's signal rides on every request. */
+  function metaFetch(): typeof fetch {
+    if (!metaCtrl) metaCtrl = new AbortController();
+    const signal = metaCtrl.signal;
+    return (url, opts) => fetch(url, { ...opts, signal });
+  }
+
+  function abortMeta(): void {
+    metaCtrl?.abort();
+    metaCtrl = null;
+  }
+
+  /**
+   * Fire the file's metadata lookups — once per file, at the first frame
+   * (behind an established stream) or on a stream error (a broken file
+   * never delivers a first frame, but the info tab still wants its
+   * data). Skip data landing a few seconds in is still inside the
+   * engine's fresh-skip grace; the crossing reactive covers the rest.
+   */
+  function startMeta(): void {
+    if (metaStarted) return;
+    metaStarted = true;
     startSegLookup();
+    loadInfo();
   }
 
   /**
@@ -412,7 +458,7 @@
     const name = file.name;
     // non-empty merged answers are cached for a month (seglookup.ts);
     // re-playing the same file costs zero network
-    lookupSegments(TMDB_KEY, name, undefined, segCache)
+    lookupSegments(TMDB_KEY, name, metaFetch(), segCache) // the bound fetch carries the file's abort signal
       .then((s) => {
         if (forId !== file.id || !engine) return;
         segs = s;
@@ -450,7 +496,8 @@
 
   /** Load the info data for the current file — non-blocking (the panel
    *  re-renders on arrival); the req id drops a late response if the file
-   *  changed in flight. Called from initEngine (the file-change point). */
+   *  changed in flight. Called from startMeta (the first-frame /
+   *  stream-error point — once per file). */
   function loadInfo(): void {
     const req = ++infoReq;
     infoData = null;
@@ -461,6 +508,7 @@
         year: episodeParse.year,
         season: episodeParse.season,
         episode: episodeParse.episode,
+        fetchImpl: metaFetch(),
         cache: infoCache,
       }).then((d) => {
         if (req !== infoReq) return;
@@ -471,7 +519,7 @@
     }
     const mv = parseMovieName(file.name);
     if (!mv) return; // no movie title to query (numbers / scene junk)
-    lookupMovieInfo({ name: mv.title, year: mv.year, cache: infoCache }).then((d) => {
+    lookupMovieInfo({ name: mv.title, year: mv.year, fetchImpl: metaFetch(), cache: infoCache }).then((d) => {
       if (req !== infoReq) return;
       infoData = d;
     });
@@ -606,6 +654,7 @@
   $: if (engine && duration > 0 && !paused && !buffering && !startedPlaying) {
     startedPlaying = true;
     wake();
+    startMeta(); // the deferred lookups: behind the first frame, not at source load
   }
 
   // ---------------- audio panel helpers ----------------
@@ -973,6 +1022,7 @@
     // and the background screen already re-asserted its handlers from its
     // subscription to the session store — clearing now would wipe them.
     if (hideTimer) clearTimeout(hideTimer);
+    abortMeta(); // in-flight lookups die with the player
     engine?.destroy();
     engine = null;
     for (const s of subtitles) if (s.blobURL) URL.revokeObjectURL(s.blobURL);

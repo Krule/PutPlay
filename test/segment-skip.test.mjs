@@ -640,6 +640,22 @@ test("TheIntroDB has no data for the episode → empty list, and an empty answer
   assert.equal(net.tidbCalls.length, 2);
 });
 
+test("an abandoned lookup is an honest miss: a fetch aborted in flight degrades to 'nothing to skip', not a throw", async () => {
+  // The Player aborts a file's lookups when the file is abandoned
+  // (startup-lookups.test.mjs); the chain must treat the AbortError like
+  // any other failure — resolve to [], never reject into the player.
+  const ctrl = new AbortController();
+  const hanging = () =>
+    new Promise((_resolve, reject) => {
+      const fail = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+      if (ctrl.signal.aborted) fail();
+      else ctrl.signal.addEventListener("abort", fail, { once: true });
+    });
+  const p = lookupSegments("fake-tmdb-key", "Breaking.Bad.S01E01.720p.mkv", hanging);
+  ctrl.abort();
+  assert.deepEqual(await p, [], "the abort is a miss — nothing to skip, no rejection");
+});
+
 test("the chain: an anime file with a bare number resolves (the user's Black Clover form)", async () => {
   resetNet();
   net.tmdb = TMDB_BCL;

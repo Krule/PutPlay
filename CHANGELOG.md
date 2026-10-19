@@ -22,6 +22,7 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   title: no match, nothing is skipped.
 
 ### Changed
+- Opening a video no longer starts behind its own metadata: the skip-segment and info lookups now begin at the first frame instead of at source load, and any still in flight are aborted when you leave the file — the stream's first bytes no longer race six or ten small requests over the same connection.
 - Re-playing a video no longer re-looks-up its skip segments from the
   network, and re-opening the Info tab no longer re-fetches the details:
   a non-empty answer is now cached for a month. An empty look-up is never
