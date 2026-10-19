@@ -210,6 +210,30 @@ test("Settings: the 'if the original can't switch audio' option is gone", () => 
   );
 });
 
+test("Settings: the account-languages note no longer claims the account drives the search alone", () => {
+  const settings = read("src/ui/screens/Settings.svelte");
+  assert.ok(
+    !/drive the subtitle search/i.test(settings),
+    "stale copy: since the union fix the subtitle search also sends the app-configured language"
+  );
+});
+
+test("Settings: the skip-segments note names every source the segments come from", () => {
+  const settings = read("src/ui/screens/Settings.svelte");
+  const i = settings.indexOf("Skip intro, recap and credits");
+  assert.ok(i !== -1, "the skip-segments card must exist");
+  const card = settings.slice(i, i + 900);
+  assert.ok(/TheIntroDB/i.test(card), "the note must name TheIntroDB");
+  assert.ok(
+    /AniSkip/i.test(card),
+    "the note must name AniSkip (the anime source, shipped in 1.2.0)"
+  );
+  assert.ok(
+    /introdb\.app/i.test(card),
+    "the note must name the introdb.app consensus source"
+  );
+});
+
 test("Player: a preference that matches no track is toasted (no more silence)", () => {
   const player = read("src/ui/screens/Player.svelte");
   const idx = player.indexOf("audioPrefMiss");

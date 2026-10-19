@@ -188,7 +188,7 @@
           </div>
         {/if}
         {#if subs.length}
-          <p class="note">put.io web-app languages: <span class="acc">{subs.join(", ")}</span> — these still drive the subtitle search.</p>
+          <p class="note">put.io web-app languages: <span class="acc">{subs.join(", ")}</span> — the subtitle search asks for these plus your preferred language below.</p>
         {/if}
       </div>
 
@@ -246,10 +246,10 @@
           <button class="chip" class:sel={!cfgSkipSegs} data-focus on:click={() => (cfgSkipSegs = false)}>Ask me</button>
         </div>
         <p class="note">
-          Section times come from TheIntroDB (community data), matched to your file's episode
-          automatically. No match or no data for a file: nothing is skipped. Auto-skip jumps
-          each section as playback reaches it; Ask me asks, section by section. A resume
-          always wins.
+          Section times come from community skip databases — TheIntroDB, AniSkip for anime,
+          and the introdb.app consensus — matched to your file automatically. No match or no
+          data: nothing is skipped. Auto-skip jumps each section as playback reaches it; Ask
+          me asks, section by section. A resume always wins.
         </p>
       </div>
     </div>

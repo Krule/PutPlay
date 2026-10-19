@@ -38,6 +38,14 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   the app detects what a subtitle file really is from its content, not
   from the declared format, and no longer feeds an ASS script to the
   native subtitle track it cannot render.
+- The account card note on the Settings screen no longer implies that
+  only your put.io account's languages drive the subtitle search: it now
+  says the search asks for the account languages plus the preferred
+  language set in the app.
+- The "Skip intro, recap and credits" note on the Settings screen now
+  names every source the section times can come from — TheIntroDB,
+  AniSkip for anime, and the introdb.app consensus — instead of only
+  TheIntroDB.
 - Anime info is back: the anime search was asking the AniList database for
   a field their live API does not have, and the whole query was rejected —
   anime titles got no info (and no segments) at all. The query no longer
