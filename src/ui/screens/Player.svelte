@@ -1046,7 +1046,6 @@
 
   let controlsEl: HTMLDivElement;
   let playerRootEl: HTMLDivElement;
-  let baseFocusDone = false;
 
   function ctlEl(name: string): HTMLElement | null {
     return controlsEl
@@ -1069,9 +1068,17 @@
   // the DOM swap, which is when restoreIfStale can see the old buttons as
   // detached. (A restore driven by the overlay STATE flags runs in the
   // reactive phase, before the removal commits, and sees them still attached.)
+  // The base transport gets the SAME re-scan treatment the panels and the
+  // dock use: {#if mode === "full"} tears .controls down on every dock and
+  // recreates it on restore, and the engine GCs detached nodes from its
+  // candidate set — a one-shot registration (a "done" flag that survives
+  // the teardown) leaves the D-pad with zero candidates after a
+  // full→mini→full round trip (found on the TV: restoring the player
+  // silently killed the arrows). Gated on controlsEl alone, registerAll is
+  // idempotent per node and the focus placement below is exactly the
+  // (re)entry behavior.
   $: {
-    if (controlsEl && !baseFocusDone) {
-      baseFocusDone = true;
+    if (controlsEl) {
       remote.registerAll(controlsEl);
       // FULL: the video covers the background screen, so any focus still
       // sitting on it is invisible — the player takes the remote outright

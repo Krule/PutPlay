@@ -38,6 +38,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   user today — the same databases, the same segments.
 
 ### Fixed
+- Restoring a docked video to the full player no longer leaves the
+  remote's D-pad unable to reach the player's buttons: after going back
+  (dock) and restoring, the transport controls were unreachable with the
+  arrows because the focus registration never ran on the restored
+  controls.
 - Subtitles with leftover ASS markup no longer show the markup: the
   formatting tags put.io's conversion leaves in the cue text ("{\an8}…")
   are stripped before display, and ASS line breaks become real ones.

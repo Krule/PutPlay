@@ -307,6 +307,27 @@ test("releasing spatial focus also releases the DOM focus (:focus ring + :focus-
   assert.match(body, /\.blur\(\)/, "blur() must also blur the DOM element");
 });
 
+test("restoring the full player re-registers the transport controls (the full→mini→full D-pad round trip)", () => {
+  // Found on the TV: docking tears the full-mode chrome down ({#if
+  // mode === "full"} wraps .controls), restoring recreates it, and the
+  // engine GCs detached nodes from its candidate set — a one-shot
+  // registration (a "done" flag set on the first full display, never
+  // cleared) leaves the D-pad with ZERO candidates after a
+  // full→mini→full round trip: restoring the player silently kills the
+  // arrows while pointer clicks still work. The base registration must
+  // re-run whenever controlsEl exists — the same re-scan pattern the
+  // dock uses (registerAll is idempotent per node).
+  const src = read("src/ui/screens/Player.svelte");
+  const i = src.indexOf("remote.registerAll(controlsEl)");
+  assert.ok(i !== -1, "the base transport registration scan must exist");
+  const stmt = src.slice(Math.max(0, i - 260), i + 40);
+  assert.match(
+    stmt,
+    /\$: \{?\s*if \(\s*controlsEl\s*\)/,
+    "the base registration must be gated on controlsEl alone (re-run on every (re)creation) — a one-shot 'done' flag survives the {#if} teardown and starves the D-pad after a full→mini→full round trip"
+  );
+});
+
 test("the dock's focus scan re-runs on every ladder move (the {#if} swap recreates the size button)", () => {
   // Found on the TV: mini->micro (and micro->mini) recreates the size
   // button in place (Svelte's {#if} swap), but the dock's CONTAINER
