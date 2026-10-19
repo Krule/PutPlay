@@ -21,6 +21,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   segments are fetched only when a database entry actually matches the
   title: no match, nothing is skipped.
 
+### Changed
+- The subtitle search now also asks for the language you set in the app —
+  before, only the languages saved in your put.io account were searched,
+  so a subtitle language set here in the app was never found.
+
 ### Fixed
 - Anime info is back: the anime search was asking the AniList database for
   a field their live API does not have, and the whole query was rejected —

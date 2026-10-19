@@ -220,3 +220,15 @@ test("Player: a preference that matches no track is toasted (no more silence)", 
     "the audioPrefMiss message must be toasted (the user's 'it never asks' complaint)"
   );
 });
+
+test("Player: the subtitle search asks for the UNION of the app's language and the account's", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.ok(
+    /unionSubtitleLanguages/.test(player),
+    "the Player must use unionSubtitleLanguages — the account list alone never requested the app-configured language"
+  );
+  assert.ok(
+    /getSubtitles\(\s*au,\s*file\.id,\s*unionSubtitleLanguages\(\s*preferredSubLang,\s*subtitleLanguages\s*\)/.test(player),
+    "ensureSubtitles must pass the union (the app-configured language first, then the put.io account's)"
+  );
+});

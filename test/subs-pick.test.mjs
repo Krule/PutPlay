@@ -16,7 +16,7 @@
 
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { subtitleSourceLabel, pickSubtitleDefault } from "../src/putio/subs.ts";
+import { subtitleSourceLabel, pickSubtitleDefault, unionSubtitleLanguages } from "../src/putio/subs.ts";
 
 const T = (i, lang, code, source, cueCount) => ({
   id: String(i),
@@ -90,4 +90,29 @@ test("a matching track with NO cues is skipped", () => {
 test("no preference set → nothing auto-selected (safer than guessing)", () => {
   const tracks = [T(0, "English", "eng", "OpenSubtitles", 30)];
   assert.equal(pickSubtitleDefault(tracks, []), -1);
+});
+
+// ---------------- unionSubtitleLanguages ----------------
+// The languages the subtitle SEARCH is asked for: the union of the language
+// the user set in the APP (config.subtitleLang) and the put.io web account's
+// subtitle languages. Before the fix the query sent only the account list —
+// a language set only in the app was never requested, so the selection step
+// could never find it.
+
+test("no app preference → the account list as-is (trimmed, no empties)", () => {
+  assert.deepEqual(unionSubtitleLanguages("", ["deu", " fra ", ""]), ["deu", "fra"]);
+});
+
+test("app preference not in the account list → requested first", () => {
+  assert.deepEqual(unionSubtitleLanguages("eng", ["deu", "fra"]), ["eng", "deu", "fra"]);
+});
+
+test("app preference already in the list (case-insensitive) → no duplicate, order kept", () => {
+  assert.deepEqual(unionSubtitleLanguages("DEU", ["deu", "fra"]), ["deu", "fra"]);
+  assert.deepEqual(unionSubtitleLanguages("eng", ["eng"]), ["eng"]);
+});
+
+test("no account list → just the preference (or nothing)", () => {
+  assert.deepEqual(unionSubtitleLanguages("eng", []), ["eng"]);
+  assert.deepEqual(unionSubtitleLanguages("", []), []);
 });

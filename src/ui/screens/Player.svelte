@@ -20,6 +20,7 @@
     subtitleSourceLabel,
     orderSubtitleSources,
     pickSubtitleDefault,
+    unionSubtitleLanguages,
     type LoadedSubtitle,
     type SubtitleCue,
   } from "../../putio/subs";
@@ -646,7 +647,10 @@
     subsLoading = true;
     try {
       const { getSubtitles } = await import("../../putio/api");
-      const res = await getSubtitles(au, file.id, subtitleLanguages);
+      // The union: the language the user set in THIS app first, then the
+      // put.io web account's list — the query must request the app's
+      // preference or the selection below can never find it.
+      const res = await getSubtitles(au, file.id, unionSubtitleLanguages(preferredSubLang, subtitleLanguages));
       // MKV-embedded tracks first — they belong to the video; OpenSubtitles
       // suggestions last. Auto-select below scans in this order.
       for (const sub of orderSubtitleSources(res.subtitles || [])) {

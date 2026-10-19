@@ -212,6 +212,25 @@ export function pickSubtitleDefault(
   return -1;
 }
 
+/**
+ * The languages the subtitle SEARCH is asked for: the union of the language
+ * the user set in the APP (config.subtitleLang) and the put.io web account's
+ * subtitle languages. The query used to send the account list alone, so a
+ * preference set only in the app was never requested — and the selection
+ * step (which does honour it) then had nothing to pick. Rules: trim + drop
+ * empties, dedupe case-insensitively keeping the account list's order, the
+ * app preference goes first when it is not already there.
+ */
+export function unionSubtitleLanguages(preferred: string, accountLangs: string[]): string[] {
+  const cleaned = (accountLangs || [])
+    .map((l) => (l || "").trim())
+    .filter((l) => l !== "");
+  const want = (preferred || "").trim();
+  if (!want) return cleaned;
+  if (cleaned.some((l) => l.toLowerCase() === want.toLowerCase())) return cleaned;
+  return [want, ...cleaned];
+}
+
 export interface SubtitleSource {
   cues: SubtitleCue[];
   blobURL?: string; // best-effort native <track> fallback
