@@ -45,6 +45,7 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   user today — the same databases, the same segments.
 
 ### Fixed
+- On the player, the controls no longer disappear — and a hovered button no longer flashes and reverts — while the pointer is resting on a button: the auto-hide now holds the chrome open while the pointer is inside the controls (as a mouse-holding menu does on a computer), and the normal delay applies once the pointer leaves.
 - Restoring a docked video to the full player no longer leaves the
   remote's D-pad unable to reach the player's buttons: after going back
   (dock) and restoring, the transport controls were unreachable with the

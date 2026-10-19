@@ -534,6 +534,40 @@ test("the chrome state comes from surfaceVisibility (pinned / spinner / pause-ec
   );
 });
 
+test("a pointer resting inside the controls holds the chrome (auto-hide must not steal :hover from a button)", () => {
+  // The Magic Remote stops emitting pointer moves at rest — the 4s hide
+  // would then fire under a pointer that is ON a button, dropping the
+  // hover state; the next cursor nudge re-wakes the chrome and the
+  // button flashes. Found on the TV (Library has no auto-hide, which is
+  // why hover only "worked" there).
+  const wi = player.indexOf("function wake() {");
+  assert.ok(wi >= 0, "wake() must exist");
+  const wakeBody = player.slice(wi, player.indexOf("\n  function ", wi));
+  assert.ok(
+    /if \(!pinned && !pointerInControls\) showControls = false/.test(wakeBody),
+    "the 4s hide must not fire while the pointer is inside the controls"
+  );
+  assert.ok(
+    /let pointerInControls = false;/.test(player),
+    "the pointer-inside flag must start false (no pointer yet)"
+  );
+  const ci = player.indexOf('<div class="controls"');
+  assert.ok(ci >= 0, "the controls container must exist");
+  const tag = player.slice(ci, player.indexOf(">", ci) + 1);
+  assert.ok(
+    /on:mouseenter=/.test(tag) && /on:mouseleave=/.test(tag),
+    "the controls container must track the pointer's entry and exit"
+  );
+  assert.ok(
+    /pointerInControls = true/.test(player) && /pointerInControls = false/.test(player),
+    "pointer entry must set the flag and exit must clear it"
+  );
+  assert.ok(
+    /\$: if \(mode !== "full"\) pointerInControls = false;/.test(player),
+    "docking tears the controls down under a resting pointer (no mouseleave) — the flag must not survive the mode change"
+  );
+});
+
 /* ---------------- the full-mode type scale (≥24px) + icon style ---------------- */
 
 test("the full-mode chrome text never drops below 24px", () => {

@@ -191,6 +191,15 @@
   };
   let showControls = true;
   let hideTimer: number | null = null;
+  // The pointer is resting INSIDE the controls surface. The Magic Remote
+  // stops emitting moves at rest, so a resting pointer would otherwise
+  // outlive the 4s hide and the chrome (hover included) would drop out
+  // from under the cursor — found on the TV.
+  let pointerInControls = false;
+  // The controls only exist in full mode: when docking tears them down
+  // under a resting pointer, no mouseleave fires — clear the flag so it
+  // can't pin the chrome after the next restore.
+  $: if (mode !== "full") pointerInControls = false;
   let startedPlaying = false;
 
   let subtitles: LoadedSubtitle[] = [];
@@ -645,8 +654,20 @@
     showControls = true;
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (!pinned) showControls = false;
+      if (!pinned && !pointerInControls) showControls = false;
     }, 4000);
+  }
+
+  // Pointer entry/exit of the controls surface: while the pointer is
+  // inside, the chrome is held (a button under the cursor keeps its
+  // hover state); on exit the normal 4s grace re-arms via wake().
+  function pointerIn() {
+    pointerInControls = true;
+    wake();
+  }
+  function pointerOut() {
+    pointerInControls = false;
+    wake();
   }
 
   // Aggressive auto-hide: once playback actually starts (metadata loaded,
@@ -1283,7 +1304,7 @@
 
   {#if mode === "full"}
   <!-- ================= the chrome (TV redesign): title row / scrub row / transport row ================= -->
-  <div class="controls" bind:this={controlsEl} class:visible={showControls || pinned} class:dim={paused ? "" : "dim"}>
+  <div class="controls" bind:this={controlsEl} class:visible={showControls || pinned} class:dim={paused ? "" : "dim"} on:mouseenter={pointerIn} on:mouseleave={pointerOut}>
     <!-- title row: the file's identity left, the trailing icon buttons right (ABOVE the bar) -->
     <div class="title-row">
       <div class="title-block">
