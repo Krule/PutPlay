@@ -21,7 +21,14 @@
  *            one IMDb id, so the anime side never refetches it.
  *     → fuseSegments (the consensus merge, see below)
  *
- *   A name WITHOUT an episode marker is a movie: parseMovieName → the
+ *   A name without a STRICT episode marker falls back to the relaxed bare
+ *   parse (parseBareEpisode — the scene-bare "Title - 01 [1080p][HASH]"
+ *   form, season 1). It still takes the episode chain, but the identity
+ *   search is the gate: the title must actually match a show, or nothing
+ *   is fetched and nothing is returned.
+ *
+ *   Only a name with NO usable episode number at all is a movie:
+ *   parseMovieName → the
  *   TMDb movie query ladder (movieQueryStages + tmdbSearchMovie, the same
  *   walk the Info tab's movie search runs) → pickTmdbMatch → the film's
  *   MOVIE-level data: TheIntroDB media (no season/episode) + introdb.app
@@ -55,7 +62,7 @@
 import type { Seg } from "./introdb";
 import { introdbMedia } from "./introdb";
 import { introdbAppSegments } from "./introdb-app";
-import { parseEpisode, parseMovieName } from "./titles";
+import { parseBareEpisode, parseEpisode, parseMovieName } from "./titles";
 import type { TmdbShow } from "./tmdb";
 import { movieQueryStages, pickTmdbMatch, tmdbSearchMovie, tmdbSearchTv } from "./tmdb";
 import { anilistSearchAnime, pickAnilistMatch } from "./anilist";
@@ -203,10 +210,13 @@ export async function lookupSegments(
 ): Promise<Seg[]> {
   const doFetch = fetchImpl || fetch;
 
-  const ep = parseEpisode(name);
+  // The strict marker first; the scene-bare "Title - 01" form is the
+  // fallback (season 1) — gated by the identity search below: if the
+  // title matches no show, no source is fetched and nothing is returned.
+  const ep = parseEpisode(name) ?? parseBareEpisode(name);
   if (ep) return lookupEpisode(ep.title, ep.season, ep.episode, ep.year, tmdbKey, doFetch);
 
-  // no episode marker → a movie (or an unparseable name): the movie chain.
+  // no usable episode number → a movie (or an unparseable name): the movie chain.
   // No key = zero network, same honesty as the episode chains.
   const mv = parseMovieName(name);
   if (!mv || !mv.title || !tmdbKey) return [];

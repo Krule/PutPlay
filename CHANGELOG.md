@@ -14,6 +14,12 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   measure the same section, their times are fused into a single window
   (an agreeing majority wins over a lone outlier), so a wrong timing in
   one database no longer produces a wrong skip.
+- Anime files named without an SxxEyy marker but with a plain episode
+  number — the "Show - 01 [1080p][Group].mkv" style — now get skip
+  segments too. The number is only trusted when it is zero-padded or
+  dash-separated (a bare "Show 2" is never read as episode 2), and the
+  segments are fetched only when a database entry actually matches the
+  title: no match, nothing is skipped.
 
 ### Fixed
 - When several database entries match a file name (Gintama vs. Gintama°,

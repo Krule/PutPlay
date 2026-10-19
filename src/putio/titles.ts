@@ -139,13 +139,14 @@ export function parseEpisode(name: string): EpisodeId | null {
  * a [Group] tag (sequel risk — "Show 2"). Returns null when the name
  * carries no usable bare number.
  */
-function bareNumber(base: string): { episode: number; titleEnd: number } | null {
-  const hadGroup = GROUP_LEAD_RE.test(base);
-  // The tail is peeled ONE TOKEN AT A TIME (bracket tags, quality, the
-  // broken codec form, group words) until nothing known is left — scene
-  // junk stacks ("…171 (1080p) [7AD4AFC7] GPRS"). The peel stops at a
-  // number tail: that number is the episode candidate, and the guards
-  // below decide whether it is one.
+/**
+ * Peel the scene junk off the END of the name, one known token at a time
+ * (bracket tags, quality, the broken codec form, group words) — scene junk
+ * stacks ("…171 (1080p) [7AD4AFC7] GPRS") — until nothing known is left.
+ * The number that survives at the tail is then judged by the bare-
+ * episode parsers. Stripping is tail-only, so prefix offsets are stable.
+ */
+function peelTail(base: string): string {
   let t = base;
   let changed = true;
   while (changed) {
@@ -167,7 +168,12 @@ function bareNumber(base: string): { episode: number; titleEnd: number } | null 
       changed = true;
     }
   }
-  t = t.replace(/[.\s_-]+$/, "").trim();
+  return t.replace(/[.\s_-]+$/, "").trim();
+}
+
+function bareNumber(base: string): { episode: number; titleEnd: number } | null {
+  const hadGroup = GROUP_LEAD_RE.test(base);
+  const t = peelTail(base);
   const m = t.match(/(^|[.\s_-])(\d{1,4})$/);
   if (!m) return null; // nothing number-shaped left at the end
   const episode = parseInt(m[2], 10);
@@ -176,6 +182,36 @@ function bareNumber(base: string): { episode: number; titleEnd: number } | null 
   if (m[1] === "." && /\d/.test(t.charAt(m.index - 1) || "")) return null; // "1.5"
   if (episode <= 99 && !hadGroup) return null;
   return { episode, titleEnd: m.index };
+}
+
+/**
+ * The RELAXED bare episode — the scene-bare form "Title - 01 [1080p][HASH]":
+ * a 1–2 digit tail number the strict parser refuses without a LEADING group
+ * tag. Here the number is an episode when it is ZERO-PADDED (a sequel is
+ * never "Show 02") or DASH-SEPARATED (the "- NN" anime pattern; a sequel
+ * is "Show 2", never "Show - 2"). The parse alone decides NOTHING: the
+ * caller (the segment lookup) must still resolve the title to a real show,
+ * and a name whose title matches nothing gets no segments. Used ONLY by
+ * the segment lookup — parseEpisode (title view, info tab) stays strict.
+ */
+export function parseBareEpisode(
+  name: string
+): { title: string; season: number; episode: number; year?: number } | null {
+  const base = name.replace(EXT_RE, "").trim();
+  if (!base) return null;
+  const t = peelTail(base);
+  const m = t.match(/(^|[.\s_-])(\d{1,2})$/);
+  if (!m) return null; // nothing 1–2 digit-shaped left at the end
+  const episode = parseInt(m[2], 10);
+  if (RESOLUTIONS.has(episode)) return null;
+  if (episode >= 1900 && episode <= 2099) return null;
+  if (m[1] === "." && /\d/.test(t.charAt(m.index - 1) || "")) return null; // "1.5"
+  const zeroPadded = m[2].length === 2 && m[2].charAt(0) === "0";
+  const dashSeparated = t.slice(0, m.index).endsWith("-");
+  if (!zeroPadded && !dashSeparated) return null; // "Show 2" — sequel risk
+  const title = titleOf(base.slice(0, m.index));
+  if (!title) return null; // no title before the number
+  return { title, season: 1, episode };
 }
 
 /** Inclusive integer range check (out-of-range numbers are garbage, not an episode). */

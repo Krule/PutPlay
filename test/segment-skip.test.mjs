@@ -50,7 +50,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MediaEngine } from "../src/putio/media.ts";
 import { DEFAULT_CONFIG } from "../src/putio/config.ts";
-import { parseEpisode } from "../src/putio/titles.ts";
+import { parseEpisode, parseBareEpisode } from "../src/putio/titles.ts";
 import { parseSegments } from "../src/putio/introdb.ts";
 import { pickTmdbMatch } from "../src/putio/tmdb.ts";
 import { anilistSearchAnime, pickAnilistMatch } from "../src/putio/anilist.ts";
@@ -456,6 +456,93 @@ test("parseEpisode: names without an episode marker are not episodes", () => {
   assert.equal(parseEpisode("wall-1.png"), null, "an image");
   assert.equal(parseEpisode("testvid-9.mp4"), null, "a sample clip");
   assert.equal(parseEpisode("Show.1080p.mkv"), null, "a bare resolution is not an episode number");
+});
+
+/* ---------- the relaxed bare parse: scene-bare names (seglookup-only) ---------- */
+
+test("parseBareEpisode: 'Title - NN' is the scene-bare anime pattern (zero-padded or dash-separated)", () => {
+  // the dominant F2 gap on the corpus: 'Title - 01 [1080p][HASH]' — 2-digit
+  // bare numbers the strict parser refuses without a LEADING group tag
+  assert.deepEqual(parseBareEpisode("Sousou no Frieren - 01 [1080p][D6036651].mp4"), {
+    title: "Sousou no Frieren",
+    season: 1,
+    episode: 1,
+  });
+  assert.deepEqual(parseBareEpisode("Black Clover - 24.mkv"), {
+    title: "Black Clover",
+    season: 1,
+    episode: 24,
+  });
+  assert.deepEqual(parseBareEpisode("Show 02"), { title: "Show", season: 1, episode: 2 }, "zero-padded = episode, not sequel");
+  assert.deepEqual(parseBareEpisode("Show - 2"), { title: "Show", season: 1, episode: 2 }, "dash-separated");
+});
+
+test("parseBareEpisode: a plain 'Show 2' (no padding, no dash) is still a sequel, not an episode", () => {
+  assert.equal(parseBareEpisode("Show 2"), null);
+  assert.equal(parseBareEpisode("Show 10"), null);
+});
+
+test("parseBareEpisode: years, resolutions, decimals, codec tails and nameless numbers are not episodes", () => {
+  assert.equal(parseBareEpisode("Show 2014"), null, "a year");
+  assert.equal(parseBareEpisode("Show 1080"), null, "a resolution");
+  assert.equal(parseBareEpisode("Show - 1.5"), null, "a decimal special");
+  assert.equal(parseBareEpisode("Kindergarten Cop 1990 H 264-GPRS.mkv"), null, "codec + year");
+  assert.equal(parseBareEpisode("Raus aus dem Teich.mp4"), null, "no number at all");
+  assert.equal(parseBareEpisode("[Group] 01.mkv"), null, "no title before the number");
+});
+
+test("parseEpisode stays STRICT: the relaxed parse is a seglookup-only escape hatch (the title view never treats 'Show 2' as episode 2)", () => {
+  assert.equal(parseEpisode("Sousou no Frieren - 01 [1080p][D6036651].mp4"), null);
+  assert.equal(parseEpisode("Show - 2.mkv"), null);
+});
+
+test("a scene-bare anime file takes the EPISODE chain — gated on the identity matching the title", async () => {
+  resetNet();
+  net.tmdb = {
+    results: [
+      { id: 49961, name: "Sousou no Frieren", first_air_date: "2023-09-29", popularity: 100, imdb_id: "tt26585586" },
+    ],
+  };
+  net.anilist = {
+    data: {
+      Page: {
+        media: [
+          {
+            id: 24191,
+            idMal: 52034,
+            idImdb: "tt26585586",
+            title: { romaji: "Sousou no Frieren", english: "Frieren: Beyond Journey's End" },
+            averageScore: 95,
+            startDate: { year: 2023 },
+          },
+        ],
+      },
+    },
+  };
+  net.tidb = {
+    tmdb_id: 49961,
+    type: "tv",
+    season: 1,
+    episode: 1,
+    intro: [{ start_ms: 30000, end_ms: 240000 }],
+  };
+  const segs = await lookupSegments("fake-tmdb-key", "Sousou no Frieren - 01 [1080p][D6036651].mp4");
+  assert.deepEqual(segs, [{ type: "intro", start: 30, end: 240 }]);
+  assert.ok(
+    net.tmdbCalls[0].url.startsWith("https://api.themoviedb.org/3/search/tv?"),
+    "the TV (episode) search — not the movie ladder"
+  );
+  assert.equal(net.anilistCalls.length, 1, "the anime side ran (season 1)");
+});
+
+test("a relaxed bare number with NO matching show gets nothing (the identity search is the gate, not the parse)", async () => {
+  resetNet();
+  net.tmdb = { results: [] };
+  net.anilist = null;
+  const segs = await lookupSegments("fake-tmdb-key", "Some Show - 03 [1080p].mp4");
+  assert.deepEqual(segs, []);
+  assert.equal(net.tidbCalls.length, 0, "no identity → no segment fetch");
+  assert.equal(net.idbaCalls.length, 0, "no identity → no introdb.app call either");
 });
 
 test("parseEpisode: out-of-range numbers are garbage, not an episode", () => {
