@@ -130,14 +130,40 @@ function cleanAssText(raw: string): string {
   return lines.filter((l) => l.length > 0).join("\n").trim();
 }
 
-/** Format content (srt/vtt/ass/…) + text → cues, using the right parser. */
+/**
+ * Identify what a subtitle file ACTUALLY is, by its content — not the
+ * declared format: ASS/SSA content (the `[Script Info]` header) ships in
+ * files named .srt all the time, and put.io declares the format from the
+ * file name, so "srt" content can be an ASS script. The header is checked
+ * in the first lines only (an SRT cue mentioning "[Script Info]" mid-file
+ * is not an ASS script). WEBVTT header → vtt; anything else → srt (the
+ * block grammar both SRT and put.io's converted files share).
+ */
+export function detectSubtitleFormat(content: string): "vtt" | "srt" | "ass" {
+  const text = (content || "").replace(/^\ufeff/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const head = text
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .slice(0, 40)
+    .join("\n");
+  if (/\[\s*Script\s+Info\s*\]/i.test(head)) return "ass";
+  if (/^\s*WEBVTT/i.test(text)) return "vtt";
+  return "srt";
+}
+
+/**
+ * Format content (srt/vtt/ass/…) → cues. The CONTENT decides the parser:
+ * a file declared "srt" that is actually an ASS script must still parse
+ * (see detectSubtitleFormat); the declared format only decides what an
+ * unidentifiable body gets.
+ */
 export function subtitlesToCues(content: string, format: string): SubtitleCue[] {
+  const detected = detectSubtitleFormat(content);
+  if (detected === "ass") return assToCues(content);
   const f = (format || "").toLowerCase();
-  if (f === "ass" || f === "ssa") return assToCues(content);
-  const trimmed = content.trimStart();
-  if (trimmed.startsWith("WEBVTT") || f === "vtt") {
+  if (detected === "vtt" || f === "vtt") {
     // VTT and SRT share the block grammar once the header is normalised
-    return vttToCues(trimmed);
+    return vttToCues(content.trimStart());
   }
   // srt / sub / unknown → treat as SRT blocks
   return vttToCues("WEBVTT\n\n" + content);
@@ -251,6 +277,9 @@ export async function loadSubtitle(
     if (!res.ok) return null;
     const text = await res.text();
     const cues = subtitlesToCues(text, format);
+    // The CONTENT decides: an ASS script (whatever the file is named)
+    // cannot be fed to a native <track> as a pseudo-VTT — the overlay owns it.
+    if (detectSubtitleFormat(text) === "ass") return { cues, blobURL: undefined };
     let blobURL: string | undefined;
     try {
       // SRT → VTT for the native-track fallback; keep raw text otherwise

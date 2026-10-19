@@ -27,6 +27,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   so a subtitle language set here in the app was never found.
 
 ### Fixed
+- Subtitles that are actually ASS scripts — even when the file is named
+  .srt or the service reports another format — now display correctly:
+  the app detects what a subtitle file really is from its content, not
+  from the declared format, and no longer feeds an ASS script to the
+  native subtitle track it cannot render.
 - Anime info is back: the anime search was asking the AniList database for
   a field their live API does not have, and the whole query was rejected —
   anime titles got no info (and no segments) at all. The query no longer
