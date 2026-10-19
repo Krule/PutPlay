@@ -37,7 +37,7 @@
   import { pickerDefaultIndex, rowFocusState } from "../../putio/picker-default";
   import { buildTitleView } from "../../putio/title-view";
   import { parseEpisode, parseMovieName } from "../../putio/titles";
-  import { scrubSeek, scrubThumbPct, segSpans } from "../../putio/scrub";
+  import { scrubSeek, scrubThumbPct, segSpans, barTrackFraction, trackLeftCss } from "../../putio/scrub";
   import { buildInfoPanel, type PanelAction } from "../../putio/info-tab";
   import { upNext } from "../../putio/upnext";
   import {
@@ -348,6 +348,7 @@
       startedPlaying = false;
       metaStarted = false; // the new file's lookups haven't fired yet
       abortMeta(); // the old file's in-flight lookups die with it
+      scrubHover = null; // a stale pointer preview must not survive the file change
       segs = []; // a new file is a fresh segment decision
       segConsumed = [];
     }
@@ -1057,7 +1058,7 @@
   $: bufferPct = scrubThumbPct(bufferEnd, duration);
   // The bubble sits on the INSET track (20px off both hit-area ends), so
   // its position is the same fraction of (100% − 40px) plus the 20px inset.
-  $: bubbleLeft = `calc(20px + (100% - 40px) * ${barPct / 100})`;
+  $: bubbleLeft = trackLeftCss(barPct);
   // Segment overlays on the bar: where each skippable section sits (segSpans)
   $: segBars = segSpans(segs, duration);
 
@@ -1073,10 +1074,33 @@
   function onBarClick(e: MouseEvent) {
     if (!barEl || !duration) return;
     const r = barEl.getBoundingClientRect();
-    // the visible track keeps 20px off both hit-area ends — map the click
-    // against the TRACK, so the thumb and the click land on the same spot
-    const f = Math.min(1, Math.max(0, (e.clientX - r.left - 20) / (r.width - 40)));
+    // the visible track keeps 20px off both hit-area ends — map against
+    // the TRACK (barTrackFraction, shared with the hover preview) so the
+    // thumb and the click land on the same spot
+    const f = barTrackFraction(e.clientX, r.left, r.width);
     engine?.seek(f * duration);
+  }
+
+  // Pointer preview (Magic Remote / mouse): while the pointer is on the bar,
+  // the bubble shows the time at the POINTER position — a preview of the
+  // seek, and the bar's hover indicator. It is a different indicator from
+  // D-pad focus (ring + grown thumb + bubble at the PLAYHEAD showing the
+  // current time). null = the pointer is not on the bar.
+  let scrubHover: { pct: number; time: number } | null = null;
+
+  // The preview bubble sits on the same inset track as the playhead bubble
+  // (the geometry is shared: trackLeftCss).
+  $: hoverLeft = trackLeftCss(scrubHover ? scrubHover.pct : 0);
+
+  function onBarMove(e: MouseEvent) {
+    if (!barEl || !duration) return; // live: no track, nothing to preview
+    const r = barEl.getBoundingClientRect();
+    const f = barTrackFraction(e.clientX, r.left, r.width);
+    scrubHover = { pct: f * 100, time: f * duration };
+  }
+
+  function onBarLeave() {
+    scrubHover = null;
   }
 
   // BUG 2: clicking the dim area around any modal dismisses it with no action.
@@ -1315,7 +1339,7 @@
     <!-- scrub row: the focusable scrubber (D-pad ←/±10s while focused) -->
     <div class="scrub-row">
       <span class="time">{fmtTime(currentTime)}</span>
-      <div class="bar" data-focus data-ctl="scrub" bind:this={barEl} on:click={onBarClick}>
+      <div class="bar" data-focus data-ctl="scrub" bind:this={barEl} on:click={onBarClick} on:mousemove={onBarMove} on:mouseleave={onBarLeave}>
         <div class="bar-track">
           <div class="bar-buffer" style="width: {bufferPct}%"></div>
           {#each segBars as span (span.left + "-" + span.width)}
@@ -1324,7 +1348,7 @@
           <div class="bar-fill" style="width: {barPct}%"></div>
           <div class="thumb" style="left: {barPct}%"></div>
         </div>
-        <div class="bubble" style="left: {bubbleLeft}">{fmtTime(currentTime)}</div>
+        <div class="bubble" style="left: {scrubHover ? hoverLeft : bubbleLeft}">{fmtTime(scrubHover ? scrubHover.time : currentTime)}</div>
       </div>
       <span class="time">{live ? "LIVE" : fmtTime(duration)}</span>
     </div>
@@ -1898,6 +1922,13 @@
     box-shadow: var(--focus-shadow);
   }
   :global(.bar[data-state="active"] .bubble) {
+    display: block;
+  }
+  /* the POINTER on the bar (Magic Remote): the bubble IS the hover
+     indicator — it previews the pointer position (its left/time come
+     from scrubHover in the markup). Deliberately no ring or shadow here:
+     those are the D-pad focus's indicators. */
+  :global(.bar:hover .bubble) {
     display: block;
   }
   /* transport row: transport only */

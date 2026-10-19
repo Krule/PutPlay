@@ -132,6 +132,7 @@ button {
   transition: transform var(--t-fast) var(--ease),
     background-color var(--t-fast) var(--ease),
     box-shadow var(--t-fast) var(--ease),
+    filter var(--t-fast) var(--ease),
     opacity var(--t-med) var(--ease),
     border-color var(--t-fast) var(--ease);
   outline: none;
@@ -294,6 +295,19 @@ button:disabled,
 [data-focus][data-state="disabled"] {
   opacity: 0.4;
   pointer-events: none;
+}
+
+/* Magic Remote: the pointer is a real mouse, so :hover is the "about to
+   press" state. It is a DIFFERENT indicator from focus — focus is the
+   D-pad's active element (scale + border + glow); the pointer merely
+   lifts the element a little and never claims to be the active one.
+   One rule covers every clickable (custom focus targets, buttons, links);
+   the brightness filter works on any background. Disabled elements never
+   fire :hover (pointer-events: none above). */
+[data-focus]:hover,
+button:hover,
+a:hover {
+  filter: brightness(1.15);
 }
 
 /* ---------- now-playing strip (app-level music, sits above every screen) ---------- */

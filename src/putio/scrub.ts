@@ -76,3 +76,31 @@ export function segSpans(segs: readonly Seg[], dur: number): SegSpan[] {
   }
   return spans;
 }
+
+/**
+ * A pointer position on the bar's hit area, as a fraction 0..1 of the
+ * VISIBLE track. The visible track is inset TRACK_INSET_PX from each end
+ * of the (much taller) hit area, so the fraction is not clientX/width —
+ * click-seek and the hover preview both map through here so they can
+ * never disagree on the geometry.
+ * A hit area too narrow to contain the insets (degenerate layout) is an
+ * honest 0, not a division into nothing.
+ */
+const TRACK_INSET_PX = 20;
+
+export function barTrackFraction(clientX: number, hitLeft: number, hitWidth: number): number {
+  if (hitWidth <= TRACK_INSET_PX * 2) return 0;
+  return clamp((clientX - hitLeft - TRACK_INSET_PX) / (hitWidth - TRACK_INSET_PX * 2), 1);
+}
+
+/**
+ * CSS `left` for a point at `pct` (0..100) of the VISIBLE track — the
+ * track is inset TRACK_INSET_PX from each end of the hit area, so the
+ * point sits TRACK_INSET_PX + (100% − 2×inset) × pct/100. The playhead
+ * bubble and the pointer-preview bubble both position through here so
+ * they can never disagree with the click/hover mapping (barTrackFraction
+ * uses the same inset constant).
+ */
+export function trackLeftCss(pct: number): string {
+  return `calc(${TRACK_INSET_PX}px + (100% - ${TRACK_INSET_PX * 2}px) * ${pct / 100})`;
+}

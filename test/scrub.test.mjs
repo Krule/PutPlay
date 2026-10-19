@@ -18,7 +18,7 @@
 
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { scrubSeek, scrubThumbPct, segSpans } from "../src/putio/scrub.ts";
+import { scrubSeek, scrubThumbPct, segSpans, barTrackFraction, trackLeftCss } from "../src/putio/scrub.ts";
 
 const DUR = 7200; // two-hour episode
 const STEP = 10;
@@ -147,4 +147,35 @@ test("a negative start clamps to the bar's left edge", () => {
 
 test("a zero-length segment is not visible (dropped)", () => {
   assert.deepEqual(segSpans([{ type: "intro", start: 1800, end: 1800 }], DUR), []);
+});
+
+// ---------------- barTrackFraction ----------------
+// The pointer (Magic Remote / mouse) position on the bar's hit area, as a
+// fraction of the VISIBLE track — the track is inset 20px from each end of
+// the (much taller) hit area. Click-seek and the hover preview must agree
+// on the same geometry, so both call this one function.
+
+const B_LEFT = 100;
+const B_WIDTH = 900; // visible track spans 120..980 (860px), hit area 100..1000
+
+test("a pointer position maps to its fraction of the visible track (20px inset)", () => {
+  assert.ok(Math.abs(barTrackFraction(550, B_LEFT, B_WIDTH) - 0.5) < 1e-9, "dead center of the track is 0.5");
+  assert.equal(barTrackFraction(120, B_LEFT, B_WIDTH), 0, "the track's left edge is 0");
+  assert.equal(barTrackFraction(980, B_LEFT, B_WIDTH), 1, "the track's right edge is 1");
+});
+
+test("a pointer outside the hit area clamps to the track ends", () => {
+  assert.equal(barTrackFraction(0, B_LEFT, B_WIDTH), 0);
+  assert.equal(barTrackFraction(5000, B_LEFT, B_WIDTH), 1);
+});
+
+test("a hit area narrower than the track insets is an honest zero (no division into nothing)", () => {
+  assert.equal(barTrackFraction(20, B_LEFT, 40), 0);
+  assert.equal(barTrackFraction(20, B_LEFT, 39), 0);
+});
+
+test("trackLeftCss places a point of the visible track (the inverse of barTrackFraction's geometry)", () => {
+  assert.equal(trackLeftCss(0), "calc(20px + (100% - 40px) * 0)", "the track's left edge is the 20px inset");
+  assert.equal(trackLeftCss(100), "calc(20px + (100% - 40px) * 1)", "the track's right edge is the full inset span");
+  assert.equal(trackLeftCss(50), "calc(20px + (100% - 40px) * 0.5)", "the middle is half of (100% − 40px) past the inset");
 });
