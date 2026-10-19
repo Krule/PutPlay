@@ -1782,13 +1782,15 @@
     transition: width 200ms linear;
   }
   .bar-seg {
-    /* the skippable segments: a subtle accent tint on the line, below the
-       fill (played sections stay marked, the fill never fights them) */
+    /* the skippable segments: the warn yellow (the subs-key hue, --warn)
+       at the same low alpha as the old tint — a hue distinct from the blue
+       progress fill, so the region reads as its own thing on the track.
+       Below the fill: played sections stay marked, the fill never fights them */
     position: absolute;
     top: 0;
     height: 100%;
     border-radius: 3px;
-    background: rgba(77, 163, 255, 0.30);
+    background: rgba(245, 184, 79, 0.30);
   }
   .bar-fill {
     position: absolute;

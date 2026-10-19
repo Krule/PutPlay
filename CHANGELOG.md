@@ -22,6 +22,9 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   title: no match, nothing is skipped.
 
 ### Changed
+- Skippable sections on the progress bar are now marked in the player's
+  yellow (the same hue as the subtitles key) instead of a faint blue tint,
+  so they stand out at a glance against the blue progress fill.
 - The subtitle search now also asks for the language you set in the app —
   before, only the languages saved in your put.io account were searched,
   so a subtitle language set here in the app was never found.

@@ -434,8 +434,8 @@ test("the bar shows the skippable segments as subtle overlays (segSpans → .bar
   );
   const segRule = rule(".bar-seg {");
   assert.ok(
-    /background:\s*rgba\(77,\s*163,\s*255,\s*0\.3/.test(segRule),
-    "the segment tint is the accent hue at low alpha (subtle, distinct from the neutral track)"
+    /background:\s*rgba\(245,\s*184,\s*79,\s*0\.3/.test(segRule),
+    "the segment tint borrows the warn yellow (the subs-key hue) — a hue distinct from the blue progress, so the skippable region reads as its own thing on the track"
   );
 });
 
