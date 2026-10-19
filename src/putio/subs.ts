@@ -34,7 +34,16 @@ export function vttToCues(text: string): SubtitleCue[] {
     const s = parseTime(parts[0]);
     const e = parseTime(parts[1]);
     if (s < 0 || e <= s) continue;
-    const body = lines.slice(ti + 1).join("\n").replace(/<[^>]+>/g, "").trim();
+    const body = lines
+      .slice(ti + 1)
+      .join("\n")
+      .replace(/<[^>]+>/g, "")
+      // put.io's ASS→VTT conversion leaves raw override blocks behind
+      // ("{\an8}line"); strip the ones that carry a backslash — a plain
+      // "{note}" without one is literal text and must survive.
+      .replace(/\{[^{}]*\\[^{}]*\}/g, "")
+      .replace(/\\N/g, "\n")
+      .trim();
     if (!body) continue;
     cues.push({ start: s, end: e, text: body });
   }
@@ -67,6 +76,25 @@ export function cueAt(cues: SubtitleCue[], t: number): SubtitleCue | null {
     else return c;
   }
   return null;
+}
+
+/**
+ * Every cue ACTIVE at time t — not just one. A bilingual subtitle ships each
+ * line as an overlapping pair with identical timestamps (romaji +
+ * translation), so a single-cue lookup would leave one language of every
+ * pair invisible. Cues are already sorted by start, so this preserves file
+ * order; identical text is shown once.
+ */
+export function cuesAt(cues: SubtitleCue[], t: number): SubtitleCue[] {
+  const out: SubtitleCue[] = [];
+  const seen = new Set<string>();
+  for (const c of cues) {
+    if (t < c.start || t > c.end) continue;
+    if (seen.has(c.text)) continue;
+    seen.add(c.text);
+    out.push(c);
+  }
+  return out;
 }
 
 /**

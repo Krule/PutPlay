@@ -640,6 +640,27 @@ test("the cue overlay and the subs menu don't share a class (the menu must stay 
   );
 });
 
+// A bilingual subtitle ships EVERY line twice: as overlapping cue pairs
+// with identical timestamps (romaji + translation). cueAt returned a
+// single cue, so one language of every pair was invisible — and the raw
+// ASS tags put.io left behind ("{\\an8}…") printed on screen. The overlay
+// must take EVERY active cue and stack the distinct lines.
+
+test("the overlay stacks every active cue (bilingual pairs show both lines, ASS leftovers stripped)", () => {
+  assert.ok(
+    /cuesAt\(/.test(player),
+    "the overlay must query every active cue (cuesAt), not a single one"
+  );
+  assert.ok(
+    !/(?<![\w.])cueAt\(/.test(player.replace(/cuesAt\(/g, "")),
+    "no bare cueAt may remain on the overlay path"
+  );
+  assert.ok(
+    /join\(["']\\n["']\)/.test(player),
+    "stacked lines join with a real newline (the overlay is pre-wrap)"
+  );
+});
+
 // The subs menu can grow taller than the space above the chrome (N track
 // rows + the text-size section — ~970px with just 2 tracks, vs 661px of
 // 1080p headroom between the screen top and the 419px anchor). Its rows

@@ -16,7 +16,7 @@
   import { fmtTime } from "../../putio/api";
   import {
     loadSubtitle,
-    cueAt,
+    cuesAt,
     subtitleSourceLabel,
     orderSubtitleSources,
     pickSubtitleDefault,
@@ -741,8 +741,11 @@
   $: {
     if (activeSub === -1 || !subCues.length) subText = "";
     else {
-      const c = cueAt(subCues, currentTime);
-      subText = c ? c.text : "";
+      // Every active cue, stacked: a bilingual subtitle ships each line as an
+      // overlapping pair (romaji + translation), so one cue per timestamp would
+      // leave a whole language invisible.
+      const act = cuesAt(subCues, currentTime);
+      subText = act.length ? act.map((c) => c.text).filter(Boolean).join("\n") : "";
     }
   }
 

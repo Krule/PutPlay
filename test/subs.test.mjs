@@ -4,7 +4,7 @@
 
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { vttToCues, cueAt, subtitlesToCues, detectSubtitleFormat, loadSubtitle } from "../src/putio/subs.ts";
+import { vttToCues, cueAt, cuesAt, subtitlesToCues, detectSubtitleFormat, loadSubtitle } from "../src/putio/subs.ts";
 
 // ---------------- vttToCues ----------------
 
@@ -197,4 +197,43 @@ test("loadSubtitle: an ASS file (any declared format) parses to cues and ships n
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+/* ---------------- ASS leftovers inside WEBVTT (put.io's converted files) ---------------- */
+
+test("vttToCues: a leftover ASS override block ({\\an8} …) in cue text is stripped", () => {
+  const vtt = ["WEBVTT", "", "2", "00:00:11.680 --> 00:00:14.970", "{\\an8}kakero todoku made", ""].join("\n");
+  const cues = vttToCues(vtt);
+  assert.deepEqual(cues, [{ start: 11.68, end: 14.97, text: "kakero todoku made" }]);
+});
+
+test("vttToCues: a plain brace span WITHOUT a backslash is literal text and survives", () => {
+  const vtt = ["WEBVTT", "", "1", "00:00:01.000 --> 00:00:03.000", "a {note} line", ""].join("\n");
+  const cues = vttToCues(vtt);
+  assert.deepEqual(cues, [{ start: 1, end: 3, text: "a {note} line" }]);
+});
+
+test("vttToCues: an ASS line-escape (\\N) inside VTT text becomes a real line break", () => {
+  const vtt = ["WEBVTT", "", "1", "00:00:01.000 --> 00:00:03.000", "first\\Nsecond", ""].join("\n");
+  const cues = vttToCues(vtt);
+  assert.deepEqual(cues, [{ start: 1, end: 3, text: "first\nsecond" }]);
+});
+
+/* ---------------- every ACTIVE cue (bilingual pairs), not just one ---------------- */
+
+test("cuesAt: overlapping cues (a bilingual pair) all come back, in file order", () => {
+  const cues = [
+    { start: 11.68, end: 14.97, text: "kakero todoku made" },
+    { start: 11.68, end: 14.97, text: "Run, until we reach" },
+    { start: 15.02, end: 19.31, text: "kimi ni todoku made" },
+  ];
+  assert.deepEqual(cuesAt(cues, 13), [cues[0], cues[1]]);
+  assert.deepEqual(cuesAt(cues, 17), [cues[2]]);
+  assert.deepEqual(cuesAt(cues, 5), []);
+});
+
+test("cuesAt: the same text repeated in the active set is not shown twice", () => {
+  const a = { start: 1, end: 5, text: "once" };
+  const b = { start: 1, end: 5, text: "once" };
+  assert.deepEqual(cuesAt([a, b], 2), [a]);
 });

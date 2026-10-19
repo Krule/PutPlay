@@ -27,6 +27,12 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   so a subtitle language set here in the app was never found.
 
 ### Fixed
+- Subtitles with leftover ASS markup no longer show the markup: the
+  formatting tags put.io's conversion leaves in the cue text ("{\an8}…")
+  are stripped before display, and ASS line breaks become real ones.
+- Bilingual subtitles — where every line arrives twice at the same
+  timestamp (romaji + translation) — now show both lines stacked, instead
+  of the player displaying one of the pair and hiding the other.
 - Subtitles that are actually ASS scripts — even when the file is named
   .srt or the service reports another format — now display correctly:
   the app detects what a subtitle file really is from its content, not
