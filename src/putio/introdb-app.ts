@@ -4,8 +4,9 @@
  * The strongest single source in the frozen benchmark corpus (its data
  * covers ~93–100% of the consensus labels, where TheIntroDB and AniSkip
  * each reach the 20s–90s) — but it keys on the IMDb id, which the app
- * obtains from the identity searches (TMDb's `imdb_id`, else AniList's
- * `idImdb`). So this module only takes an already-resolved id.
+ * obtains from the TMDb identity only (the live AniList schema has no
+ * IMDb field on Media — a query for `idImdb` 400's the whole search). So
+ * this module only takes an already-resolved id.
  *
  * API (verified live 2026-10-18):
  *   GET https://api.introdb.app/segments?imdb_id=<tt…>&season=<n>&episode=<n>   (TV)

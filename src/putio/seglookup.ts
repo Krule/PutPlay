@@ -5,7 +5,7 @@
  *     → parseEpisode (titles.ts)         "Breaking.Bad.S01E01.720p.mkv"
  *     → PHASE 1, the IDENTITIES (parallel):
  *         TMDb search + pickTmdbMatch  → the TMDb id (+ its IMDb id)
- *         AniList search + pickAnilistMatch → the MAL id (+ its IMDb id)
+ *         AniList search + pickAnilistMatch → the MAL id
  *            (no key needed; season-1 files only, because MAL/AniSkip
  *            episodes number continuously and an SxxEyy season-2 number
  *            can't be mapped)
@@ -15,10 +15,11 @@
  *            both community databases in parallel (v2 wins per section,
  *            v1 fills the gaps; each covers different series)
  *         C. introdb.app (IMDb id)   introdbAppSegments — the consensus DB
- *            (the strongest single source measured in the corpus; the id
- *            comes from whichever identity found one — TMDb first, so it
- *            works even without a TMDb key). Exactly ONE call: a show has
- *            one IMDb id, so the anime side never refetches it.
+ *            (the strongest single source measured in the corpus). The id
+ *            comes from the TMDb match — the anime side has NO IMDb
+ *            source (the live AniList schema has no IMDb field on Media),
+ *            so without a TMDb key the anime runs on AniSkip alone.
+ *            Exactly ONE call: a show has one IMDb id.
  *     → fuseSegments (the consensus merge, see below)
  *
  *   A name without a STRICT episode marker falls back to the relaxed bare
@@ -244,9 +245,10 @@ async function lookupEpisode(
   const tmdbShow: TmdbShow | null = tmdbResults ? pickTmdbMatch(tmdbResults, title, year) : null;
   const aniShow = aniResults ? pickAnilistMatch(aniResults, title, year) : null;
 
-  // One IMDb id per show: the TMDb identity's id wins, the anime side's
-  // fills in when the TMDb chain is off — exactly one introdb.app call.
-  const imdbId = tmdbShow?.imdbId ?? aniShow?.imdbId;
+  // The IMDb id comes from the TMDb identity only — the live AniList
+  // schema has no IMDb field on Media (a query for idImdb 400's the whole
+  // search), so without a TMDb key the anime side runs on AniSkip alone.
+  const imdbId = tmdbShow?.imdbId;
   const [tidb, anime, idba] = await Promise.all([
     tmdbShow ? introdbMedia(tmdbShow.id, season, episode, doFetch) : Promise.resolve([] as Seg[]),
     aniShow ? aniskipAnime(aniShow.malId, episode, doFetch) : Promise.resolve([] as Seg[]),

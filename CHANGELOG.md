@@ -8,12 +8,12 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ### Added
 - Skip-segment data now also comes from the community consensus database
-  introdb.app: the show is resolved to its IMDb id (from the TMDb match,
-  or from AniList when no TMDb key is set), so segment times land for far
-  more episodes — and for movies — than before. When several databases
-  measure the same section, their times are fused into a single window
-  (an agreeing majority wins over a lone outlier), so a wrong timing in
-  one database no longer produces a wrong skip.
+  introdb.app: the show is resolved to its IMDb id (from the TMDb match),
+  so segment times land for far more episodes — and for movies — than
+  before. When several databases measure the same section, their times
+  are fused into a single window (an agreeing majority wins over a lone
+  outlier), so a wrong timing in one database no longer produces a wrong
+  skip.
 - Anime files named without an SxxEyy marker but with a plain episode
   number — the "Show - 01 [1080p][Group].mkv" style — now get skip
   segments too. The number is only trusted when it is zero-padded or
@@ -22,6 +22,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   title: no match, nothing is skipped.
 
 ### Fixed
+- Anime info is back: the anime search was asking the AniList database for
+  a field their live API does not have, and the whole query was rejected —
+  anime titles got no info (and no segments) at all. The query no longer
+  asks for it, and is verified against the live API.
 - When several database entries match a file name (Gintama vs. Gintama°,
   or a spin-off sharing its title), the show that is actually named after
   the file now wins the match, not the most popular candidate — so a

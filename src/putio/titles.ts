@@ -201,7 +201,7 @@ export function parseBareEpisode(
   if (!base) return null;
   const t = peelTail(base);
   const m = t.match(/(^|[.\s_-])(\d{1,2})$/);
-  if (!m) return null; // nothing 1–2 digit-shaped left at the end
+  if (!m || m.index === undefined) return null; // nothing 1–2 digit-shaped left at the end
   const episode = parseInt(m[2], 10);
   if (RESOLUTIONS.has(episode)) return null;
   if (episode >= 1900 && episode <= 2099) return null;

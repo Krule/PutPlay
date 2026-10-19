@@ -312,7 +312,6 @@ const ANILIST_BCL = {
           // internal one, AniSkip the MAL one.
           id: 97940,
           idMal: 34572,
-          idImdb: "tt7441658", // REAL (live-verified 2026-10-18)
           title: { romaji: "Black Clover", english: "Black Clover" },
           averageScore: 72,
           startDate: { year: 2017 },
@@ -510,7 +509,6 @@ test("a scene-bare anime file takes the EPISODE chain — gated on the identity 
           {
             id: 24191,
             idMal: 52034,
-            idImdb: "tt26585586",
             title: { romaji: "Sousou no Frieren", english: "Frieren: Beyond Journey's End" },
             averageScore: 95,
             startDate: { year: 2023 },
@@ -754,15 +752,15 @@ test("anilistSearchAnime: a Page.media list parses into shows with MAL ids", asy
   assert.deepEqual(shows[0], {
     id: 97940, // the internal id — the Media(id:) query's key
     malId: 34572, // the MAL id — AniSkip's key
-    imdbId: "tt7441658", // the IMDb id — introdb.app's key
     title: "Black Clover",
     year: 2017,
     score: 72,
   });
   assert.ok(net.anilistCalls[0].url.startsWith("https://graphql.anilist.co"), "the GraphQL endpoint");
-  assert.ok(JSON.parse(net.anilistCalls[0].body).query.includes("Media") ||
-            JSON.parse(net.anilistCalls[0].body).query.includes("media"),
-    "a search query");
+  const sentQuery = JSON.parse(net.anilistCalls[0].body).query;
+  assert.ok(sentQuery.includes("Media") || sentQuery.includes("media"), "a search query");
+  assert.ok(!sentQuery.includes("idImdb"),
+    "no field the live schema lacks — idImdb does not exist on Media (the live API 400'd the whole query on it; every field here is live-verified)");
   assert.ok(String(net.anilistCalls[0].body).includes("Black Clover"), "the title is the search term");
 });
 
@@ -1020,7 +1018,7 @@ test("the chain: both sources report → merged with TheIntroDB winning per sect
     data: {
       Page: {
         media: [
-          { id: 1361, idMal: 1360, idImdb: "tt0903747", title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } },
+          { id: 1361, idMal: 1360, title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } },
         ],
       },
     },
@@ -1057,8 +1055,10 @@ test("the chain: a season-2 file never queries the anime sources (MAL ids have n
    introdb.app (api.introdb.app/segments?imdb_id=…) is the corpus's strongest
    single source (measured: 93–100% of the consensus labels, where the app's
    two-source chain reaches ~46–49%). It keys on the IMDb id, which arrives
-   from either search (TMDb's imdb_id, else AniList's idImdb) — so it works
-   even without a TMDb key. Its data fuses with the existing sources:
+   from the TMDb match (imdb_id). The anime side has NO IMDb source — the
+   live AniList schema has no IMDb field on Media (a query for idImdb 400's
+   the whole search, verified live), so without a TMDb key the anime runs
+   on AniSkip alone. Its data fuses with the existing sources:
    within-window agreement collapses to ONE window (the higher-priority
    source's values), disagreement keeps the consensus cluster, and a lone
    source's own entries pass through unsquashed. */
@@ -1078,20 +1078,16 @@ test("the chain: TheIntroDB misses the episode but introdb.app has it → the se
   );
 });
 
-test("the chain: no TMDb key — introdb.app still resolves via the AniList IMDb id", async () => {
+test("the chain: no TMDb key — the anime side runs on AniSkip alone (no IMDb source)", async () => {
   resetNet();
   net.anilist = ANILIST_BCL;
-  net.aniskip = { found: false };
+  net.aniskip = { found: true, results: [{ interval: { startTime: 1347.137, endTime: 1437.561 }, skipType: "ed" }] };
   net.aniskip1 = { found: false };
-  net.idba = { intro: null, recap: null, outro: { start_sec: 1347.137, end_sec: 1437.561 }, post_credits: null };
   const segs = await lookupSegments("", "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv");
-  assert.deepEqual(segs, [{ type: "credits", start: 1347.137, end: 1437.561 }], "outro maps to credits");
+  assert.deepEqual(segs, [{ type: "credits", start: 1347.137, end: null }],
+    "AniSkip's ed maps to credits — end=null by contract (the true length is unknown before playback)");
   assert.equal(net.tmdbCalls.length, 0, "no key → no TMDb search");
-  assert.equal(net.idbaCalls.length, 1, "the anime-side identity (AniList's idImdb) feeds introdb.app");
-  assert.equal(
-    net.idbaCalls[0].url,
-    "https://api.introdb.app/segments?imdb_id=tt7441658&season=1&episode=171"
-  );
+  assert.equal(net.idbaCalls.length, 0, "no IMDb id without TMDb → no introdb.app call (the live AniList schema has no IMDb field on Media)");
 });
 
 test("the chain: three sources agree within the window → ONE window, the top-priority source's values", async () => {
@@ -1112,7 +1108,7 @@ test("the chain: sources disagree past the window → the consensus cluster wins
   net.tmdb = TMDB_BBD;
   net.tidb = { intro: [{ start_ms: 120000, end_ms: 200000 }], credits: [] };
   net.anilist = {
-    data: { Page: { media: [{ id: 1361, idMal: 1360, idImdb: "tt0903747", title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } }] } },
+    data: { Page: { media: [{ id: 1361, idMal: 1360, title: { romaji: "Breaking Bad", english: "Breaking Bad" }, averageScore: 90, startDate: { year: 2008 } }] } },
   };
   net.aniskip = { found: true, results: [{ interval: { startTime: 405, endTime: 510 }, skipType: "op" }] };
   net.aniskip1 = { found: false };
