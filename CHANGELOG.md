@@ -25,6 +25,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 - The subtitle search now also asks for the language you set in the app —
   before, only the languages saved in your put.io account were searched,
   so a subtitle language set here in the app was never found.
+- The Homebrew Channel app page is up to date with the current app: the
+  feature list now includes skip segments, the info tab, playback speed,
+  docked video, and auto-advance, and the screenshots and captions show
+  the current screens and name the open-content demo material in them.
 
 ### Fixed
 - Subtitles with leftover ASS markup no longer show the markup: the

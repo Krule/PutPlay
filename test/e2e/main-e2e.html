@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>PutPlay — e2e (script-tag fallback)</title>
+  <link rel="stylesheet" href="/js/bundle.css" />
+  <!-- Script-tag variant of index.html + test/e2e/fake-api.js, for
+       agent-browser CLI builds whose --init-script leaves the tab at
+       about:blank (same pattern as music-e2e.html). Works in a plain
+       browser too. See test/e2e/README.md. -->
+  <script src="/test/e2e/fake-api.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/js/bundle.js"></script>
+</body>
+</html>

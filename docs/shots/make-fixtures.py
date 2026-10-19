@@ -76,6 +76,17 @@ def main() -> None:
     # MUSIC (the now-playing strip)
     copy("music/maple-leaf-rag-1925.mp3")
 
+    # VIDEO (the player shot): a 60-second clip of *Steamboat Willie* (1928)
+    # — public domain in the US since 2019. The source clip (480p H.264,
+    # re-encoded from the archive.org scan) lives in src/video/ so the
+    # fixture stays reproducible; see CREDITS.md.
+    copy("video/steamboat-willie-1928.mp4")
+
+    # QR (the connect shot): encodes https://app.put.io/link?code=TEST1234 —
+    # the exact code the fake API's OOB endpoint answers with, so the QR
+    # and the code on screen always agree.
+    copy("qr-test1234.png")
+
     for n in sorted(os.listdir(OUT)):
         print(f"{n}  {os.path.getsize(os.path.join(OUT, n)) // 1024} KB")
 

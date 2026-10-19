@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <title>PutPlay — docs shots</title>
+  <link rel="stylesheet" href="/js/bundle.css" />
+  <!-- The fake must run BEFORE the app bundle: it seeds the token and
+       intercepts fetch. A plain script tag is daemon-agnostic (the
+       installed agent-browser CLI's --init-script leaves the tab at
+       about:blank), and works in Safari too. See docs/shots/CREDITS.md. -->
+  <script src="/docs/shots/fake-docs-api.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/js/bundle.js"></script>
+</body>
+</html>

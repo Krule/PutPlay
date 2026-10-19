@@ -6,8 +6,9 @@
  *     Krazy Kat 1918-1924   (krazy-kat-1918-1924.cbz — the comic reader)
  *     Gallery               (gallery.zip — one image + a note: archive)
  *     Maple Leaf Rag (1925) (mp3 — the now-playing strip)
- *     Big Buck Bunny        (mp4 — a video tile; CC-BY 3.0, never played
- *                            in the shots, so the e2e test blob stands in)
+ *     Steamboat Willie 1928 (mp4 — THE playable video: public domain,
+ *                            from archive.org; The General / Nosferatu are
+ *                            PD film name-tiles, never played in the shots)
  *
  * Run:  python3 -m http.server 8642   (repo root)
  *       agent-browser open "http://localhost:8642/?seedtoken" \
@@ -90,30 +91,30 @@
       is_folder: 0,
       start_from: 0
     },
-    bbb: {
+    sbw: {
       id: 41,
-      name: "Big Buck Bunny.mp4",
-      size: 64448768,
+      name: "Steamboat Willie (1928).mp4",
+      size: 3640150,
       content_type: "video/mp4",
       parent_id: null,
       is_folder: 0,
       is_mp4_available: true,
       start_from: 0
     },
-    sintel: {
+    general: {
       id: 42,
-      name: "Sintel.mp4",
-      size: 170123456,
+      name: "The General (1926).mp4",
+      size: 683000000,
       content_type: "video/mp4",
       parent_id: null,
       is_folder: 0,
       is_mp4_available: true,
       start_from: 0
     },
-    tos: {
+    nosferatu: {
       id: 43,
-      name: "Tears of Steel.mp4",
-      size: 120876543,
+      name: "Nosferatu (1922).mp4",
+      size: 1204000000,
       content_type: "video/mp4",
       parent_id: null,
       is_folder: 0,
@@ -122,9 +123,9 @@
     }
   };
 
-  var ROOT_LISTING = [F.paintings, F.comic, F.gallery, F.rag, F.bbb, F.sintel, F.tos];
+  var ROOT_LISTING = [F.paintings, F.comic, F.gallery, F.rag, F.sbw, F.general, F.nosferatu];
   var PAINTINGS_LISTING = [F.kkCover, F.kkRhone];
-  var ALL = [F.paintings, F.kkCover, F.kkRhone, F.comic, F.gallery, F.rag, F.bbb, F.sintel, F.tos];
+  var ALL = [F.paintings, F.kkCover, F.kkRhone, F.comic, F.gallery, F.rag, F.sbw, F.general, F.nosferatu];
 
   /* /stream targets — the zip/cbz paths must honour Range (the parser's
    * tail read + per-entry reads depend on it). */
@@ -134,7 +135,7 @@
     21: "/docs/shots/fixtures/krazy-kat-1918-1924.cbz",
     22: "/docs/shots/fixtures/gallery.zip",
     31: "/docs/shots/fixtures/maple-leaf-rag-1925.mp3",
-    41: "/test/e2e/testvid.mp4",
+    41: "/docs/shots/fixtures/steamboat-willie-1928.mp4", // the REAL PD clip — the player shot plays it
     42: "/test/e2e/testvid.mp4",
     43: "/test/e2e/testvid.mp4"
   };
@@ -149,6 +150,20 @@
     var ms = p.match(/\/files\/(\d+)(?:\/|$)/);
     var mid = ms ? parseInt(ms[1], 10) : 0;
 
+    if (p.indexOf("/oauth2/oob/code") !== -1) {
+      // device-code flow: the connect shot wants a live-looking code and
+      // QR (qr-test1234.png encodes the same TEST1234 code). The poll
+      // endpoint stays pending forever — the shot is the "waiting" frame.
+      var body = p.indexOf("/oauth2/oob/code/") !== -1
+        ? { status: "pending" }
+        : { code: "TEST1234", qr_code_url: "/docs/shots/fixtures/qr-test1234.png" };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
     if (p.indexOf("/account/info") !== -1)
       return Promise.resolve(
         new Response(JSON.stringify(accountInfo), {

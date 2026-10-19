@@ -5,12 +5,17 @@ Unofficial, and built for TVs that time and put.io's own web app left behind.</p
 <p><strong>What it does</strong></p>
 <ul>
   <li>Plays your files <strong>as uploaded</strong> (MKV/MP4) — with put.io MP4 and HLS as automatic fallbacks when the original misbehaves</li>
-  <li>Subtitles: MKV-embedded first, then your put.io subtitles (ASS/SSA and SRT)</li>
+  <li>Subtitles: MKV-embedded first, then your put.io subtitles (ASS/SSA and SRT) — the search asks for your account's languages plus the one you set in the app</li>
   <li>Audio track switching — and when the TV's player refuses, it tells you the truth instead of pretending it worked</li>
-  <li>Reads your <strong>.cbz comics</strong> — only the pages you look at are streamed, two pages a sheet, left-to-right or right-to-left, and the book reopens where you left it</li>
+  <li>Reads your <strong>.cbz comics</strong> — only the pages you look at are streamed, in sheets of one or two pages, left-to-right or right-to-left, and the book reopens where you left it</li>
   <li>Opens <strong>archives</strong> (.zip/.cbz) without downloading them, and views pictures with fit/2×/4× zoom and panning</li>
-  <li>Music files play under a <strong>now-playing strip</strong> while you keep browsing, reading, and watching</li>
+  <li>Music files play under a <strong>now-playing strip</strong> while you keep browsing, reading, and watching — it collapses to a slim corner row and back</li>
   <li>Resumes where you left off; remembers your source and language preferences</li>
+  <li><strong>Docked video</strong> — Back from the full player docks it to a corner: it keeps playing while you browse or read; restore, mini, or stop from the dock</li>
+  <li>When a video ends, the next one in the same folder starts automatically (on by default, off in Settings)</li>
+  <li>Skip intro, recap and credits — segment times from TheIntroDB, AniSkip for anime, and the introdb.app consensus, matched to your file automatically (episodes by marker, marker-less anime names, movies by title); auto-skip or ask</li>
+  <li>An <strong>info tab</strong> on the player — the episode/film's still, synopsis, rating, genres, and date, from TMDb (anime from AniList)</li>
+  <li><strong>Playback speed</strong> 0.5×–2×</li>
 </ul>
 
 <figure style="margin:16px 0;">
@@ -24,13 +29,13 @@ Unofficial, and built for TVs that time and put.io's own web app left behind.</p
 </figure>
 
 <figure style="margin:16px 0;">
-  <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/comic.png" alt="Comic reader: two Krazy Kat pages (1918 and 1919, public domain) side by side with the direction legend" style="max-width:100%;height:auto;" />
-  <figcaption style="font-size:0.85em;opacity:0.75;">The comic reader — two pages a sheet, the direction legend in the corner. (Krazy Kat strips, George Herriman, 1918–1919, public domain, via Wikimedia Commons.)</figcaption>
+  <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/comic.png" alt="Comic reader: a wide Krazy Kat sheet (1918, public domain) with the flip-direction legend" style="max-width:100%;height:auto;" />
+  <figcaption style="font-size:0.85em;opacity:0.75;">The comic reader — sheets of one or two pages, the flip-direction legend in the corner. (Krazy Kat, George Herriman, 1918, public domain, via Wikimedia Commons.)</figcaption>
 </figure>
 
 <figure style="margin:16px 0;">
-  <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/image.png" alt="Image viewer: Van Gogh's The Starry Night (1889) fit to the screen" style="max-width:100%;height:auto;" />
-  <figcaption style="font-size:0.85em;opacity:0.75;">The image viewer — OK steps fit, 2×, 4×; the arrows pan when zoomed. (The Starry Night, Van Gogh, 1889, public domain, via Wikimedia Commons.)</figcaption>
+  <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/image.png" alt="Image viewer: Van Gogh's Starry Night Over the Rhône (1888) fit to the screen" style="max-width:100%;height:auto;" />
+  <figcaption style="font-size:0.85em;opacity:0.75;">The image viewer — OK steps fit, 2×, 4×; the arrows pan when zoomed. (Starry Night Over the Rhône, Van Gogh, 1888, public domain, via Wikimedia Commons.)</figcaption>
 </figure>
 
 <figure style="margin:16px 0;">
@@ -40,12 +45,12 @@ Unofficial, and built for TVs that time and put.io's own web app left behind.</p
 
 <figure style="margin:16px 0;">
   <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/player.png" alt="Player screen: full-screen video with the control bar — source, audio, subtitles" style="max-width:100%;height:auto;" />
-  <figcaption style="font-size:0.85em;opacity:0.75;">In the player: blue play/pause, red playback source, green audio, yellow subtitles. (Frame courtesy of Big Buck Bunny, Blender Foundation, CC-BY 3.0 — shown through the mock data used for these screenshots.)</figcaption>
+  <figcaption style="font-size:0.85em;opacity:0.75;">In the player: blue play/pause, red playback source, green audio, yellow subtitles. (Frame: Steamboat Willie (1928), public domain — shown through the mock data used for these screenshots.)</figcaption>
 </figure>
 
 <figure style="margin:16px 0;">
-  <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/settings.png" alt="Account and settings screen: storage, playback source, audio and subtitle preferences" style="max-width:100%;height:auto;" />
-  <figcaption style="font-size:0.85em;opacity:0.75;">Account &amp; settings — playback source, audio and subtitle preferences, all remembered per account.</figcaption>
+  <img src="https://raw.githubusercontent.com/Krule/PutPlay/main/docs/screenshots/settings.png" alt="Account and settings screen: storage, playback source, language preferences, skip segments" style="max-width:100%;height:auto;" />
+  <figcaption style="font-size:0.85em;opacity:0.75;">Account &amp; settings — playback source, language preferences, and skip segments, all remembered per account.</figcaption>
 </figure>
 
 <p>Uses your own put.io account against the public put.io API — files stay on put.io.

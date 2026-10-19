@@ -13,6 +13,9 @@ agent-browser open "http://localhost:8642/?seedtoken" \
   --init-script test/e2e/fake-api.js
 ```
 
+**If your agent-browser CLI leaves the tab at `about:blank` with
+`--init-script`** (seen with recent builds): open `http://localhost:8642/test/e2e/main-e2e.html?seedtoken` instead — a copy of `index.html` that loads the same fake with a plain `<script>` tag before the bundle (the pattern `music-e2e.html` uses). It is daemon-agnostic and works in a plain browser too.
+
 **Use `test/e2e/serve.py`, not `python3 -m http.server`**: the stdlib server
 has no Range support (always 200, whole file), and WebKit strictly requires
 206 responses to stream and seek progressive media — on the plain server a

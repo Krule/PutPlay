@@ -28,21 +28,31 @@ So I outlined this project, put together some resources, some rules and some lim
 
 - Browses your put.io library and plays the file **as uploaded** (MKV/MP4) —
   with put.io MP4 and HLS as fallbacks when the original misbehaves
-- Subtitles: MKV-embedded first, then your put.io subtitles (ASS/SSA and SRT)
+- Subtitles: MKV-embedded first, then your put.io subtitles (ASS/SSA and
+  SRT) — the search asks for your account's languages plus the one you set
+  in the app
 - Audio track switching — and when the TV's player refuses a switch, it tells
   you the truth instead of pretending it worked
 - Reads your **.cbz comics**: only the pages you look at are streamed (range
-  reads, no full-file download), two pages side by side, left-to-right or
-  right-to-left, and it opens back at the page you left
+  reads, no full-file download), in sheets — uniform pages paired side by
+  side, wide pre-scanned pages alone — left-to-right or right-to-left, and it
+  opens back at the page you left
 - Opens **.zip/.cbz archives** the same way — browse them without downloading
 - Pictures: the image viewer fits the glass, and **OK** steps fit → 2× → 4×
   with arrow panning
 - Music files play under a **now-playing strip** while you keep browsing,
-  reading, and watching
+  reading, and watching — the strip collapses to a slim corner row and back
 - Resumes where you left off (no prompt — it just starts where you left
   off); remembers your source and language preferences
-- Skip intro, recap and credits: the real segment times come from
-  TheIntroDB, matched to your file automatically — episodes by their
+- **Docked video**: Back from the full player docks it to a corner — the
+  video keeps playing while you browse or read; restore, mini, or stop from
+  the dock
+- When a video ends, the next one in the same folder starts automatically
+  (on by default — Settings → Playback → "Play next in folder")
+- Skip intro, recap and credits: the segment times come from the community
+  databases — TheIntroDB, AniSkip for anime, and the introdb.app consensus
+  (when several measure the same section, an agreeing majority wins over a
+  lone outlier) — matched to your file automatically: episodes by their
   marker, marker-less anime names (like "…Black Clover - 171 (1080p)…"),
   and movies by their title (the TMDb key is baked into the app —
   nothing to configure). Settings → "Skip intro,
@@ -74,17 +84,18 @@ The library — a `.cbz` tile shows its real cover, cached locally.
 
 ![Player](docs/screenshots/player.png)
 
-The player — the file as uploaded, with the focusable scrubber and the
-source / audio / subtitle / speed controls. (Frame: Big Buck Bunny,
-Blender Foundation, CC-BY 3.0.)
+The player — the file as uploaded, with the focusable scrubber, the
+source / audio / subtitle / speed controls, and the color key for the
+remote buttons. (Frame: *Steamboat Willie* (1928) — public domain.)
 
-![Comic reader spread](docs/screenshots/comic.png)
+![Comic reader](docs/screenshots/comic.png)
 
-The comic reader — two pages a sheet, the direction legend in the corner.
+The comic reader — sheets of one or two pages, the flip-direction legend in
+the corner.
 
 ![Image viewer](docs/screenshots/image.png)
 
-The image viewer — *The Starry Night*, fit to the glass.
+The image viewer — *Starry Night Over the Rhône* (1888), fit to the glass.
 
 ![Now-playing strip](docs/screenshots/music.png)
 
@@ -92,7 +103,8 @@ Music under a now-playing strip — the library stays fully usable.
 
 ![Account and settings](docs/screenshots/settings.png)
 
-Account & settings — source, audio, and subtitle preferences, saved per account.
+Account & settings — playback source, language preferences, and skip
+segments, saved per account.
 
 More in [`docs/screenshots/`](docs/screenshots/); the demo content behind
 the shots is open content — see
@@ -150,7 +162,7 @@ updates” in Homebrew Channel picks up new versions on its own.
 git clone git@github.com:Krule/PutPlay.git
 cd PutPlay
 pnpm install
-pnpm test       # 500+ tests, including the webOS 6 baseline gate
+pnpm test       # 800+ tests, including the webOS 6 baseline gate
 pnpm run build  # js/bundle.js + js/bundle.css
 pnpm run package # ba.ovo.putplay_<version>_all.ipk in the repo root
 ```
