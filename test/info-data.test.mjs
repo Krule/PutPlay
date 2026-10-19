@@ -517,7 +517,7 @@ test("episode: an anime Media cache hit skips the GraphQL Media request (the sea
   keyState.key = "";
   animeRoutes();
   const fc = fakeCache();
-  fc.store.set("al:108799", ANIME_MEDIA);
+  fc.store.set("al:108799", { at: Date.now(), detail: ANIME_MEDIA });
   try {
     const got = await lookupEpisodeInfo({ title: "Frieren", season: 1, episode: 1, cache: fc.cache });
     assert.equal(got.rating, 8.5, "the cached Media serves the data");
@@ -543,7 +543,9 @@ test("episode: the anime Media is written after a successful query (al:{id})", a
   try {
     const got = await lookupEpisodeInfo({ title: "Frieren", season: 1, episode: 1, cache: fc.cache });
     assert.equal(got.rating, 8.5);
-    assert.deepEqual(fc.store.get("al:108799"), ANIME_MEDIA, "write-after-success (keyed by the internal id)");
+    const entry = fc.store.get("al:108799");
+    assert.deepEqual(entry.detail, ANIME_MEDIA, "write-after-success (keyed by the internal id)");
+    assert.ok(entry.at > Date.now() - 60 * 1000, "stamped with the write time (the TTL clock)");
   } finally {
     keyState.key = "test-bearer-token";
   }
@@ -556,8 +558,8 @@ test("episode: the anime Media is written after a successful query (al:{id})", a
 test("episode: detail cache hits skip both detail requests (only the search runs)", async () => {
   tvRoutes();
   const fc = fakeCache();
-  fc.store.set("tv:1399", SHOW_DETAIL);
-  fc.store.set("ep:1399:3:1", EP_DETAIL);
+  fc.store.set("tv:1399", { at: Date.now(), detail: SHOW_DETAIL });
+  fc.store.set("ep:1399:3:1", { at: Date.now(), detail: EP_DETAIL });
   const got = await lookupEpisodeInfo({ title: "Breaking Bad", season: 3, episode: 1, cache: fc.cache });
   assert.deepEqual(got, {
     synopsis: "Walt and Jesse move into the line work.",
@@ -589,8 +591,22 @@ test("episode: the details are written after success (exactly tv: and ep: keys)"
   const fc = fakeCache();
   await lookupEpisodeInfo({ title: "Breaking Bad", season: 3, episode: 1, cache: fc.cache });
   assert.deepEqual([...fc.store.keys()].sort(), ["ep:1399:3:1", "tv:1399"]);
-  assert.deepEqual(fc.store.get("tv:1399"), SHOW_DETAIL, "the raw show detail is cached");
-  assert.deepEqual(fc.store.get("ep:1399:3:1"), EP_DETAIL, "the raw episode detail is cached");
+  assert.deepEqual(fc.store.get("tv:1399").detail, SHOW_DETAIL, "the show detail is cached");
+  assert.deepEqual(fc.store.get("ep:1399:3:1").detail, EP_DETAIL, "the episode detail is cached");
+});
+
+test("episode: a detail entry older than a month is re-fetched and rewritten (the TTL is one month)", async () => {
+  tvRoutes();
+  const fc = fakeCache();
+  const staleAt = Date.now() - 31 * 24 * 60 * 60 * 1000;
+  fc.store.set("tv:1399", { at: staleAt, detail: SHOW_DETAIL });
+  fc.store.set("ep:1399:3:1", { at: staleAt, detail: EP_DETAIL });
+  const got = await lookupEpisodeInfo({ title: "Breaking Bad", season: 3, episode: 1, cache: fc.cache });
+  assert.equal(got.airDate, "May 12, 2021", "the live detail answered, not the stale entry");
+  assert.equal(net.calls.length, 3, "search + show + episode all re-ran");
+  const entry = fc.store.get("tv:1399");
+  assert.ok(entry.at > Date.now() - 60 * 1000, "rewritten with a fresh timestamp");
+  assert.deepEqual(entry.detail, SHOW_DETAIL, "…carrying the live detail");
 });
 
 test("episode: a cache get that throws is treated as a miss (the network still answers)", async () => {
@@ -692,7 +708,7 @@ test("movie: a detail cache hit skips the detail request; the detail is written 
   const fc = fakeCache();
   await lookupMovieInfo({ name: "Inception", year: 2010, cache: fc.cache });
   assert.deepEqual([...fc.store.keys()], ["mv:157336"], "the movie detail is cached by its id");
-  assert.deepEqual(fc.store.get("mv:157336"), MOVIE_DETAIL);
+  assert.deepEqual(fc.store.get("mv:157336").detail, MOVIE_DETAIL);
 
   net.calls.length = 0;
   const got = await lookupMovieInfo({ name: "Inception", year: 2010, cache: fc.cache });

@@ -241,6 +241,7 @@ const savePosts = () =>
 function mapCache() {
   const m = new Map();
   return {
+    map: m, // exposed so a test can seed (or age) an entry directly
     get: async (k) => m.get(k),
     put: async (k, v) => void m.set(k, v),
   };
@@ -560,7 +561,7 @@ test("parseEpisode: dots, underscores and spaces are the same title", () => {
 
 // ---------------- 1. the chain (filename → TMDb → TheIntroDB → Seg[]) ----------------
 
-test("the chain: filename → TMDb → TheIntroDB → segments, re-fetched on every play (caching suspended while the feature settles)", async () => {
+test("the chain: filename → TMDb → TheIntroDB → segments, cached after a non-empty answer (one-month TTL)", async () => {
   resetNet();
   net.tmdb = TMDB_BBD;
   net.tidb = TIDB_BBD;
@@ -581,11 +582,31 @@ test("the chain: filename → TMDb → TheIntroDB → segments, re-fetched on ev
   assert.ok(tb.includes("tmdb_id=1396"), "the TMDb id from the search result");
   assert.ok(tb.includes("season=1") && tb.includes("episode=1"), "the episode from the filename");
 
-  // the same episode again: a cache is handed in, but every play re-looks-up
+  // the same episode again — even from a differently formatted filename:
+  // the merged non-empty answer IS the cache now, zero network
   const again = await lookupSegments("fake-tmdb-key", "Breaking Bad S01E01 720p.mkv", undefined, cache);
-  assert.deepEqual(again, segs, "identical segments, freshly fetched");
-  assert.equal(net.tmdbCalls.length, 2, "a second TMDb search — caching is suspended");
-  assert.equal(net.tidbCalls.length, 2, "a second TheIntroDB call — caching is suspended");
+  assert.deepEqual(again, segs, "identical segments, served from the cache");
+  assert.equal(net.tmdbCalls.length, 1, "no second TMDb search — the cache hit");
+  assert.equal(net.tidbCalls.length, 1, "no second TheIntroDB call — the cache hit");
+});
+
+test("a cached entry older than a month is a miss — re-fetched and rewritten with a fresh timestamp", async () => {
+  resetNet();
+  net.tmdb = TMDB_BBD;
+  net.tidb = TIDB_BBD;
+  const c = mapCache();
+  await lookupSegments("fake-tmdb-key", "Breaking Bad S01E01.mkv", undefined, c);
+  assert.equal(c.map.size, 1, "the non-empty answer was written");
+  const key = [...c.map.keys()][0];
+  c.map.set(key, { ...c.map.get(key), at: Date.now() - 31 * 24 * 60 * 60 * 1000, segs: [{ type: "intro", start: 1, end: 2 }] });
+  const segs = await lookupSegments("fake-tmdb-key", "Breaking Bad S01E01.mkv", undefined, c);
+  assert.equal(net.tmdbCalls.length, 2, "the stale entry was NOT served — the chain re-ran");
+  assert.deepEqual(segs, [
+    { type: "intro", start: 228.664, end: 246.143 },
+    { type: "credits", start: 3431, end: null },
+  ], "the live answer, not the poisoned stale one");
+  const entry = c.map.get(key);
+  assert.ok(entry.at > Date.now() - 60 * 1000, "rewritten with a fresh timestamp");
 });
 
 test("no TMDb key → the TMDb side never runs; the anime side still resolves (it needs no key)", async () => {
@@ -606,7 +627,7 @@ test("no TMDb match → TheIntroDB is never called, no segments", async () => {
   assert.equal(net.tidbCalls.length, 0, "…but nothing was resolved, so no media call");
 });
 
-test("TheIntroDB has no data for the episode → empty list, and the next play asks again (caching suspended)", async () => {
+test("TheIntroDB has no data for the episode → empty list, and an empty answer is never cached — the next play asks again", async () => {
   resetNet();
   net.tmdb = TMDB_ANIME;
   net.tidb = { tvdb_id: 27, type: "tv", season: 1, episode: 1 };
@@ -979,11 +1000,11 @@ test("the chain: a TIDB-miss anime falls back to AniList → AniSkip (the user's
   assert.equal(net.aniskipCalls.length, 1, "one AniSkip call");
   assert.ok(net.aniskipCalls[0].url.includes("/34572/171"), "the MAL id from the search, the episode from the name");
 
-  // re-play: a cache is handed in, but every play re-looks-up both sources
+  // re-play: the merged non-empty answer is the cache — both sources rest
   const again = await lookupSegments("fake-tmdb-key", "[SubsPlease] Black Clover - 171 (1080p) [7AD4AFC7].mkv", undefined, cache);
-  assert.deepEqual(again, segs);
-  assert.equal(net.anilistCalls.length, 2, "a second AniList search — caching is suspended");
-  assert.equal(net.aniskipCalls.length, 2, "a second AniSkip call — caching is suspended");
+  assert.deepEqual(again, segs, "served from the cache");
+  assert.equal(net.anilistCalls.length, 1, "no second AniList search — the cache hit");
+  assert.equal(net.aniskipCalls.length, 1, "no second AniSkip call — the cache hit");
 });
 
 test("the chain: a movie whose tail is a broken codec ('H 264') is NOT an episode — the movie chain runs instead", async () => {

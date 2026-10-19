@@ -3,10 +3,8 @@
  * pattern: a module-level connection, honest memory-only degradation when
  * storage is refused). The same episode re-played costs zero network.
  *
- * SUSPENDED: seglookup ignores this while the feature settles — the store
- * is passed but never touched (lazy connect = zero cost), so nothing stale
- * is written either. Restore the read/write in seglookup.ts to bring it
- * back.
+ * The policy (TTL, non-empty-only writes) lives in seglookup.ts — this
+ * store is a dumb, never-throwing key/value box.
  */
 
 import { openIdb, type IdbHandle } from "./idb";

@@ -410,8 +410,8 @@
     }
     const forId = file.id;
     const name = file.name;
-    // segCache is passed but ignored while caching is suspended
-    // (see seglookup.ts) — every play re-looks-up from the live sources.
+    // non-empty merged answers are cached for a month (seglookup.ts);
+    // re-playing the same file costs zero network
     lookupSegments(TMDB_KEY, name, undefined, segCache)
       .then((s) => {
         if (forId !== file.id || !engine) return;

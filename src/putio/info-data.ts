@@ -248,6 +248,18 @@ function genreList(v: unknown): string[] | null {
  * miss, a put failure is ignored (the seg-cache posture: the network layer
  * never rejects into the player).
  */
+/** How long a fetched detail is trusted before the network re-runs. */
+const DETAIL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // one month
+
+/**
+ * A logical key's detail, read-before-network, one-month TTL: the stored
+ * shape is { at, detail } — a hit within the TTL skips the request; a miss
+ * (or an entry older than a month) fetches and rewrites after success.
+ * Entries written before the TTL existed carry no `at` — they read as
+ * expired, so the first look-up re-fetches once and rewrites the entry.
+ * A cache throw is a miss, a put failure is ignored (the seg-cache posture:
+ * the network layer never rejects into the player).
+ */
 async function cachedDetail(
   cache: InfoCache | undefined,
   key: string,
@@ -256,7 +268,18 @@ async function cachedDetail(
   if (cache) {
     try {
       const hit = await cache.get(key);
-      if (hit && typeof hit === "object" && !Array.isArray(hit)) return hit as Detail;
+      const entry =
+        hit && typeof hit === "object" && !Array.isArray(hit) ? (hit as Record<string, unknown>) : null;
+      if (
+        entry &&
+        typeof entry.at === "number" &&
+        entry.at + DETAIL_TTL_MS >= Date.now() &&
+        entry.detail &&
+        typeof entry.detail === "object" &&
+        !Array.isArray(entry.detail)
+      ) {
+        return entry.detail as Detail;
+      }
     } catch {
       // a broken cache is a miss, not an error
     }
@@ -264,7 +287,7 @@ async function cachedDetail(
   const fresh = await fetchDetail();
   if (fresh && cache) {
     try {
-      await cache.put(key, fresh);
+      await cache.put(key, { at: Date.now(), detail: fresh });
     } catch {
       // a put failure never blocks the panel
     }

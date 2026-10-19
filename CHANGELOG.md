@@ -22,6 +22,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   title: no match, nothing is skipped.
 
 ### Changed
+- Re-playing a video no longer re-looks-up its skip segments from the
+  network, and re-opening the Info tab no longer re-fetches the details:
+  a non-empty answer is now cached for a month. An empty look-up is never
+  cached, so a title the databases don't know yet is asked again on the
+  next play — an entry added to a database later is still found.
 - Skippable sections on the progress bar are now marked in the player's
   yellow (the same hue as the subtitles key) instead of a faint blue tint,
   so they stand out at a glance against the blue progress fill.

@@ -54,10 +54,13 @@
  * throw. A source failing never sinks the others (the data fetches are
  * independent).
  *
- * CACHING IS SUSPENDED while the feature settles: every play re-looks-up
- * from the live sources. The `cache` parameter is accepted but ignored —
- * to restore, read before the lookups and `put` the merged result after
- * (the `SegCacheEntry` shape and the store in seg-cache.ts are unchanged).
+ * CACHING: read before the network, write after — but ONLY a non-empty
+ * merged answer is written (an empty answer is "nothing known yet", not
+ * data — it must not mask an entry the databases gain later), and an entry
+ * is trusted for one month (SEG_TTL_MS), after which the chain re-runs.
+ * The key is name-derived (the parsed title/season/episode[/year], or
+ * title[/year] for a movie) — a hit skips even the identity searches. The
+ * ids on the entry are informational; the store lives in seg-cache.ts.
  */
 
 import type { Seg } from "./introdb";
@@ -199,6 +202,63 @@ export function mergeSegments(primary: Seg[], secondary: Seg[]): Seg[] {
 }
 
 /**
+ * One chain's (episode or movie) resolution: the fused windows plus the
+ * resolved identities (informational — the cache key is name-derived).
+ */
+interface Resolved {
+  segs: Seg[];
+  tmdbId: number | null;
+  malId: number | null;
+}
+
+/** How long a non-empty answer is trusted before the chain re-runs. */
+const SEG_TTL_MS = 30 * 24 * 60 * 60 * 1000; // one month
+
+/**
+ * The cache gate: read before the network, write after. Only a NON-EMPTY
+ * merged answer is written — an empty answer is "nothing known yet" and
+ * must not mask an entry the databases gain later. An entry older than
+ * SEG_TTL_MS is a miss (the databases move; a month is the freshness
+ * bound we accept). A broken cache is a miss, a failed put is ignored —
+ * the network layer never rejects into the player.
+ */
+async function cachedSegments(
+  cache: SegCache | undefined,
+  key: string,
+  fetchSegs: () => Promise<Resolved>
+): Promise<Seg[]> {
+  if (cache) {
+    try {
+      const hit = await cache.get(key);
+      if (
+        hit &&
+        Array.isArray(hit.segs) &&
+        typeof hit.at === "number" &&
+        hit.at + SEG_TTL_MS >= Date.now()
+      ) {
+        return hit.segs;
+      }
+    } catch {
+      // a broken cache is a miss, not an error
+    }
+  }
+  const fresh = await fetchSegs();
+  if (cache && fresh.segs.length > 0) {
+    try {
+      await cache.put(key, {
+        tmdbId: fresh.tmdbId,
+        malId: fresh.malId,
+        segs: fresh.segs,
+        at: Date.now(),
+      });
+    } catch {
+      // a put failure never blocks playback
+    }
+  }
+  return fresh.segs;
+}
+
+/**
  * Resolve the skip segments for one put.io file. `fetchImpl` and `cache`
  * are injectable so the whole chain runs in node against canned responses.
  */
@@ -206,22 +266,33 @@ export async function lookupSegments(
   tmdbKey: string,
   name: string,
   fetchImpl?: typeof fetch,
-  /** Accepted but IGNORED while caching is suspended (see file header). */
-  _cache?: SegCache
+  /** Optional segment cache: read before the network, written after a
+   *  non-empty merged answer, trusted for one month (see cachedSegments). */
+  cache?: SegCache
 ): Promise<Seg[]> {
   const doFetch = fetchImpl || fetch;
 
   // The strict marker first; the scene-bare "Title - 01" form is the
   // fallback (season 1) — gated by the identity search below: if the
   // title matches no show, no source is fetched and nothing is returned.
+  // The key comes from the PARSED fields (the parser normalizes dots,
+  // underscores and case), so differently formatted names of the same file
+  // share one entry — and it is computed before any network, so a hit
+  // skips even the identity searches.
   const ep = parseEpisode(name) ?? parseBareEpisode(name);
-  if (ep) return lookupEpisode(ep.title, ep.season, ep.episode, ep.year, tmdbKey, doFetch);
+  if (ep) {
+    const key = `ep:${ep.title}:${ep.season}:${ep.episode}` + (ep.year ? `:${ep.year}` : "");
+    return cachedSegments(cache, key, () =>
+      lookupEpisode(ep.title, ep.season, ep.episode, ep.year, tmdbKey, doFetch)
+    );
+  }
 
   // no usable episode number → a movie (or an unparseable name): the movie chain.
   // No key = zero network, same honesty as the episode chains.
   const mv = parseMovieName(name);
   if (!mv || !mv.title || !tmdbKey) return [];
-  return lookupMovie(mv.title, mv.year, tmdbKey, doFetch);
+  const key = `mv:${mv.title}` + (mv.year ? `:${mv.year}` : "");
+  return cachedSegments(cache, key, () => lookupMovie(mv.title, mv.year, tmdbKey, doFetch));
 }
 
 /**
@@ -237,7 +308,7 @@ async function lookupEpisode(
   year: number | undefined,
   tmdbKey: string,
   doFetch: typeof fetch
-): Promise<Seg[]> {
+): Promise<Resolved> {
   const [tmdbResults, aniResults] = await Promise.all([
     tmdbKey ? tmdbSearchTv(tmdbKey, title, year, doFetch) : Promise.resolve(null),
     season === 1 ? anilistSearchAnime(title, year, doFetch) : Promise.resolve(null),
@@ -254,11 +325,15 @@ async function lookupEpisode(
     aniShow ? aniskipAnime(aniShow.malId, episode, doFetch) : Promise.resolve([] as Seg[]),
     imdbId ? introdbAppSegments(imdbId, season, episode, doFetch) : Promise.resolve([] as Seg[]),
   ]);
-  return fuseSegments([
-    { source: "theintrodb", segs: tidb },
-    { source: "aniskip", segs: anime },
-    { source: "introdb_app", segs: idba },
-  ]);
+  return {
+    segs: fuseSegments([
+      { source: "theintrodb", segs: tidb },
+      { source: "aniskip", segs: anime },
+      { source: "introdb_app", segs: idba },
+    ]),
+    tmdbId: tmdbShow ? tmdbShow.id : null,
+    malId: aniShow ? aniShow.malId : null,
+  };
 }
 
 /**
@@ -274,22 +349,26 @@ async function lookupMovie(
   year: number | undefined,
   tmdbKey: string,
   doFetch: typeof fetch
-): Promise<Seg[]> {
+): Promise<Resolved> {
   for (const stage of movieQueryStages(title, year)) {
     const results = await tmdbSearchMovie(tmdbKey, stage.title, stage.year, doFetch);
     // empty OR a fetch failure (a 500 on one query does not doom the next)
     // — a re-formed query may still hit; the ladder is bounded
     if (results === null || results.length === 0) continue;
     const show: TmdbShow | null = pickTmdbMatch(results, stage.title, stage.year);
-    if (!show) return []; // nothing close — the honest no-match
+    if (!show) return { segs: [], tmdbId: null, malId: null }; // nothing close — the honest no-match
     const [tidb, idba] = await Promise.all([
       introdbMedia(show.id, undefined, undefined, doFetch),
       show.imdbId ? introdbAppSegments(show.imdbId, undefined, undefined, doFetch) : Promise.resolve([] as Seg[]),
     ]);
-    return fuseSegments([
-      { source: "theintrodb", segs: tidb },
-      { source: "introdb_app", segs: idba },
-    ]);
+    return {
+      segs: fuseSegments([
+        { source: "theintrodb", segs: tidb },
+        { source: "introdb_app", segs: idba },
+      ]),
+      tmdbId: show.id,
+      malId: null,
+    };
   }
-  return [];
+  return { segs: [], tmdbId: null, malId: null };
 }
