@@ -15,6 +15,15 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   (an agreeing majority wins over a lone outlier), so a wrong timing in
   one database no longer produces a wrong skip.
 
+### Fixed
+- When several database entries match a file name (Gintama vs. Gintama°,
+  or a spin-off sharing its title), the show that is actually named after
+  the file now wins the match, not the most popular candidate — so a
+  similar-named show can no longer supply the skip timings.
+- A year in the file name that matches none of the candidates now means
+  "no match" instead of a guess: a wrong show's timings are worse than
+  no timings.
+
 ## [1.2.0] - 2026-10-18
 
 ### Added

@@ -12,7 +12,7 @@
  * than no timings, so the feature stays off rather than skips wrongly.
  */
 
-import { normTitle } from "./titles";
+import { normTitle, normTitleRaw } from "./titles";
 
 export interface TmdbShow {
   id: number;
@@ -183,10 +183,16 @@ export function movieQueryStages(title: string, year?: number): MovieQueryStage[
 
 /**
  * Pick the result that is the show the file name points at.
- *   1. an EXACT normalized name match wins outright
+ *   1. an EXACT normalized name match wins outright; among several
+ *      exacts, the one whose RAW name equals the file's raw title
+ *      (rawFirst) — normTitle throws away .°'?!, and that punctuation
+ *      is exactly what separates Gintama. from Gintama°
  *   2. otherwise a NEAR match (the query inside the name, or the name
  *      inside the query) — the "… Season 2" spin-off case
- *   3. among the candidates, a (year) tag decides first, then popularity
+ *   3. a (year) tag decides first — and when the file carries a year
+ *      NO candidate matches, that's NO match: a wrong show's timings are
+ *      worse than no timings
+ *   4. among what's left, popularity
  * Nothing close → null: no match is the honest answer.
  */
 export function pickTmdbMatch(
@@ -199,17 +205,28 @@ export function pickTmdbMatch(
   if (!q) return null;
 
   const exact = results.filter((r) => normTitle(r.name) === q);
-  const cands = exact.length ? exact : results.filter((r) => {
-    const n = normTitle(r.name);
-    return n.includes(q) || (q.length >= 6 && n.length >= 6 && q.includes(n));
-  });
+  const cands = exact.length
+    ? exact
+    : results.filter((r) => {
+        const n = normTitle(r.name);
+        return n.includes(q) || (q.length >= 6 && n.length >= 6 && q.includes(n));
+      });
   if (!cands.length) return null;
 
   if (typeof year === "number") {
     const byYear = cands.filter((r) => (r.first_air_date || "").startsWith(String(year)));
-    if (byYear.length) return mostPopular(byYear);
+    // a year tag with no matching candidate: abstain — the tag says this
+    // is not (any of) these shows, and guessing is a wrong skip
+    if (!byYear.length) return null;
+    return rawFirst(byYear, title);
   }
-  return mostPopular(cands);
+  return rawFirst(cands, title);
+}
+
+/** Among equally-close candidates, the raw-equal name wins; then popularity. */
+function rawFirst(cands: TmdbShow[], title: string): TmdbShow {
+  const raw = normTitleRaw(title);
+  return cands.find((r) => normTitleRaw(r.name) === raw) ?? mostPopular(cands);
 }
 
 function mostPopular(cands: TmdbShow[]): TmdbShow {

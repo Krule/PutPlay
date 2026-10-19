@@ -68,6 +68,15 @@ export function normTitle(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Collapse case and whitespace for the RAW tie — keeps the punctuation
+ * normTitle discards, and that is exactly what can carry title meaning
+ * ("Gintama." ≠ "Gintama°").
+ */
+export function normTitleRaw(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 /** A season longer than this is a special case, not a season. */
 const SEASON_MAX = 60;
 /** The SxxEyy / NxNy form's episode cap (the episode-only form allows more). */

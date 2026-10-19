@@ -12,7 +12,7 @@
  * shape) answers [] — the honest "nothing to skip", never a throw.
  */
 
-import { normTitle } from "./titles";
+import { normTitle, normTitleRaw } from "./titles";
 
 export interface AnilistShow {
   /** AniList's INTERNAL id — the Media(id:) GraphQL query's key.
@@ -94,8 +94,11 @@ export async function anilistSearchAnime(
 /**
  * Choose the best anime from search results: an exact title match first,
  * then a NEAR match (either title contains the other — the "Squishy!
- * Black Clover" spin-off case). Among the candidates a year match wins,
- * then the higher community score.
+ * Black Clover" spin-off case). Among the candidates a year match wins —
+ * and a (year) tag with no matching candidate is NO match (a wrong show's
+ * timings are worse than none) — then the higher community score. Among
+ * the still-tied, the raw-equal title wins (Gintama. ≠ Gintama° — see
+ * pickTmdbMatch, the same rules).
  */
 export function pickAnilistMatch(
   results: AnilistShow[],
@@ -115,7 +118,17 @@ export function pickAnilistMatch(
       });
   if (!near.length) return null;
 
-  const byYear = year ? near.filter((s) => s.year === year) : null;
-  const candidates = byYear && byYear.length ? byYear : near;
-  return candidates.reduce((best, s) => ((s.score ?? 0) > (best.score ?? 0) ? s : best));
+  if (typeof year === "number") {
+    const byYear = near.filter((s) => s.year === year);
+    if (!byYear.length) return null;
+    return rawFirst(byYear, title);
+  }
+  return rawFirst(near, title);
+}
+
+/** Among equally-close candidates, the raw-equal title wins; then score. */
+function rawFirst(cands: AnilistShow[], title: string): AnilistShow {
+  const raw = normTitleRaw(title);
+  const hit = cands.find((s) => normTitleRaw(s.title) === raw);
+  return hit ?? cands.reduce((best, s) => ((s.score ?? 0) > (best.score ?? 0) ? s : best));
 }

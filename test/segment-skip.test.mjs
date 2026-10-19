@@ -729,6 +729,25 @@ test("pickAnilistMatch: exact title wins; within the candidates, year then score
   assert.equal(pickAnilistMatch(shows, "Totally Different"), null, "no match among the results");
 });
 
+test("pickAnilistMatch: normalized-exact ties settle on the RAW title; a year with no match abstains (same rules as pickTmdbMatch)", () => {
+  // normTitle strips .°' — the Gintama family all normalizes to "gintama",
+  // so score-picking picks the wrong series (corpus: 72× across dev+holdout)
+  const shows = [
+    { malId: 28977, title: "Gintama°", year: 2015, score: 85 },
+    { malId: 34096, title: "Gintama.", year: 2006, score: 84 },
+    { malId: 55719, title: "Gintama'", year: 2024, score: 80 },
+  ];
+  assert.equal(pickAnilistMatch(shows, "Gintama.").malId, 34096, "file 'Gintama.' → the '.' entry, even though the ° entry scores higher");
+  assert.equal(pickAnilistMatch(shows, "Gintama'").malId, 55719, "file 'Gintama'' → the 2024 entry");
+  assert.equal(pickAnilistMatch(shows, "GINTAMA°").malId, 28977, "the raw tie is case-insensitive");
+  const blue = [
+    { malId: 97616, title: "Grand Blue", year: 2014, score: 80 },
+    { malId: 38003, title: "Grand Blue", year: 2018, score: 85 },
+  ];
+  assert.equal(pickAnilistMatch(blue, "Grand Blue", 2018).malId, 38003, "the matching year decides");
+  assert.equal(pickAnilistMatch(blue, "Grand Blue", 2016), null, "no candidate airs in 2016 → abstain, don't guess");
+});
+
 test("aniskipSegments: op/ed/recap map onto the app's types (the ED runs to the end)", async () => {
   resetNet();
   net.aniskip = ANISKIP_BCL;
@@ -1242,6 +1261,29 @@ test("pickTmdbMatch: a year tag decides between near names", () => {
 test("pickTmdbMatch: nothing close is no match (the feature stays off, not wrong)", () => {
   assert.equal(pickTmdbMatch([{ id: 1, name: "Totally Different", popularity: 99 }], "Breaking Bad"), null);
   assert.equal(pickTmdbMatch([], "Breaking Bad"), null, "empty results");
+});
+
+test("pickTmdbMatch: normalized-exact ties settle on the RAW title (Gintama. ≠ Gintama°)", () => {
+  // normTitle strips .°' — all three normalize to "gintama"; score-picking
+  // then names the wrong series (corpus: the top confusion class)
+  const results = [
+    { id: 1, name: "Gintama°", first_air_date: "2015-04-09", popularity: 90 },
+    { id: 2, name: "Gintama.", first_air_date: "2006-04-04", popularity: 80 },
+    { id: 3, name: "Gintama", first_air_date: "2024-01-06", popularity: 70 },
+  ];
+  assert.equal(pickTmdbMatch(results, "Gintama.").id, 2, "file 'Gintama.' → the entry that literally says 'Gintama.'");
+  assert.equal(pickTmdbMatch(results, "Gintama°").id, 1, "file 'Gintama°' → the ° entry");
+  assert.equal(pickTmdbMatch(results, "GINTAMA°").id, 1, "case-insensitive on the raw tie");
+  assert.equal(pickTmdbMatch(results, "Gintama").id, 3, "file 'Gintama' → the bare entry");
+});
+
+test("pickTmdbMatch: a year tag with no matching candidate → no match (abstain, don't guess)", () => {
+  const results = [
+    { id: 1, name: "Grand Blue", first_air_date: "2014-01-10", popularity: 90 },
+    { id: 2, name: "Grand Blue", first_air_date: "2018-07-12", popularity: 80 },
+  ];
+  assert.equal(pickTmdbMatch(results, "Grand Blue", 2014).id, 1, "the matching year decides");
+  assert.equal(pickTmdbMatch(results, "Grand Blue", 2016), null, "nothing airs in 2016 → the (2016) tag is not this show");
 });
 
 // ---------------- 2. the engine (real MediaEngine, fake <video>) ----------------
