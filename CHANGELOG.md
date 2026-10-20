@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-20
+
 ### Added
 - Subtitles now render with the styling the file itself specifies: per-line
   colour, solid outline, position (top/middle/bottom, or the author's exact
