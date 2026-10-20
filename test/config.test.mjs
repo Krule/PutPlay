@@ -17,7 +17,7 @@
 
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { DEFAULT_CONFIG, normalizeConfig, matchLang, pickAudioTrack, pickSubtitleTrack } from "../src/putio/config.ts";
+import { DEFAULT_CONFIG, normalizeConfig, matchLang, pickAudioTrack, pickSubtitleTrack, SUB_SCALE_OPTIONS } from "../src/putio/config.ts";
 // (module under test: src/putio/config.ts — pure decisions; the Svelte
 //  store in src/store/config.ts wraps it)
 
@@ -28,7 +28,17 @@ test("normalizeConfig: empty input → full defaults", () => {
   assert.equal(c.source, "original");
   assert.equal(c.audioLang, "");
   assert.equal(c.subtitleLang, "");
-  assert.equal(c.subScale, 1);
+  // m00887/m00906: the ASS-aware renderer renders at the file's author size
+  // (24pt × 3 on 1080p = 72px at scale 1) — the user judged that "huge" and
+  // the previous "Small" (0.8 → 57.6px) "just right": that step IS the default now.
+  assert.equal(c.subScale, 0.8);
+});
+
+test("DEFAULT_CONFIG.subScale sits on the ladder (the selected row matches the stored value)", () => {
+  assert.ok(
+    SUB_SCALE_OPTIONS.some((o) => o.v === DEFAULT_CONFIG.subScale),
+    "a default that is not a ladder step would show no selected row in the panel"
+  );
 });
 
 test("normalizeConfig: valid source values pass through", () => {

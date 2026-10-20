@@ -5,7 +5,7 @@
  *  - source: which stream to start from (original / put.io mp4 / hls)
  *  - audioLang / subtitleLang: preferred language code or display name
  *    ("" = no preference); they steer auto-selection of tracks
- *  - subScale: DOM-overlay subtitle font scale (1 = default) — owned by
+ *  - subScale: DOM-overlay subtitle font scale (0.8 = default) — owned by
  *    the player (the in-player subtitle panel), no longer a Settings card
  *  - playNext: when a video ends, auto-advance to the next video in the
  *    same folder (the docked player's queue walk). Music auto-next is
@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   source: "original",
   audioLang: "",
   subtitleLang: "",
-  subScale: 1,
+  subScale: 0.8,
   playNext: true,
   skipSegments: true,
   subScaleMin: 0.8,
@@ -49,10 +49,14 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
  * show the wrong row selected.
  */
 export const SUB_SCALE_OPTIONS: { v: number; label: string }[] = [
-  { v: 0.8, label: "Small" },
-  { v: 1, label: "Default" },
-  { v: 1.35, label: "Large" },
-  { v: 1.8, label: "XL" },
+  // m00887: the ASS-aware renderer renders at the file's author size
+  // (PlayRes-scaled), which made the old 1.0 default "huge" on 1080p files.
+  // The previous "Small" step is now the out-of-the-box size — and is
+  // labelled Default, since it is the default.
+  { v: 0.8, label: "Default" },
+  { v: 1, label: "Large" },
+  { v: 1.35, label: "XL" },
+  { v: 1.8, label: "XXL" },
 ];
 
 const SOURCE_KINDS = ["original", "mp4", "hls"] as const;

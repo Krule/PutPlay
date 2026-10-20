@@ -24,8 +24,15 @@
     type LoadedSubtitle,
     type SubtitleCue,
   } from "../../putio/subs";
+  import {
+    renderSubtitleLines,
+    type AssStyleTable,
+    type RenderedLine,
+    type RenderedSegment,
+  } from "../../putio/substyle";
   import { segAction, type Seg } from "../../putio/segments";
   import { lookupSegments } from "../../putio/seglookup";
+  import { chaptersToSegs, mergeChapterSegs } from "../../putio/chapter-segs";
   import { segCache } from "../../putio/seg-cache";
   import { TMDB_KEY } from "../../putio/tmdb-key";
   import { surfaceVisibility } from "../../putio/player-surface";
@@ -206,7 +213,10 @@
   let activeSub = -1; // -1 = off, 0.. = index into put.io subtitles (progressive overlay)
   let hlsSub = -1; // -1 = off, index into hls textTracks (MKV-embedded renditions)
   let subCues: SubtitleCue[] = [];
-  let subText = "";
+  let subLines: RenderedLine[] = [];
+  /** The embedded ASS style table the engine's header probe found first
+   *  (the default track); null = plain overlay (no MKV or probe failed). */
+  let styleTable: AssStyleTable | null = null;
 
   let sourceOptions = [
     { kind: "original" as SourceKind, label: "Original", available: true, hint: "" },
@@ -217,6 +227,10 @@
   /** The episode's segments from TheIntroDB (the lookup's result) — the
    *  auto-skip and the offer both act on these windows. */
   let segs: Seg[] = [];
+  /** The database's half of the merge (null until the lookup settles) —
+   *  the file's own chapters are merged in at applySegs, whenever the
+   *  probe result arrives. */
+  let dbSegs: Seg[] | null = null;
   /** Per segment: settled (skipped or played through) — a settled section
    *  never fires its action again. */
   let segConsumed: boolean[] = [];
@@ -276,6 +290,10 @@
     if (p.audioPanelRows !== undefined) audioPanelRows = p.audioPanelRows;
     if (p.audioActiveKey !== undefined) audioActiveKey = p.audioActiveKey;
     if (p.audioSwitching !== undefined) audioSwitching = p.audioSwitching;
+    // the header probe landed — the overlay now renders per style
+    // (first table = the default track, which the pick panel defaults to)
+    if (p.subStyleTables !== undefined) styleTable = p.subStyleTables[0] ?? null;
+    if (p.subChapters !== undefined && dbSegs !== null) applySegs(); // late probe: the DB already settled
     // The configured preference named a language this file has no track
     // for — say so (one toast per file open; the old behavior was
     // silence, which read as "the setting does nothing")
@@ -353,7 +371,8 @@
       activeSub = -1;
       hlsSub = -1;
       subCues = [];
-      subText = "";
+      subLines = [];
+      styleTable = null; // the new file's probe result is pending
       startedPlaying = false;
       metaStarted = false; // the new file's lookups haven't fired yet
       abortMeta(); // the old file's in-flight lookups die with it
@@ -381,7 +400,7 @@
         activeSub = -1;
         hlsSub = -1;
         subCues = [];
-        subText = "";
+        subLines = [];
         if (s !== "hls") ensureSubtitles();
       pendingAudioPick = null; // a source swap invalidates any pending pick
       },
@@ -458,11 +477,24 @@
    * skipped. A stale answer (the file changed mid-flight) is dropped —
    * the cache (IndexedDB) keeps re-plays free of network.
    */
+  /** The skip-segments the file actually has: the file's OWN chapters
+   *  (intro/recap/credits chapters parsed from the MKV header) win type
+   *  by type over the per-episode database; the database fills the types
+   *  the file has no chapter for. Re-runnable — the probe and the DB
+   *  lookup race, and either may settle after the other. */
+  function applySegs(): void {
+    if (!engine) return;
+    const merged = mergeChapterSegs(chaptersToSegs(engine.subChapters), dbSegs ?? []);
+    segs = merged;
+    segConsumed = merged.map(() => false);
+    engine.setSegments(merged);
+  }
+
   function startSegLookup(): void {
     if (!TMDB_KEY || TMDB_KEY === "PASTE_KEY_HERE") {
-      segs = [];
-      segConsumed = [];
-      return; // no baked-in key — the feature is off (honestly, quietly)
+      dbSegs = [];
+      applySegs();
+      return; // no baked-in key — the DB is off; the file's chapters still apply
     }
     const forId = file.id;
     const name = file.name;
@@ -470,12 +502,15 @@
     // re-playing the same file costs zero network
     lookupSegments(TMDB_KEY, name, metaFetch(), segCache) // the bound fetch carries the file's abort signal
       .then((s) => {
-        if (forId !== file.id || !engine) return;
-        segs = s;
-        segConsumed = s.map(() => false);
-        engine.setSegments(s);
+        if (forId !== file.id) return;
+        dbSegs = s;
+        applySegs();
       })
-      .catch(() => {}); // the lookup degrades to "nothing to skip" itself
+      .catch(() => {
+        if (forId !== file.id) return;
+        dbSegs = [];
+        applySegs(); // the lookup degrades to "nothing to skip" — chapters still apply
+      });
   }
 
   /**
@@ -760,7 +795,7 @@
       selectHlsSub(i);
       activeSub = -1;
       subCues = [];
-      subText = "";
+      subLines = [];
       return;
     }
     activeSub = i;
@@ -801,23 +836,89 @@
     else {
       activeSub = -1;
       subCues = [];
-      subText = "";
+      subLines = [];
     }
   }
 
-  // The overlay text follows the active cue. This MUST be a reactive statement
-  // (not a bare function call): Svelte 4 only tracks values the statement
-  // itself reads, so `updateSubText()` as a statement never re-ran when
-  // currentTime changed and the overlay never synced.
+    // The overlay LINES follow the active cues. This MUST be a reactive
+  // statement (not a bare function call): Svelte 4 only tracks values the
+  // statement itself reads, so a bare `renderOverlay()` call never re-ran
+  // when currentTime changed and the overlay never synced. Every active cue
+  // becomes its own line — a bilingual subtitle ships each line as an
+  // overlapping pair (romaji + translation), so one cue per timestamp would
+  // leave a whole language invisible.
   $: {
-    if (activeSub === -1 || !subCues.length) subText = "";
+    if (activeSub === -1 || !subCues.length) subLines = [];
     else {
-      // Every active cue, stacked: a bilingual subtitle ships each line as an
-      // overlapping pair (romaji + translation), so one cue per timestamp would
-      // leave a whole language invisible.
       const act = cuesAt(subCues, currentTime);
-      subText = act.length ? act.map((c) => c.text).filter(Boolean).join("\n") : "";
+      const el = videoEl as HTMLVideoElement | null;
+      // the video element is the letterbox-free 16:9 stage on the TV — its
+      // CSS box is the coordinate space the PlayRes-scaled values land in
+      const box = { w: el?.clientWidth || 1920, h: el?.clientHeight || 1080 };
+      subLines = act.length
+        ? renderSubtitleLines(act, currentTime, styleTable, box, subScale)
+        : [];
     }
+  }
+
+  /** libass-style solid outline: 8 hard text-shadows, zero blur. Entry
+   *  order matters: the first text-shadow sits closest to the text, so the
+   *  outline entries come first and the offset shadow last (shadow behind
+   *  outline, as libass draws it). */
+  function outlineShadow(px: number, color: string): string {
+    const o = Math.max(1, Math.round(px));
+    const c = (dx: number, dy: number) => `${dx * o}px ${dy * o}px ${color}`;
+    return [
+      c(1, 0),
+      c(-1, 0),
+      c(0, 1),
+      c(0, -1),
+      c(1, 1),
+      c(-1, 1),
+      c(1, -1),
+      c(-1, -1),
+    ].join(", ");
+  }
+
+  /** The per-line inline style: colour/size/stroke are the descriptor's
+   *  (parsed ASS, PlayRes-scaled); vertical position is owned here (the
+   *  anchor cell + the collision offset), horizontal by the sub-al-N
+   *  classes. \pos lines get their exact spot instead. */
+  function lineStyle(l: RenderedLine): string {
+    const p: string[] = [`color:${l.color}`];
+    if (l.opacity < 1) p.push(`opacity:${l.opacity}`);
+    p.push(`font-family:"${l.fontFamily}", "Segoe UI", "Noto Sans", Roboto, Arial, sans-serif`);
+    p.push(`font-size:${l.fontSizePx}px`);
+    if (l.outlinePx > 0.5 || l.shadowPx > 0.5) {
+      const shadows: string[] = [];
+      if (l.outlinePx > 0.5) shadows.push(outlineShadow(l.outlinePx, l.outlineColor));
+      if (l.shadowPx > 0.5)
+        shadows.push(`0 ${Math.max(1, Math.round(l.shadowPx))}px ${l.shadowColor}`);
+      p.push(`text-shadow:${shadows.join(", ")}`);
+    }
+    if (l.pos) {
+      p.push(`left:${l.pos.xPx}px`, `top:${l.pos.yPx}px`, "transform:translate(-50%, -50%)");
+      return p.join("; ");
+    }
+    // Anchor cells (numpad): 7/8/9 top, 4/5/6 middle, 1/2/3 bottom. The
+    // offset pushes a colliding cue away from the anchor (down for
+    // top/middle, up for bottom — the renderer signs it).
+    const col = l.align % 3; // 1 = left, 2 = centre, 0 = right
+    const row = Math.floor((l.align - 1) / 3); // 0 = bottom, 1 = middle, 2 = top
+    if (row === 2) p.push(`top:calc(10% + ${l.yOffsetPx}px)`);
+    else if (row === 1) p.push(`top:calc(50% + ${l.yOffsetPx}px)`);
+    else p.push(`bottom:calc(190px + ${l.yOffsetPx}px)`);
+    if (row === 1) p.push(`transform:${col === 2 ? "translateX(-50%) " : ""}translateY(-50%)`);
+    return p.join("; ");
+  }
+
+  /** A segment's inline style: only what differs from the line (a colour
+   *  override or a fade-in alpha); empty = inherit everything. */
+  function segStyle(s: RenderedSegment): string {
+    const p: string[] = [];
+    if (s.color) p.push(`color:${s.color}`);
+    if (s.opacity < 1) p.push(`opacity:${s.opacity}`);
+    return p.join("; ");
   }
 
   /** Close every pick panel. A made selection dismisses its dialogue
@@ -845,6 +946,7 @@
     if (i < 0 || activeSub === i) {
       activeSub = -1;
       subCues = [];
+      subLines = [];
       platform.toast("Subtitles off");
     } else {
       selectSubTrack(i);
@@ -1298,8 +1400,20 @@
   ></video>
 
 
-  {#if mode === "full" && activeSub >= 0 && source !== "hls" && subText}
-    <div class="subs-cues" class:show={!!subText} style="font-size:{subFontSize}px">{subText}</div>
+  {#if mode === "full" && activeSub >= 0 && source !== "hls" && subLines.length}
+    <div class="subs-cues">
+      {#each subLines as line, li (li)}
+        <div class="subs-line sub-al-{line.align}" style={lineStyle(line)}>
+          {#if line.segments.length}
+            {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
+              <span class:it={seg.italic} class:bd={seg.bold} style={segStyle(seg)}>{seg.text}</span>
+            {/each}
+          {:else}
+            {line.text}
+          {/if}
+        </div>
+      {/each}
+    </div>
   {/if}
 
   {#if mode === "full"}
@@ -1684,26 +1798,50 @@
      rendered invisible on the TV). Keep them distinct. */
   .subs-cues {
     position: absolute;
-    left: 50%;
-    bottom: 190px;
-    transform: translateX(-50%);
+    /* no `inset` shorthand — Chrome 87+; the webOS webview is a 79 variant */
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 15;
-    max-width: 78%;
-    padding: 6px 18px;
-    font-size: 30px;
-    line-height: 1.4;
-    text-align: center;
-    color: var(--text);
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.6);
-    white-space: pre-wrap;
     pointer-events: none;
   }
-  .subs-cues.show {
-    opacity: 1;
+  /* One line per active cue. The alignment classes own left/top/transform
+     (the ASS numpad: 1-3 bottom, 4-6 middle, 7-9 top; column 1 left, 5
+     center, 9 right — the 190px bottom offset keeps the old chrome-safe
+     clearance); the inline style owns the per-cue parts (colour, size,
+     stroke, \pos). */
+  .subs-line {
+    position: absolute;
+    max-width: 80%;
+    line-height: 1.4;
+    text-align: center;
+    white-space: pre-wrap;
   }
-  .subs-cues:not(.show) {
-    opacity: 0;
+  .subs-line .it {
+    font-style: italic;
   }
+  .subs-line .bd {
+    font-weight: bold;
+  }
+  .sub-al-1,
+  .sub-al-4,
+  .sub-al-7 {
+    left: 8%;
+  }
+  .sub-al-2,
+  .sub-al-5,
+  .sub-al-8 {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .sub-al-3,
+  .sub-al-6,
+  .sub-al-9 {
+    right: 8%;
+  }
+  /* Vertical placement (top/middle/bottom + collision offsets) is inline —
+     see lineStyle; these classes own the horizontal cell only. */
   /* One bottom-anchored surface, three rows (the mockup is the reference).
      All text ≥24px (TV scale); icons are SVG — no glyph spans. */
   .controls {

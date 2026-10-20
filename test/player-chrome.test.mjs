@@ -678,9 +678,10 @@ test("the cue overlay and the subs menu don't share a class (the menu must stay 
 // with identical timestamps (romaji + translation). cueAt returned a
 // single cue, so one language of every pair was invisible — and the raw
 // ASS tags put.io left behind ("{\\an8}…") printed on screen. The overlay
-// must take EVERY active cue and stack the distinct lines.
+// must take EVERY active cue — each one is its own positioned line (the
+// bilingual romaji+translation pair is two lines, as in the author's player).
 
-test("the overlay stacks every active cue (bilingual pairs show both lines, ASS leftovers stripped)", () => {
+test("the overlay renders every active cue as its own line (ASS leftovers stripped)", () => {
   assert.ok(
     /cuesAt\(/.test(player),
     "the overlay must query every active cue (cuesAt), not a single one"
@@ -690,8 +691,12 @@ test("the overlay stacks every active cue (bilingual pairs show both lines, ASS 
     "no bare cueAt may remain on the overlay path"
   );
   assert.ok(
-    /join\(["']\\n["']\)/.test(player),
-    "stacked lines join with a real newline (the overlay is pre-wrap)"
+    /renderSubtitleLines\(\s*act\s*,/.test(player),
+    "every active cue is handed to the line renderer (not just the first)"
+  );
+  assert.ok(
+    !/act\.map\(\(c\) => c\.text\)/.test(player),
+    "the old single-blob join is gone (each cue is its own positioned line)"
   );
 });
 

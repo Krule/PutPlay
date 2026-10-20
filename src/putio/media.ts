@@ -14,6 +14,8 @@ import {
 import { parseHlsAudioRenditions, type HlsAudioRendition } from "./hls-manifest";
 import { freshSkip, type Seg } from "./segments";
 import { autoResumeTarget } from "./resume";
+import { probeHeader, type Chapter } from "./probe";
+import type { AssStyleTable } from "./substyle";
 import Hls from "hls.js";
 
 /** The segment lookup is async: when it lands AFTER the metadata, the
@@ -81,6 +83,12 @@ export interface MediaState {
   audioActiveKey: string | null;
   /** HLS only: WebVTT renditions surfaced on the video's textTracks (MKV embedded subs). */
   subtitleTracks: SubtitleTrackInfo[];
+  /** Embedded ASS style tables from the ORIGINAL stream's MKV header
+   *  (bounded probe, best-effort). The subtitle overlay renders per style
+   *  (colour/outline/position); empty = the plain unstyled overlay. */
+  subStyleTables?: AssStyleTable[];
+  /** Chapters from the same header probe (start/end seconds, title). */
+  subChapters?: Chapter[];
   live: boolean;
 }
 
@@ -92,6 +100,10 @@ type HlsLike = InstanceType<typeof Hls>;
  */
 export class MediaEngine {
   video: HTMLVideoElement;
+  /** Embedded ASS style tables (MKV header probe; [] = none/failed). */
+  subStyleTables: AssStyleTable[] = [];
+  /** MKV chapters from the header probe (start/end seconds, title). */
+  subChapters: Chapter[] = [];
   source: SourceKind = "original";
   private file: { id: number; is_mp4_available?: boolean; start_from?: number };
   private auth: Auth;
@@ -186,6 +198,7 @@ export class MediaEngine {
     this.metaSettled = false;
     this.prefDefer = false;
     void this.fetchMediaInfo();
+    void this.fetchSubtitleHeader();
   }
 
   private v = (): WebOSHTMLVideoElement => this.video as WebOSHTMLVideoElement;
@@ -437,6 +450,27 @@ export class MediaEngine {
       this.syncTracks();
     } catch {
       /* non-fatal: no "via put.io stream" rows */
+    }
+  }
+
+  /** Best-effort bounded probe of the ORIGINAL stream's MKV header:
+   *  the embedded ASS style tables (and chapters) let the subtitle overlay
+   *  render per style (colour/outline/position) instead of a flat blob.
+   *  Non-fatal: on failure the overlay degrades to the plain render. */
+  private async fetchSubtitleHeader(): Promise<void> {
+    try {
+      const url = streamURL(this.auth, this.file.id);
+      const result = await probeHeader(async (start, end) => {
+        const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+        if (!res.ok) throw new Error(`range ${res.status}`);
+        return new Uint8Array(await res.arrayBuffer());
+      });
+      if (this.cleaning) return;
+      this.subStyleTables = result.styleTables;
+      this.subChapters = result.chapters;
+      this.onState({ subStyleTables: this.subStyleTables, subChapters: this.subChapters });
+    } catch {
+      /* non-fatal: the overlay stays plain */
     }
   }
 

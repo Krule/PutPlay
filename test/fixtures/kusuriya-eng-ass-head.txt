@@ -1,0 +1,24 @@
+[Script Info]
+Title: [Erai-raws]
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: 640
+PlayResY: 360
+LayoutResX: 640
+LayoutResY: 360
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,18,0
+Style: top,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,8,10,10,18,0
+Style: italics,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,-1,0,0,100,100,0,0,1,2,1,2,10,10,18,0
+Style: italicstop,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,-1,0,0,100,100,0,0,1,2,1,8,10,10,18,0
+Style: overlaptop,Trebuchet MS,24,&H007FD3F2,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,8,10,10,18,0
+Style: Ep_Title,Times New Roman,20,&H00FFFFFF,&H000000FF,&HD2000000,&HB4000000,0,0,0,0,100,100,0,0,1,1,1,3,18,42,56,0
+Style: Next_Time,Times New Roman,22,&H00FFFFFF,&H000000FF,&HD2000000,&HC8000000,0,0,0,0,100,100,0,0,1,1,1,7,36,18,43,0
+Style: Next_Ep_Title,Times New Roman,20,&H00FFFFFF,&H000000FF,&HBE000000,&HBE000000,0,0,0,0,100,100,0,0,1,1,1,3,18,41,51,0
+Style: Title,Times New Roman,22,&H00FFFFFF,&H000000FF,&H001F38B6,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,8,18,18,18,0
+Style: Fiction_Disclaimer,Arial,10,&H00FFFFFF,&H000000FF,&H90000000,&H9C000000,0,0,0,0,100,100,0,0,1,1,1,1,143,18,49,0
+Style: sign_25092_237_Plants_Vol__Two,Times New Roman,8,&H003C4140,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,8,18,18,164,0
+Style: sign_20473_197_White_Lady,Times New Roman,20,&H00191B1B,&H000000FF,&H0045253D,&H00000000,-1,0,0,0,100,100,0,31.35,1,0,0,8,236,289,100,0

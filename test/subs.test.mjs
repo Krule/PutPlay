@@ -201,10 +201,10 @@ test("loadSubtitle: an ASS file (any declared format) parses to cues and ships n
 
 /* ---------------- ASS leftovers inside WEBVTT (put.io's converted files) ---------------- */
 
-test("vttToCues: a leftover ASS override block ({\\an8} …) in cue text is stripped", () => {
+test("vttToCues: a leading ASS override block ({\\an8} …) is lifted to align and stripped from the text", () => {
   const vtt = ["WEBVTT", "", "2", "00:00:11.680 --> 00:00:14.970", "{\\an8}kakero todoku made", ""].join("\n");
   const cues = vttToCues(vtt);
-  assert.deepEqual(cues, [{ start: 11.68, end: 14.97, text: "kakero todoku made" }]);
+  assert.deepEqual(cues, [{ start: 11.68, end: 14.97, text: "kakero todoku made", align: 8 }]);
 });
 
 test("vttToCues: a plain brace span WITHOUT a backslash is literal text and survives", () => {

@@ -6,6 +6,19 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Subtitles now render with the styling the file itself specifies: per-line
+  colour, solid outline, position (top/middle/bottom, or the author's exact
+  placement), size, and italics/bold — instead of a single flat white line.
+  The style data comes from the file's own header via a small bounded fetch
+  (no extra video download), so it works on the Original and put.io MP4
+  sources.
+- Intro, recap and credits chapters that the file itself carries now feed
+  the skip marks on the progress bar and the "Skip intro/credits" button,
+  and they take precedence over the per-episode database for the sections
+  they cover — the database still fills any section the file has no
+  chapter for.
+
 ## [1.2.1] - 2026-10-19
 
 ### Added

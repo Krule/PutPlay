@@ -2,6 +2,8 @@ export interface SubtitleCue {
   start: number;
   end: number;
   text: string;
+  /** explicit alignment (1-9) lifted from a leading {\anN} tag (put.io SRT) */
+  align?: number;
 }
 
 /**
@@ -34,18 +36,23 @@ export function vttToCues(text: string): SubtitleCue[] {
     const s = parseTime(parts[0]);
     const e = parseTime(parts[1]);
     if (s < 0 || e <= s) continue;
-    const body = lines
+    const bodyRaw = lines
       .slice(ti + 1)
       .join("\n")
-      .replace(/<[^>]+>/g, "")
-      // put.io's ASS→VTT conversion leaves raw override blocks behind
-      // ("{\an8}line"); strip the ones that carry a backslash — a plain
-      // "{note}" without one is literal text and must survive.
+      .replace(/<[^>]+>/g, "");
+    // put.io's ASS→SRT conversion keeps exactly one tag: a leading {\anN}.
+    // Lift it — it is the only positioning info that survives upstream of us.
+    const anMatch = /^\s*\{\s*\\an(\d)\s*\}/.exec(bodyRaw);
+    const body = bodyRaw
+      // strip the override blocks that carry a backslash — a plain "{note}"
+      // without one is literal text and must survive.
       .replace(/\{[^{}]*\\[^{}]*\}/g, "")
       .replace(/\\N/g, "\n")
       .trim();
     if (!body) continue;
-    cues.push({ start: s, end: e, text: body });
+    const cue: SubtitleCue = { start: s, end: e, text: body };
+    if (anMatch) cue.align = parseInt(anMatch[1], 10);
+    cues.push(cue);
   }
   cues.sort((a, b) => a.start - b.start);
   return cues;
