@@ -37,8 +37,8 @@ export const DEFAULT_CONFIG: ConfigState & { subScaleMin: number; subScaleMax: n
   subScale: 0.8,
   playNext: true,
   skipSegments: true,
-  subScaleMin: 0.8,
-  subScaleMax: 2,
+  subScaleMin: 0.65,
+  subScaleMax: 1.35,
 };
 
 /**
@@ -53,10 +53,13 @@ export const SUB_SCALE_OPTIONS: { v: number; label: string }[] = [
   // (PlayRes-scaled), which made the old 1.0 default "huge" on 1080p files.
   // The previous "Small" step is now the out-of-the-box size — and is
   // labelled Default, since it is the default.
+  // m01502: a real Small is added one step below (0.65 ≈ 0.8 / 1.25, the
+  // ladder's own ratio) and the XXL is dropped — nothing bigger than XL
+  // was ever wanted.
+  { v: 0.65, label: "Small" },
   { v: 0.8, label: "Default" },
   { v: 1, label: "Large" },
   { v: 1.35, label: "XL" },
-  { v: 1.8, label: "XXL" },
 ];
 
 const SOURCE_KINDS = ["original", "mp4", "hls"] as const;

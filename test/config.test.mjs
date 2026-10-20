@@ -59,7 +59,7 @@ test("normalizeConfig: languages are trimmed; garbage is kept as-given (display 
 test("normalizeConfig: subScale is clamped to the supported range", () => {
   assert.equal(normalizeConfig({ subScale: 0 }).subScale, DEFAULT_CONFIG.subScaleMin);
   assert.equal(normalizeConfig({ subScale: 9 }).subScale, DEFAULT_CONFIG.subScaleMax);
-  assert.equal(normalizeConfig({ subScale: 1.6 }).subScale, 1.6);
+  assert.equal(normalizeConfig({ subScale: 1.2 }).subScale, 1.2);
   assert.equal(normalizeConfig({ subScale: "weird" }).subScale, DEFAULT_CONFIG.subScale);
 });
 

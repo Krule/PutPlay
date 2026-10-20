@@ -21,6 +21,20 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 - When the file itself carries chapters, the player's info panel now lists
   them — time and title per chapter — and selecting one jumps straight to
   it. A file without chapters simply shows no such list.
+- The progress bar now marks each chapter start the file carries with a
+  quiet tick, and the time bubble — pointer preview or D-pad focus — shows
+  the chapter's title when it is near a tick (and the tick brightens), so
+  you can see what's ahead before you jump to it.
+
+### Changed
+- The subtitle size ladder is now Small / Default / Large / XL: a real
+  Small size was added, and the XXL size was dropped (nothing bigger than
+  XL was needed).
+
+### Fixed
+- A file-chaptered "Intro" or "Recap" without an end boundary no longer
+  offers a skip to the end of the whole episode; only end credits may
+  run to the end of the media.
 
 ## [1.2.1] - 2026-10-19
 

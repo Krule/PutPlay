@@ -33,9 +33,12 @@ export function chapterTitleToSegType(title: string): SegType | null {
 
 /**
  * The intro/recap/credits chapters, as skip segments (sorted by start).
- * A chapter with no end (end 0 in the probe result) runs to the end of
- * the media — that is how end credits are chaptered. Garbage (negative
- * start, end not after start) is dropped, never guessed.
+ * Garbage (negative start, end not after start) is dropped, never guessed.
+ * A chapter with no end (end 0 in the probe result) only means "runs to
+ * the end of the media" for credits — that is how end credits are
+ * chaptered. For intro/recap a missing end would skip to the end of the
+ * WHOLE media, so those are dropped (the Scrubs 1616433948 shape: auto
+ * "Chapter NN" entries carry no ends at all).
  */
 export function chaptersToSegs(chapters: Chapter[] | null | undefined): Seg[] {
   const segs: Seg[] = [];
@@ -45,7 +48,10 @@ export function chaptersToSegs(chapters: Chapter[] | null | undefined): Seg[] {
     const start = ch.start;
     let end = ch.end;
     if (start < 0 || (end > 0 && end <= start)) continue;
-    if (end <= 0) end = null; // no end terminator → to the end of the media
+    if (end <= 0) {
+      if (type !== "credits") continue; // no known skip target
+      end = null; // credits run to the end of the media
+    }
     segs.push({ type, start, end });
   }
   return segs.sort((a, b) => a.start - b.start);

@@ -79,6 +79,16 @@ test("a chapter with no end (end 0) runs to the end of the media", () => {
   assert.deepEqual(segs, [{ type: "credits", start: 1350, end: null }]);
 });
 
+test("typed chapters with a MISSING end are dropped, except credits (a skip needs a known target; credits run to the end) — Scrubs 1616433948 shape", () => {
+  const segs = chaptersToSegs([
+    { start: 0, end: 0, title: "Intro" },
+    { start: 300, end: 0, title: "Recap" },
+    { start: 600, end: 900, title: "Episode" },
+    { start: 900, end: 0, title: "Credits" },
+  ]);
+  assert.deepEqual(segs, [{ type: "credits", start: 900, end: null }]);
+});
+
 test("malformed chapters (end before start, negative) are dropped", () => {
   const segs = chaptersToSegs([
     { start: 100, end: 50, title: "Intro" },

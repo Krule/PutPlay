@@ -34,18 +34,21 @@ function bodyOf(src, name) {
   return src.slice(start, end);
 }
 
-test("SUB_SCALE_OPTIONS: the shared 4-step ladder (Default/Large/XL/XXL)", () => {
+test("SUB_SCALE_OPTIONS: the shared 4-step ladder (Small/Default/Large/XL)", () => {
   assert.ok(Array.isArray(SUB_SCALE_OPTIONS), "config.ts must export SUB_SCALE_OPTIONS");
   assert.deepEqual(
     SUB_SCALE_OPTIONS.map((o) => o.v),
-    [0.8, 1, 1.35, 1.8]
+    [0.65, 0.8, 1, 1.35]
   );
   // m00887: the ASS-aware renderer renders at the file's author size, which
   // made the old 1.0 default "huge" on 1080p files — the previous "Small"
   // step (0.8) is now the out-of-the-box size and is labelled Default.
+  // m01502: the ladder gains a real Small (0.65, one step below Default at
+  // the ladder's ~1.25 ratio) and drops the XXL — the user does not need
+  // anything bigger than XL.
   assert.deepEqual(
     SUB_SCALE_OPTIONS.map((o) => o.label),
-    ["Default", "Large", "XL", "XXL"]
+    ["Small", "Default", "Large", "XL"]
   );
   assert.ok(
     SUB_SCALE_OPTIONS.every((o) => typeof o.label === "string" && o.label.length > 0),

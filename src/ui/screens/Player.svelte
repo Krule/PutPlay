@@ -46,6 +46,7 @@
   import { parseEpisode, parseMovieName } from "../../putio/titles";
   import { scrubSeek, scrubThumbPct, segSpans, barTrackFraction, trackLeftCss } from "../../putio/scrub";
   import { buildInfoPanel, type PanelAction } from "../../putio/info-tab";
+  import { chapterTicks, chapterAt } from "../../putio/chapter-ticks";
   import { upNext } from "../../putio/upnext";
   import {
     lookupEpisodeInfo,
@@ -1233,6 +1234,15 @@
   // (the geometry is shared: trackLeftCss).
   $: hoverLeft = trackLeftCss(scrubHover ? scrubHover.pct : 0);
 
+  // Chapter markings (feature C): one hairline tick per chapter start on
+  // the track, and the chapter the BUBBLE position belongs to — the bubble
+  // already sits at the pointer preview (hover) or, when D-pad-focused, at
+  // the playhead; when that position is near a tick, the bubble also shows
+  // the title and the tick goes hot.
+  $: chapterTickList = chapterTicks(fileChapters, duration);
+  $: bubbleTime = scrubHover ? scrubHover.time : currentTime;
+  $: bubbleChapter = chapterAt(fileChapters, bubbleTime, duration);
+
   function onBarMove(e: MouseEvent) {
     if (!barEl || !duration) return; // live: no track, nothing to preview
     const r = barEl.getBoundingClientRect();
@@ -1499,9 +1509,21 @@
           <div class="bar-seg" style="left: {span.left}%; width: {span.width}%"></div>
           {/each}
           <div class="bar-fill" style="width: {barPct}%"></div>
+          {#each chapterTickList as tick, ti (ti)}
+          <div
+            class="bar-chapter"
+            class:hot={bubbleChapter !== null && bubbleChapter.index === ti}
+            style="left: {tick.pct}%"
+          ></div>
+          {/each}
           <div class="thumb" style="left: {barPct}%"></div>
         </div>
-        <div class="bubble" style="left: {scrubHover ? hoverLeft : bubbleLeft}">{fmtTime(scrubHover ? scrubHover.time : currentTime)}</div>
+        <div class="bubble" style="left: {scrubHover ? hoverLeft : bubbleLeft}">
+          <span class="bubble-time">{fmtTime(scrubHover ? scrubHover.time : currentTime)}</span>
+          {#if bubbleChapter}
+          <span class="bubble-chap">{bubbleChapter.title}</span>
+          {/if}
+        </div>
       </div>
       <span class="time">{live ? "LIVE" : fmtTime(duration)}</span>
     </div>
@@ -2064,6 +2086,22 @@
     border-radius: 3px;
     background: rgba(245, 184, 79, 0.30);
   }
+  .bar-chapter {
+    /* the file's own chapter starts: quiet hairlines on the track — a
+       marking, not a claim. Sits above the fill so played regions keep
+       their marks; 3 px past the track on both sides so it reads as a
+       tick, not a fatter segment. The hot variant is the tick the bubble
+       is currently labelling */
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.55);
+  }
+  .bar-chapter.hot {
+    background: rgba(255, 255, 255, 0.95);
+  }
   .bar-fill {
     position: absolute;
     left: 0;
@@ -2098,6 +2136,19 @@
     box-shadow: var(--elev-md);
     display: none;
     pointer-events: none;
+  }
+  /* the chapter title line inside the bubble — the marking's identity when
+     the bubble position is near its tick; truncated, never wrapping */
+  .bubble-chap {
+    display: block;
+    margin-top: 2px;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--text-2);
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /* the FOCUSED bar: the outline hugs the 80px hit-area edge (2px inset
      shadow) — the line ends sit 20px away from it, on both sides */
