@@ -33,6 +33,8 @@ export interface InfoPanelInput {
   details?: PanelDetails | null;
   /** Episode only; ignored for movies (defensive). */
   upNext?: UpNext | null;
+  /** File chapters from the header probe; [] / null = no section at all. */
+  chapters?: { start: number; title: string }[] | null;
 }
 
 export interface PanelAction {
@@ -40,11 +42,22 @@ export interface PanelAction {
   label: string;
 }
 
+export interface PanelChapter {
+  /** "1:30" / "1:00:00" — pre-formatted via formatChapterTime. */
+  time: string;
+  /** "" when the file's chapter is unnamed — the row shows the time only. */
+  title: string;
+  /** Seek target (seconds). */
+  start: number;
+}
+
 export interface InfoPanel {
   /** The centerpiece; null = the screen omits it. */
   synopsis: string | null;
   /** Details-row parts in display order; [] = omit the whole row. */
   details: string[];
+  /** File chapters; [] = the file has none (the screen omits the section). */
+  chapters: PanelChapter[];
   /** Always starts with the restart action. */
   actions: PanelAction[];
 }
@@ -55,6 +68,19 @@ const RESTART_ACTION: PanelAction = { id: "restart", label: "Play from beginning
 function panelSynopsis(synopsis: string | null | undefined): string | null {
   const trimmed = (synopsis ?? "").trim();
   return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Chapter-row clock: "m:ss" under an hour, "h:mm:ss" at an hour or more.
+ * The hour (and the minutes that follow it) are the only padded parts —
+ * "1:30" for 90 s, "1:00:00" for 3600 s.
+ */
+export function formatChapterTime(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
 /**
@@ -88,11 +114,26 @@ function panelActions(kind: InfoPanelInput["kind"], upNext: UpNext | null | unde
   return actions;
 }
 
+/**
+ * File chapters → focusable rows. Absent / empty list = [] (the screen
+ * omits the section — honest fallback, never a placeholder row). A blank
+ * title keeps its chapter (time-only row), since the chapter itself is real.
+ */
+function panelChapters(list: { start: number; title: string }[] | null | undefined): PanelChapter[] {
+  if (!list || list.length === 0) return [];
+  return list.map((c) => ({
+    time: formatChapterTime(c.start),
+    title: (c.title ?? "").trim(),
+    start: c.start,
+  }));
+}
+
 export function buildInfoPanel(input: InfoPanelInput): InfoPanel {
-  const { kind, synopsis, details, upNext } = input;
+  const { kind, synopsis, details, upNext, chapters } = input;
   return {
     synopsis: panelSynopsis(synopsis),
     details: detailsRow(kind, details),
+    chapters: panelChapters(chapters),
     actions: panelActions(kind, upNext),
   };
 }

@@ -18,6 +18,9 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   and they take precedence over the per-episode database for the sections
   they cover — the database still fills any section the file has no
   chapter for.
+- When the file itself carries chapters, the player's info panel now lists
+  them — time and title per chapter — and selecting one jumps straight to
+  it. A file without chapters simply shows no such list.
 
 ## [1.2.1] - 2026-10-19
 

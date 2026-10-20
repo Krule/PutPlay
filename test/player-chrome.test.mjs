@@ -372,10 +372,17 @@ test("the info panel: thumb, clamped synopsis, details row, actions", () => {
 });
 
 test("info actions: Play from beginning = seek 0; Up next = advance", () => {
+  // restart delegates to the shared seek path with an explicit 0 (L1 — no
+  // fresh-target re-derivation)
   const body = player.slice(player.indexOf("function playFromBeginning"));
   assert.ok(
-    body.length > 0 && /engine\??\.seek\(0\)/.test(body.slice(0, 400)),
+    body.length > 0 && /seekFrom\(0\)/.test(body.slice(0, 120)),
     "Play from beginning is a SEEK TO 0 (L1) — no fresh-target re-derivation"
+  );
+  const shared = player.slice(player.indexOf("function seekFrom"));
+  assert.ok(
+    shared.length > 0 && /engine\??\.seek\(start\)/.test(shared.slice(0, 240)),
+    "the shared path performs the actual seek"
   );
   const up = player.slice(player.indexOf("function playUpNext"));
   assert.ok(

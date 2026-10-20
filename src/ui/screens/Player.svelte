@@ -150,6 +150,7 @@
         }
       : null,
     upNext: upNext(session?.queue, session?.index ?? 0),
+    chapters: fileChapters,
   });
 
   let a: any = get(auth);
@@ -217,6 +218,9 @@
   /** The embedded ASS style table the engine's header probe found first
    *  (the default track); null = plain overlay (no MKV or probe failed). */
   let styleTable: AssStyleTable | null = null;
+  // File chapters (probe) — null = the file has none, and the info panel
+  // omits the section entirely (honest fallback, never a placeholder row)
+  let fileChapters: { start: number; title: string }[] | null = null;
 
   let sourceOptions = [
     { kind: "original" as SourceKind, label: "Original", available: true, hint: "" },
@@ -293,7 +297,10 @@
     // the header probe landed — the overlay now renders per style
     // (first table = the default track, which the pick panel defaults to)
     if (p.subStyleTables !== undefined) styleTable = p.subStyleTables[0] ?? null;
-    if (p.subChapters !== undefined && dbSegs !== null) applySegs(); // late probe: the DB already settled
+    if (p.subChapters !== undefined) {
+      fileChapters = p.subChapters.length > 0 ? p.subChapters : null;
+      if (dbSegs !== null) applySegs(); // late probe: the DB already settled
+    }
     // The configured preference named a language this file has no track
     // for — say so (one toast per file open; the old behavior was
     // silence, which read as "the setting does nothing")
@@ -573,11 +580,22 @@
   /** Info actions: restart is a SEEK TO 0 (L1 — no fresh-target
    *  re-derivation); up-next plays the queue's next file (the same path
    *  as auto-next). */
-  function playFromBeginning(): void {
-    engine?.seek(0);
+  // The shared "jump to a position from the info panel" path: seek, resume
+  // if paused, close the panel, wake the screen (restart = position 0)
+  function seekFrom(start: number): void {
+    engine?.seek(start);
     if (paused) engine?.togglePlayPause();
     closeInfo();
     wake();
+  }
+
+  function playFromBeginning(): void {
+    seekFrom(0);
+  }
+
+  // A chapter row selects its position in the file
+  function seekToChapter(start: number): void {
+    seekFrom(start);
   }
 
   function playUpNext(): void {
@@ -1579,6 +1597,20 @@
           {/each}
         </div>
       {/if}
+      {#if infoPanel.chapters.length}
+        <div class="info-chapters">
+          {#each infoPanel.chapters as ch, ci (ch.start)}
+            <button
+              class="ichap"
+              data-focus
+              on:click={() => seekToChapter(ch.start)}
+            >
+              <span class="ichap-t">{ch.time}</span>
+              {#if ch.title}<span class="ichap-n">{ch.title}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
       <div class="info-actions">
         {#each infoPanel.actions as act, ai (act.id)}
           <button class="abtn" data-focus on:click={() => runInfoAction(act.id)}>
@@ -2186,6 +2218,37 @@
   .sep {
     padding: 0 12px;
     color: rgba(255, 255, 255, 0.35);
+  }
+  .info-chapters {
+    display: flex;
+    flex-direction: column;
+    margin-top: 22px;
+  }
+  .ichap {
+    display: flex;
+    align-items: center;
+    height: 52px;
+    padding: 0 16px;
+    border-radius: var(--r-md);
+    border: 0;
+    background: transparent;
+    font-size: 24px;
+    color: var(--text-2);
+  }
+  .ichap-t {
+    width: 88px;
+    flex: none;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .ichap-n {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :global(.ichap[data-state="active"]) {
+    background: var(--surface-2);
+    box-shadow: var(--focus-shadow);
   }
   .info-actions {
     display: flex;

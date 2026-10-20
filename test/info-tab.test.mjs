@@ -41,6 +41,7 @@ test("episode with full data → synopsis, 3-part details row, restart + up next
   assert.deepEqual(panel, {
     synopsis: "The patient list keeps growing.",
     details: ["8.2", "Drama · Medical", "Aired May 12, 2021"],
+    chapters: [],
     actions: [
       { id: "restart", label: "Play from beginning" },
       { id: "upnext", label: "Up next · S3 E2 — The Long Way" },
@@ -82,6 +83,7 @@ test("movie with full data → rating · genre · runtime, no air date, restart 
   assert.deepEqual(panel, {
     synopsis: "A heist gone wrong.",
     details: ["7.4", "Thriller", "2h 04m"],
+    chapters: [],
     actions: [{ id: "restart", label: "Play from beginning" }],
   });
 });
