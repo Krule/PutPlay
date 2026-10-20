@@ -36,6 +36,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   XL was needed).
 
 ### Fixed
+- The player's controls no longer stay pinned on screen when the pointer
+  rests over them (a Magic Remote set down on a table): they now hide 4
+  seconds after the last pointer or remote activity, regardless of where
+  the pointer is, and playback starts with the chrome hidden (Fixes #2).
 - A file-chaptered "Intro" or "Recap" without an end boundary no longer
   offers a skip to the end of the whole episode; only end credits may
   run to the end of the media.
