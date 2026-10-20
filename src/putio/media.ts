@@ -43,6 +43,9 @@ export interface SubtitleTrackInfo {
   id: number;
   label: string;
   lang?: string;
+  /** HLS only: the WebVTT rendition's URL — the overlay fetches and parses
+   *  it itself (m00906: one rendering pipeline for every source). */
+  url?: string;
 }
 
 export interface MediaState {
@@ -362,6 +365,13 @@ export class MediaEngine {
         liveSyncDuration: 10,
       });
       this.hls = hls as HlsLike;
+      // The overlay owns subtitle rendering (m00906): keep hls.js's native
+      // cue display OFF — with subtitleDisplay off, hls.js's track switcher
+      // only ever sets textTracks to 'hidden', never 'showing' (the native
+      // path rendered a different size/position and printed the {an8}
+      // artifact literally). Pinned hls.js 1.0.11 exposes this as an instance
+      // property (Hls.subtitleDisplay), not a config key.
+      hls.subtitleDisplay = false;
       hls.loadSource(url);
       hls.attachMedia(v as HTMLMediaElement);
       (hls as any).on(Hls.Events.MANIFEST_PARSED, () => {
@@ -370,6 +380,11 @@ export class MediaEngine {
         // entering HLS for a specific track) must not reset the audio to
         // the manifest's default rendition
         this.preselectHlsAudio();
+        this.syncHlsTracks();
+      });
+      // The subtitle rendition list is published AFTER the manifest — re-sync
+      // when it lands (and whenever hls.js rebuilds it).
+      (hls as any).on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
         this.syncHlsTracks();
       });
       // hls.js fires MANIFEST_PARSED BEFORE it loads the alternate audio
@@ -588,17 +603,16 @@ export class MediaEngine {
         lang: t.lang,
       })
     );
-    // MKV-embedded / external WebVTT renditions surfaced on the video element
-    const tt = (this.v() as any).textTracks;
-    const subTracks: SubtitleTrackInfo[] = [];
-    if (tt) {
-      for (let i = 0; i < tt.length; i++) {
-        const t: any = tt[i];
-        if (t && (t.kind === "subtitles" || t.kind === "captions")) {
-          subTracks.push({ id: i, label: t.label || (t.language ? t.language.toUpperCase() : null) || `Subs ${i + 1}`, lang: t.language });
-        }
-      }
-    }
+    // The rendition list comes from hls.js, not the video's textTracks: the
+    // tracks carry the label/lang AND the VTT URL the overlay fetches
+    // (m00906); with subtitleDisplay off the textTracks stay empty anyway.
+    const renditions: any[] = hls.subtitleTracks || [];
+    const subTracks: SubtitleTrackInfo[] = renditions.map((t: any, i: number) => ({
+      id: i,
+      label: t.name || `Subs ${i + 1}`,
+      lang: t.lang || undefined,
+      url: t.url || undefined,
+    }));
     this.onState({ audioTracks: tracks, audioTrack: hls.audioTrack ?? 0, subtitleTracks: subTracks });
     this.publishRows("hls", hls.audioTrack ?? 0);
   }

@@ -16,6 +16,7 @@
   import { fmtTime } from "../../putio/api";
   import {
     loadSubtitle,
+    loadHlsSubtitles,
     cuesAt,
     subtitleSourceLabel,
     orderSubtitleSources,
@@ -807,14 +808,22 @@
     subsLoading = false;
   }
 
-  function selectSubTrack(i: number) {
+  async function selectSubTrack(i: number) {
     if (source === "hls") {
-      // MKV-embedded WebVTT renditions live on the video element's textTracks;
-      // hls.js renders them natively (that's why HLS subs already worked).
-      selectHlsSub(i);
+      // The same overlay pipeline as every source (m00906): fetch the
+      // rendition (hls.js 1.0.11 publishes the resolved playlist URL per
+      // track; the loader fetches its VTT segments) and let the file's own
+      // style table style it — no native textTracks.
+      const info = hlsSubTracks[i];
+      if (!info || !info.url) {
+        hlsSub = i;
+        platform.toast("Couldn't load subtitles");
+        return;
+      }
+      hlsSub = i;
       activeSub = -1;
-      subCues = [];
-      subLines = [];
+      const src = await loadHlsSubtitles(info.url);
+      subCues = src?.cues || [];
       return;
     }
     activeSub = i;
@@ -824,9 +833,8 @@
 
   /** Subtitle size, picked directly on the player (issue: "an option to
    *  select subtitle size directly on the player"). Persisted like every
-   *  other setting; both rendering paths react to the config — the DOM
-   *  overlay via subFontSize, the HLS ::cue via the --cue-size variable on
-   *  the video element. */
+   *  other setting; every source renders through the DOM overlay, so one
+   *  reactive (subFontSize) covers all of them (m00906). */
   function pickSubScale(v: number) {
     config.update((c) => ({ ...c, subScale: v }));
     saveConfig().catch(() => undefined);
@@ -836,27 +844,13 @@
     );
   }
 
-  function selectHlsSub(i: number) {
-    const t = (engine?.video as any);
-    const tt = t && t.textTracks;
-    if (tt) {
-      for (let k = 0; k < tt.length; k++) {
-        try {
-          tt[k].mode = k === i ? "showing" : "disabled";
-        } catch {}
-      }
-    }
-    hlsSub = i;
-  }
-
-  // turn whichever subtitle family is currently shown off
+  // turn whichever subtitle family is currently shown off — both families
+  // share the overlay state (subCues holds whichever is showing)
   function disableActiveSubs() {
-    if (source === "hls") selectHlsSub(-1);
-    else {
-      activeSub = -1;
-      subCues = [];
-      subLines = [];
-    }
+    activeSub = -1;
+    hlsSub = -1;
+    subCues = [];
+    subLines = [];
   }
 
     // The overlay LINES follow the active cues. This MUST be a reactive
@@ -867,7 +861,7 @@
   // overlapping pair (romaji + translation), so one cue per timestamp would
   // leave a whole language invisible.
   $: {
-    if (activeSub === -1 || !subCues.length) subLines = [];
+    if (activeSub === -1 && hlsSub === -1) subLines = [];
     else {
       const act = cuesAt(subCues, currentTime);
       const el = videoEl as HTMLVideoElement | null;
@@ -954,10 +948,10 @@
     closeOverlays(); // a selection was made — close the panel (issue #2)
     if (source === "hls") {
       if (i < 0 || hlsSub === i) {
-        selectHlsSub(-1);
+        disableActiveSubs();
         platform.toast("Subtitles off");
       } else {
-        selectHlsSub(i);
+        void selectSubTrack(i);
         platform.toast(`Subtitles: ${hlsSubTracks[i]?.label || "track " + i}`);
       }
       return;
@@ -1420,7 +1414,6 @@
     class:active={engine}
     playsinline
     preload="auto"
-    style="--cue-size: {subFontSize}px"
     on:click={() => {
       engine?.togglePlayPause();
       wake();
@@ -1428,7 +1421,7 @@
   ></video>
 
 
-  {#if mode === "full" && activeSub >= 0 && source !== "hls" && subLines.length}
+  {#if mode === "full" && subLines.length}
     <div class="subs-cues">
       {#each subLines as line, li (li)}
         <div class="subs-line sub-al-{line.align}" style={lineStyle(line)}>
@@ -1833,19 +1826,6 @@
     background: var(--black);
   }
 
-  /* Native textTracks (HLS source): the browser's default cue rendering is
-     an opaque black box. Override it to a transparent, shadowed caption in
-     the app font. Chrome 79 (webOS 6) supports ::cue. :global() keeps the
-     rule un-scoped — Svelte's attribute-scoping can't apply to ::cue. */
-  :global(video::cue) {
-    background: transparent;
-    color: var(--text);
-    font-family: "Segoe UI", "Noto Sans", Roboto, Arial, sans-serif;
-    /* follows the subtitle size picked on the player (--cue-size is set on
-       the video element from subScale; the 30px fallback is the default) */
-    font-size: var(--cue-size, 30px);
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.6);
-  }
   /* NOTE: the cue overlay is ".subs-cues", NOT ".subs" — a bare ".subs"
      also matches the floating menu's ".menu subs" panel and silently
      stole its positioning (centered) AND set its opacity to 0 (the menu

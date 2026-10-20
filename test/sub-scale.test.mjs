@@ -11,8 +11,8 @@
 //      wrong row selected;
 //   3. the Player's subtitle panel offers the ladder and persists a pick
 //      to the config store;
-//   4. the HLS ::cue rendering follows the scale via a CSS variable on the
-//      video element (it used to be a fixed 30px);
+//   4. there is NO native ::cue rendering path — HLS subtitles travel the
+//      same DOM overlay as every source (m00906: one pipeline, one rule);
 //   5. Settings reuses the shared ladder (no private copy).
 //
 // Run: pnpm test
@@ -90,14 +90,17 @@ test("picking a size persists it to the config store", () => {
   );
 });
 
-test("the HLS ::cue rendering follows the scale (CSS variable on the video element)", () => {
+test("there is no native ::cue path — the overlay is the only rendering path (m00906)", () => {
+  // The old contract pinned `font-size: var(--cue-size, 30px)` inside
+  // video::cue; that path rendered HLS subs at a different size/position
+  // than every other source and printed the {an8} artifact. It is gone.
   assert.ok(
-    /font-size:\s*var\(--cue-size/.test(player),
-    "the video::cue rule must use var(--cue-size, 30px), not a fixed 30px"
+    !/video::cue/.test(player),
+    "HLS subtitles go through the DOM overlay — no ::cue rule may remain"
   );
   assert.ok(
-    /--cue-size/.test(player) && /subFontSize/.test(player),
-    "the video element must carry the --cue-size variable driven by subFontSize"
+    !/--cue-size/.test(player),
+    "the --cue-size variable on the video element is gone"
   );
 });
 

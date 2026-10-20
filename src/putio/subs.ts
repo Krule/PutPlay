@@ -40,10 +40,14 @@ export function vttToCues(text: string): SubtitleCue[] {
       .slice(ti + 1)
       .join("\n")
       .replace(/<[^>]+>/g, "");
-    // put.io's ASS→SRT conversion keeps exactly one tag: a leading {\anN}.
-    // Lift it — it is the only positioning info that survives upstream of us.
-    const anMatch = /^\s*\{\s*\\an(\d)\s*\}/.exec(bodyRaw);
-    const body = bodyRaw
+    // put.io's ASS conversion keeps exactly one tag, and it comes in two
+    // shapes: {\anN} in the SRT (backslash kept) and {anN} in the HLS WebVTT
+    // renditions (backslash dropped — the browser prints it as literal
+    // text). Lift both: it is the only positioning info that survives
+    // upstream of us, and it must never reach the user as text.
+    const anMatch = /^\s*\{\s*\\?an(\d)\s*\}/.exec(bodyRaw);
+    const bodySource = anMatch ? bodyRaw.slice(anMatch[0].length) : bodyRaw;
+    const body = bodySource
       // strip the override blocks that carry a backslash — a plain "{note}"
       // without one is literal text and must survive.
       .replace(/\{[^{}]*\\[^{}]*\}/g, "")
@@ -326,6 +330,44 @@ export async function loadSubtitle(
       blobURL = undefined;
     }
     return { cues, blobURL };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a put.io HLS subtitle rendition and parse it — the same pipeline as
+ * every other source (m00906: one overlay, one size rule). hls.js 1.0.11
+ * exposes each rendition's resolved playlist URL (subtitleTracks[i].url)
+ * but hands no cue text back (native display is switched off), so this mini
+ * loader does what hls.js's own subtitle path would: fetch the small m3u8
+ * that lists the .vtt segments, fetch them, parse each, merge.
+ */
+export function parseHlsTextSegments(playlist: string): string[] {
+  return playlist
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("#"));
+}
+
+export async function loadHlsSubtitles(renditionUrl: string): Promise<SubtitleSource | null> {
+  try {
+    const res = await fetch(renditionUrl);
+    if (!res.ok) return null;
+    const segs = parseHlsTextSegments(await res.text());
+    if (!segs.length) return { cues: [] };
+    const parts = await Promise.all(
+      segs.map(async (seg) => {
+        const r = await fetch(new URL(seg, renditionUrl).toString());
+        if (!r.ok) throw new Error(`VTT segment ${seg} → HTTP ${r.status}`);
+        return r.text();
+      })
+    );
+    // Parse each segment on its own: HLS VTT segments each carry their own
+    // WEBVTT header, and times are absolute — so a plain merge (sorted) is
+    // the whole join.
+    const cues = parts.map((p) => subtitlesToCues(p, "vtt")).flat().sort((a, b) => a.start - b.start);
+    return { cues };
   } catch {
     return null;
   }

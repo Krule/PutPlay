@@ -27,6 +27,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   you can see what's ahead before you jump to it.
 
 ### Changed
+- HLS subtitles now render through the same on-screen overlay as every
+  other source — the same size, position, colour and outline — instead of
+  the browser's native caption path, which showed them at a different size
+  and printed leftover alignment tags as text.
 - The subtitle size ladder is now Small / Default / Large / XL: a real
   Small size was added, and the XXL size was dropped (nothing bigger than
   XL was needed).

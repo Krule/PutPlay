@@ -1,10 +1,11 @@
-// Player subtitle wiring: MKV-embedded first + native cue styling.
+// Player subtitle wiring: MKV-embedded first + one overlay for every source.
 //
 //  - The put.io subtitle list must be ordered with orderSubtitleSources
 //    BEFORE it is rendered/autoselected (embedded MKV tracks first).
-//  - Native textTracks (HLS source) render with the browser's default cue
-//    styling — an opaque black box. video::cue overrides it to a
-//    transparent, shadowed, app-font caption (Chrome 79 supports ::cue).
+//  - Every source (original, put.io MP4, HLS) renders through the DOM
+//    overlay — the native textTracks/::cue path was removed (m00906): it
+//    gave HLS subtitles a different size/position and printed the {an8}
+//    artifact literally.
 //
 // Run: pnpm test
 import { readFileSync } from "node:fs";
@@ -25,15 +26,10 @@ test("Player orders the put.io subtitle list with orderSubtitleSources", () => {
   );
 });
 
-test("Player styles native cues (video::cue) with a transparent background", () => {
+test("Player no longer styles native cues — the overlay owns all subtitle rendering (m00906)", () => {
   const player = read("src/ui/screens/Player.svelte");
-  const m = player.match(/video\s*::cue[\s\S]{0,20}?\{([^}]*)\}/i);
-  assert.ok(m, "Player.svelte must contain a video::cue rule");
-  assert.ok(
-    /background(-color)?\s*:\s*transparent/i.test(m[1]),
-    "video::cue must use a transparent background (no black box)"
-  );
-  assert.ok(/text-shadow/i.test(m[1]), "video::cue needs a shadow for readability over video");
+  assert.ok(!/video\s*::cue/.test(player), "the native cue path is gone — no ::cue styling may remain");
+  assert.ok(!/--cue-size/.test(player), "the native-path size variable is gone (the overlay computes its own size)");
 });
 
 test("stale 'try the HLS source' hint removed (embedded subs now work on original)", () => {
