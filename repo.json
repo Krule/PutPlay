@@ -8,18 +8,18 @@
       "iconUri": "https://raw.githubusercontent.com/Krule/PutPlay/main/largeIcon.png",
       "manifest": {
         "id": "ba.ovo.putplay",
-        "version": "1.2.1",
+        "version": "1.2.2",
         "type": "web",
         "title": "PutPlay",
         "appDescription": "Browses your put.io library and plays the original file on the big screen — MKV/MP4 as uploaded, with put.io MP4/HLS fallback, subtitles, and audio switching.",
         "iconUri": "https://raw.githubusercontent.com/Krule/PutPlay/main/largeIcon.png",
         "sourceUrl": "https://github.com/Krule/PutPlay",
         "rootRequired": false,
-        "ipkUrl": "https://github.com/Krule/PutPlay/releases/download/v1.2.1/ba.ovo.putplay_1.2.1_all.ipk",
+        "ipkUrl": "https://github.com/Krule/PutPlay/releases/download/v1.2.2/ba.ovo.putplay_1.2.2_all.ipk",
         "ipkHash": {
-          "sha256": "cbfbfacebbfaadc4ec393be9d392619df8173d2c3a06ac9886febf8bb172f6b0"
+          "sha256": "e53b525636d3b6ce6c6c0dbffc91163749d4a2298ef466e229a194cefe3b901c"
         },
-        "ipkSize": 206976
+        "ipkSize": 212648
       }
     }
   ]
