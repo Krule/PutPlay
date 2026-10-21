@@ -42,6 +42,10 @@ export const MATROSKA = {
   SIMPLE_BLOCK: 0xa3,
   BLOCK_DURATION: 0x9b,
   CUES: 0x1c53bb6b,
+  SEEK_HEAD: 0x114d9b74,
+  SEEK: 0x4dbb,
+  SEEK_ID: 0x53ab,
+  SEEK_POSITION: 0x53ac,
 } as const;
 
 export interface Chapter {
@@ -69,6 +73,10 @@ export interface ProbeResult {
   assTracks: AssTrackInfo[];
   /** file chapters; [] when the file has none */
   chapters: Chapter[];
+  /** file offset of the Cues element (its ID) from SeekHead; null when the
+   *  SeekHead carries no Cues entry — the caller falls back (tail scan) or
+   *  treats the file as cue-less. */
+  cuesFileOffset: number | null;
 }
 
 const FIRST_WINDOW = 65536; // 64 KB
@@ -363,18 +371,43 @@ async function collectChapters(r: BoundedReader, start: number, end: number): Pr
   return out;
 }
 
+/** The Cues element's file offset from a SeekHead (MetaSeek). Each Seek entry
+ *  is 0x4DBC { 0x53AB SeekID (raw bytes), 0x53AC SeekPosition (segment-relative
+ *  int) } — the same +segStart rule as Cues positions (file_off = value + segStart).
+ *  A leading 0xBF CRC element is an unknown child: walked and skipped. */
+async function collectCuesSeek(
+  r: BoundedReader,
+  start: number,
+  end: number,
+  segStart: number
+): Promise<number | null> {
+  let cues: number | null = null;
+  await walkChildren(r, start, end, async (h, p) => {
+    if (h.id !== MATROSKA.SEEK || cues !== null) return;
+    let id: number | null = null;
+    let pos = 0;
+    await walkChildren(r, p, p + h.size, async (c, cp) => {
+      if (c.id === MATROSKA.SEEK_ID && id === null) id = await readInt(r, cp, c.size);
+      else if (c.id === MATROSKA.SEEK_POSITION) pos = await readInt(r, cp, c.size);
+    });
+    if (id === MATROSKA.CUES) cues = pos + segStart;
+  });
+  return cues;
+}
+
 export async function probeHeader(
   read: (start: number, end: number) => Promise<Uint8Array>
 ): Promise<ProbeResult> {
   const r = new BoundedReader(read);
   const first = await r.fetchAt(0, FIRST_WINDOW);
-  if (!first.length) return { styleTables: [], assTracks: [], chapters: [] };
+  if (!first.length) return { styleTables: [], assTracks: [], chapters: [], cuesFileOffset: null };
 
   const styleTables: AssStyleTable[] = [];
   const assTracks: AssTrackInfo[] = [];
   const chapters: Chapter[] = [];
+  let cuesFileOffset: number | null = null;
   const segStart = await findSegmentStart(r);
-  if (segStart < 0) return { styleTables, assTracks, chapters };
+  if (segStart < 0) return { styleTables, assTracks, chapters, cuesFileOffset };
 
   await walkSegmentTop(r, segStart, async (h, payloadStart, payloadEnd) => {
     if (h.id === MATROSKA.TRACKS || h.id === MATROSKA.EDITIONS) {
@@ -390,8 +423,15 @@ export async function probeHeader(
       }
       return false;
     }
+    if (h.id === MATROSKA.SEEK_HEAD) {
+      if (payloadEnd > r.bufferedEnd) await r.fetchAt(payloadStart, h.size);
+      if (payloadEnd <= r.bufferedEnd) {
+        cuesFileOffset = await collectCuesSeek(r, payloadStart, payloadEnd, segStart);
+      }
+      return false;
+    }
     if (h.id === MATROSKA.CLUSTER) return true; // header region over
-    return false; // anything else (SeekHead, Void, Cues, Tags, …): skip by offset
+    return false; // anything else (Void, Cues, Tags, …): skip by offset
   });
-  return { styleTables, assTracks, chapters };
+  return { styleTables, assTracks, chapters, cuesFileOffset };
 }

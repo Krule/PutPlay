@@ -74,6 +74,55 @@ test("probe: assTracks lists every ASS subtitle track with num/name/lang", () =>
   });
 });
 
+// ---------------- T1b: the probe exposes the Cues offset --------------------
+// The row-1 upgrade fetches the Cues element by file offset. The probe already
+// walks the SeekHead (MetaSeek), so the Cues offset must come out of it —
+// Cues is NOT reliably the file's last element (e.g. IETF test5 has Tags after).
+
+test("probe: cuesFileOffset is the Cues element's file offset from SeekHead", async () => {
+  const rangeRead = (start, end) => Promise.resolve(HEAD64K.slice(start, end + 1));
+  const r = await probeHeader(rangeRead);
+  // SeekHead entry: SeekID 1C53BB6B → SeekPosition 0x0CFD2CC7 (segment-relative);
+  // file offset = value + segStart (52) = the Cues element ID's position.
+  assert.equal(r.cuesFileOffset, 0x0cfd2cfb, "SeekPosition + segStart = Cues file offset");
+});
+
+// minimal synthetic head: EBML + Segment + SeekHead (one non-Cues entry) + empty Tracks
+const be32 = (n, len) => {
+  const o = new Uint8Array(len);
+  for (let i = 0; i < len; i++) o[len - 1 - i] = (n >> (8 * i)) & 0xff;
+  return o;
+};
+const vintSize32 = (n) => (n < 0x80 ? Uint8Array.of(0x80 | n) : be32(0x4000 | n, 2));
+const idBytes32 = (id) =>
+  id < 0x100 ? Uint8Array.of(id) : id < 0x10000 ? be32(id, 2) : id < 0x1000000 ? be32(id, 3) : be32(id, 4);
+const concat32 = (arrs) => {
+  const t = arrs.reduce((a, b) => a + b.length, 0);
+  const o = new Uint8Array(t);
+  let k = 0;
+  for (const a of arrs) {
+    o.set(a, k);
+    k += a.length;
+  }
+  return o;
+};
+const elem32 = (id, ...p) => {
+  const pl = p.reduce((a, b) => a + b.length, 0);
+  return concat32([idBytes32(id), vintSize32(pl), ...p]);
+};
+
+test("probe: cuesFileOffset is null when SeekHead has no Cues entry", async () => {
+  const seek = elem32(0x4dbb, elem32(0x53ab, be32(0x1654ae6b, 4)), elem32(0x53ac, be32(0x30, 2)));
+  const seekHead = elem32(0x114d9b74, seek);
+  const segment = elem32(0x18538067, seekHead, elem32(0x1654ae6b));
+  const ebml = elem32(0x1a45dfa3, Uint8Array.of(0));
+  const buf = concat32([ebml, segment]);
+  const rangeRead = (start, end) => Promise.resolve(buf.slice(start, end + 1));
+  const r = await probeHeader(rangeRead);
+  assert.equal(r.cuesFileOffset, null, "no Cues seek entry → null (caller falls back)");
+  assert.equal(r.assTracks.length, 0, "empty Tracks → empty assTracks");
+});
+
 // ---------------- T3: MediaEngine wiring (source contract) ----------------
 
 // ---------------- I2: the track mapping (pure) -----------------------------
