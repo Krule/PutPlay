@@ -184,17 +184,22 @@ Verdict per track: all pass → **row 1**; cluster passes, block fails → **row
 
 ## 8. Build plan (TDD, after E1/E2)
 
-- **I1 validator** — RED: synthetic MKV fixtures with (a) fully-valid Cues
-  (ffmpeg-muxed `.ass` → valid Cues; row-1 oracle = the same ffmpeg file),
-  (b) half-broken Cues (valid cluster offsets, corrupted rels — synthesize by
-  rewriting CueRelativePosition bytes in a copy; the reference file is NOT
-  half-broken, that was a parser artifact), (c) no Cues → assert row verdicts
-  1/2/3. Expected per-file verdicts from the E2 audit double as acceptance pins.
-- **I2 row 1 batcher** — RED: valid-Cues fixture → batched ranges ≤200, 1 KB
-  margin, cluster prefixes; assembled cues byte-identical to the oracle track.
-- **I3 row 2 scheduler** — RED: prune rule + fake-playhead state machine
-  (lookahead L, throttle, discard-after-merge, per-window merge, seek);
-  integration: real 218 MB file, fake playhead → final cue set == oracle cues.
+- **I1 validator — DONE** (`cues.ts`, 9 tests): `parseCues` (one
+  `CueEntry` per CuePoint × CueTrackPosition) + `validateCues` → row 1/2/3
+  (cluster header sample ×12, block-landing sample ×8, label-vs-vint check,
+  2 GiB cap). Real file: row 1, 35 reads.
+- **I2 row 1 batcher — DONE** (`ass-demux.ts: demuxAssRow1`, 4 tests):
+  two phases — 12 B per unique cluster (size vint), then one windowed
+  fetch per cue (1 KB margin, size vint terminates, one follow-up if
+  exceeded); times from CueTime/CueDuration. Real file: 325 cues,
+  492,626 B (0.23 %), 584 reads, byte-exact vs the oracle.
+- **I3 row 2 scheduler — DONE** (`ass-row2.ts`, 6 tests):
+  `planRow2Clusters` (one 12 B read per unique sub-bearing cluster, sorted
+  by earliest cue) + `createLazyScheduler` (lookahead L, concurrency
+  throttle, per-cluster fetch → local walk → merge, discard bytes, failed
+  clusters skipped, backward seeks free). Integration: real 218 MB file,
+  fake playhead 0→end → 325 cues byte-exact vs the oracle at 145,040,459 B
+  (66.5 %) in 441 reads.
 - **I4 wiring** — validator on subtitle-list arrival → route; retire `upgradeSub`;
   re-pin T3/T4 regexes; CHANGELOG reword. Outer pins: row 1 ≤ ~1 MB + ~17
   requests; row 2 ≤ ~150 MB across a full fake watch of the 218 MB file.

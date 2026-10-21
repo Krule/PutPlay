@@ -208,7 +208,7 @@ export function assembleAss(codecPrivate: Uint8Array, events: AssEvent[]): Uint8
 // ---------------- the cluster walk ----------------
 
 /** TimestampScale (ns per unit) → ms */
-function tsToMs(v: number, scale: number): number {
+export function tsToMs(v: number, scale: number): number {
   return Math.round((v * scale) / 1_000_000);
 }
 
