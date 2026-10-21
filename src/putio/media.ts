@@ -17,6 +17,7 @@ import { autoResumeTarget } from "./resume";
 import { probeHeader, type Chapter, type AssTrackInfo } from "./probe";
 import { fetchCues } from "./cues";
 import { routeRawAss, type RawAssRoute } from "./ass-route";
+import { multiRangeReader } from "./multirange";
 import type { AssStyleTable } from "./substyle";
 import Hls from "hls.js";
 
@@ -493,6 +494,14 @@ export class MediaEngine {
     };
   }
 
+  /** The multi-range flavour of rangeReader: many ranges per round trip
+   *  (the row-1 batcher collapses ~500 reads into a handful of requests).
+   *  Falls back to single-range reads when the CDN ignores the multi-range
+   *  request, so it is always safe to hand to the demuxer. */
+  private rangeReaderMulti(): (ranges: Array<[number, number]>) => Promise<Uint8Array[]> {
+    return multiRangeReader(streamURL(this.auth, this.file.id), this.rangeReader());
+  }
+
   /** Best-effort bounded probe of the ORIGINAL stream's MKV header:
    *  the embedded ASS style tables (and chapters) let the subtitle overlay
    *  render per style (colour/outline/position) instead of a flat blob.
@@ -507,8 +516,20 @@ export class MediaEngine {
       this.segStart = result.segStart;
       this.scale = result.scale;
       this.cuesFileOffset = result.cuesFileOffset;
+      // TEMP-DIAG (remove after the on-device check)
+      console.log(
+        "[rawass] probe OK:",
+        JSON.stringify({
+          styleTables: this.subStyleTables.length,
+          tracks: this.subAssTracks.map((t) => `${t.num}:${t.lang}`),
+          segStart: this.segStart,
+          scale: this.scale,
+          cuesFileOffset: this.cuesFileOffset,
+        }),
+      );
       this.onState({ subStyleTables: this.subStyleTables, subAssTracks: this.subAssTracks, subChapters: this.subChapters });
-    } catch {
+    } catch (e) {
+      console.error("[rawass] probe FAILED:", e); // TEMP-DIAG
       /* non-fatal: the overlay stays plain */
     }
   }
@@ -521,15 +542,35 @@ export class MediaEngine {
    *  Non-fatal: any failure returns null and the put.io file stands. */
   async probeRawAss(trackNum: number): Promise<RawAssRoute | null> {
     const track = this.subAssTracks.find((t) => t.num === trackNum);
-    if (!track) return null;
+    if (!track) {
+      // TEMP-DIAG (remove after the on-device check)
+      console.log("[rawass] probeRawAss:", trackNum, "track MISSING in", this.subAssTracks.length, "probed tracks");
+      return null;
+    }
     // row 2 needs the size for its 2 GiB cap; without it there is no upgrade path
-    if (this.cuesFileOffset === null || !this.file.size) return { row: 3, trackNum };
+    if (this.cuesFileOffset === null || !this.file.size) {
+      // TEMP-DIAG (remove after the on-device check)
+      console.log("[rawass] probeRawAss:", trackNum, "no upgrade: cuesFileOffset=", this.cuesFileOffset, "file.size=", this.file.size);
+      return { row: 3, trackNum };
+    }
     try {
       const reader = this.rangeReader();
       const cues = await fetchCues(reader, this.cuesFileOffset);
+      // TEMP-DIAG (remove after the on-device check)
+      console.log(
+        "[rawass] probeRawAss:",
+        trackNum,
+        "cues fetched:",
+        cues.filter((c) => c.track === trackNum).length,
+        "for this track /",
+        cues.length,
+        "total",
+      );
       if (this.cleaning) return null;
-      return await routeRawAss({
+      const t0 = Date.now();
+      const route = await routeRawAss({
         read: reader,
+        readRanges: this.rangeReaderMulti(),
         segStart: this.segStart,
         scale: this.scale,
         cuesFileOffset: this.cuesFileOffset,
@@ -538,7 +579,24 @@ export class MediaEngine {
         trackNum,
         codecPrivate: track.priv,
       });
-    } catch {
+      // TEMP-DIAG (remove after the on-device check)
+      console.log(
+        "[rawass] probeRawAss:",
+        trackNum,
+        "route row",
+        route.row,
+        "in",
+        Date.now() - t0,
+        "ms — ass:",
+        route.ass ? route.ass.length + " chars" : "-",
+        "cues:",
+        route.cues ?? "-",
+        "plan:",
+        route.plan ? route.plan.length : "-",
+      );
+      return route;
+    } catch (e) {
+      console.error("[rawass] probeRawAss FAILED:", trackNum, e); // TEMP-DIAG
       return null; // non-fatal: the put.io cues stand
     }
   }

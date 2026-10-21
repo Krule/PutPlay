@@ -232,6 +232,70 @@ test("MediaEngine: probes each embedded track's raw-ASS route (row-routed)", () 
     /Range/.test(reader) && /streamURL\(/.test(reader),
     "the range reader must issue Range requests on streamURL"
   );
+  // Multi-range batching: row 1 must not pay one round trip per 12 B header.
+  const multiDecl = media.indexOf("rangeReaderMulti(");
+  assert.ok(multiDecl >= 0, "the engine must offer the multi-range reader");
+  assert.ok(
+    /multiRangeReader\(/.test(media.slice(multiDecl, multiDecl + 300)),
+    "rangeReaderMulti must wrap multirange.multiRangeReader"
+  );
+  assert.ok(
+    /readRanges:/.test(raw),
+    "probeRawAss must hand the multi-range reader to the route"
+  );
+});
+
+test("ass-route: row 1 runs the batcher on the multi-range reader", () => {
+  const route = readSrc("src/putio/ass-route.ts");
+  assert.ok(
+    /readRanges\??:/.test(route),
+    "RouteArgs must accept the optional multi-range reader"
+  );
+  const row1 = route.slice(route.indexOf("demuxAssRow1("));
+  assert.ok(
+    /readRanges:/.test(row1),
+    "row 1 must hand readRanges to the demuxer"
+  );
+});
+
+// m02708: only the ACTIVE subtitle is upgraded. The user watches one language
+// at a time; the row-1 fetch cost is paid per armed track, and switching tracks
+// arms the new one. Arming every mkv match up front wastes requests on tracks
+// the user will never look at.
+test("Player: arms the raw-ASS upgrade only for the active subtitle", () => {
+  const player = readSrc("src/ui/screens/Player.svelte");
+
+  const schedStart = player.indexOf("function scheduleRawAssUpgrade");
+  assert.ok(schedStart >= 0, "scheduleRawAssUpgrade must exist");
+  const sched = player.slice(schedStart, schedStart + 1600);
+  assert.ok(
+    /activeSub\s*<\s*0/.test(sched),
+    "subtitles off (activeSub < 0) → nothing is armed"
+  );
+  assert.ok(
+    /upgradeSub\(activeSub,/.test(sched),
+    "only the active subtitle index is upgraded, not every mkv match"
+  );
+  assert.ok(
+    !/i\s*<\s*subtitles\.length/.test(sched),
+    "the all-subtitles arming loop must be gone"
+  );
+  assert.ok(
+    !/upgradeArmedFor/.test(player),
+    "the per-file armed-once flag is replaced by per-subtitle arming"
+  );
+  const resetIdx = player.indexOf("subUpgrades = {}");
+  assert.ok(resetIdx >= 0, "the new-file reset must exist");
+  assert.ok(
+    /armedSubs/.test(player.slice(resetIdx, resetIdx + 200)),
+    "per-file arming state must be reset on a new file"
+  );
+  const selStart = player.indexOf("function selectSubTrack");
+  assert.ok(selStart >= 0, "selectSubTrack must exist");
+  assert.ok(
+    /scheduleRawAssUpgrade\(\)/.test(player.slice(selStart, selStart + 1200)),
+    "switching subtitle tracks must (re-)arm the upgrade for the new track"
+  );
 });
 
 // ---------------- T4: Player wiring (source contract) ---------------------
@@ -267,6 +331,22 @@ test("Player: row-routes the raw-ASS upgrade (batch or playhead-paced, never the
     /shouldUpgradeCues\(/.test(player),
     "the cue upgrade must be coverage-guarded (never fewer cues than the fallback)"
   );
+  const syncAt = player.indexOf("p.subAssTracks !== undefined");
+  const syncSite = player.slice(syncAt, syncAt + 260);
+  assert.ok(
+    /scheduleRawAssUpgrade\(/.test(syncSite),
+    "the probe's track list can land AFTER the subtitles (measured on device) — " +
+      "its onState sync must re-arm the upgrade schedule"
+  );
+  const schedAt = player.indexOf("function scheduleRawAssUpgrade");
+  const schedFn = player.slice(schedAt, schedAt + 1400);
+  assert.ok(
+    /!subtitles\.length \|\| !subAssTracks\.length/.test(schedFn),
+    "the schedule must wait for BOTH inputs (subs + probed tracks); scheduling with an " +
+      "empty track list is a silent no-op (every match fails)"
+  );
+  // (per-file arming state is pinned in the active-subtitle test below —
+  //  armedSubs, reset per file) 
 });
 
 // ---------------- T5: full data chain on the real file --------------------

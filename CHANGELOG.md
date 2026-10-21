@@ -7,14 +7,27 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 ## [Unreleased]
 
 ### Added
-- Embedded (MKV) subtitles now render the full effects the file itself
-  specifies — fades, clips, exact text placement, per-line colours —
-  not just the header's style table. The player reassembles the
-  container's own subtitle track in the background: a few small fetches
-  when the file's cue index is trustworthy (byte-for-byte identical to
-  the file's track), or the track's windows as you watch when it isn't.
-  The converted subtitles stay on screen until that lands, and
+- Embedded (MKV) subtitles now render the per-cue styling and exact text the
+  file itself specifies — each cue's own style, per-word colours and
+  emphasis, exact placement, original wording and timing — not just the
+  header's style table applied to the converted subtitles. The player
+  reassembles the container's own subtitle track in the background: a few
+  small fetches when the file's cue index is trustworthy (byte-for-byte
+  identical to the file's track), or the track's windows as you watch when it
+  isn't. The converted subtitles stay on screen until that lands, and
   OpenSubtitles and folder subtitles are untouched.
+
+### Changed
+- The subtitle upgrade fetches its data in multi-range batches — a handful
+  of requests instead of hundreds of tiny sequential reads — so full-fidelity
+  subtitles land in seconds rather than minutes.
+- Only the subtitle you're actually watching gets upgraded. Switching to
+  another language upgrades that track when you switch, so unwatched tracks
+  cost nothing.
+
+### Fixed
+- The raw-ASS subtitle upgrade could silently never start when the file's
+  header probe arrived after the subtitle list (a race measured on device).
 
 ## [1.2.2] - 2026-10-20
 

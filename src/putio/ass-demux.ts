@@ -342,6 +342,12 @@ export async function demuxAssTrack(
 export interface Row1Args {
   /** ranged reader (inclusive end) */
   read: (start: number, end: number) => Promise<Uint8Array>;
+  /**
+   * optional: serve many ranges in one round trip (a multi-range request).
+   * Returns one byte string per range, in request order; the demuxer issues
+   * at most three logical calls (cluster headers, block windows, tails).
+   */
+  readRanges?: (ranges: Array<[number, number]>) => Promise<Uint8Array[]>;
   /** segment payload start (file offset of the segment's first byte) */
   segStart: number;
   scale: number;
@@ -354,6 +360,13 @@ export interface Row1Args {
 
 const ROW1_CLUSTER_HDR = 12; // ID (≤4 B) + size vint (≤4 B) + slack
 const ROW1_BLOCK_WINDOW = 1024 + 12; // element header + 1 KB payload window
+
+/** The size-vint byte-length at offset 4 of a 12 B cluster-header read (throws on a malformed header). */
+function clusterHeaderGlen(hdr: Uint8Array, off: number): number {
+  const glen = vintLenAt(hdr, 4);
+  if (!glen) throw new Error(`ass-demux: malformed cluster header @ ${off}`);
+  return glen;
+}
 
 /** Parsed block element header: which track, where the data starts, how far it runs. */
 interface Row1Block {
@@ -407,30 +420,72 @@ export async function demuxAssRow1(a: Row1Args): Promise<DemuxResult> {
     if (c.track === a.trackNum && c.rel !== null) targets.push({ cue: c, rel: c.rel });
   }
   if (!targets.length) return { ass: assembleAss(a.codecPrivate, []), cues: 0 };
+  // TEMP-DIAG (remove after the on-device check)
+  const r0 = Date.now();
+  const clusterCount = new Set(targets.map((x) => x.cue.ccp)).size;
+  console.log(
+    "[rawass] row1", a.trackNum, "start:", clusterCount, "clusters +", targets.length, "blocks",
+  );
+
+  const readRanges = a.readRanges;
 
   // Phase 1: each unique cluster's size-vint length (12 B reads).
+  const ccps = [...new Set(targets.map((x) => x.cue.ccp))];
   const vln = new Map<number, number>();
-  for (const ccp of new Set(targets.map((x) => x.cue.ccp))) {
-    const off = ccp + a.segStart;
-    const hdr = await a.read(off, off + ROW1_CLUSTER_HDR - 1);
-    const glen = vintLenAt(hdr, 4);
-    if (!glen) throw new Error(`ass-demux: malformed cluster header @ ${off}`);
-    vln.set(ccp, glen);
+  if (readRanges) {
+    const parts = await readRanges(ccps.map((c) => [c + a.segStart, c + a.segStart + ROW1_CLUSTER_HDR - 1]));
+    ccps.forEach((c, i) => vln.set(c, clusterHeaderGlen(parts[i], c + a.segStart)));
+  } else {
+    for (const c of ccps) vln.set(c, clusterHeaderGlen(await a.read(c + a.segStart, c + a.segStart + ROW1_CLUSTER_HDR - 1), c + a.segStart));
   }
+  // TEMP-DIAG (remove after the on-device check)
+  console.log("[rawass] row1", a.trackNum, "clusters done in", Date.now() - r0, "ms");
 
   // Phase 2: one range per cue → parse the block, keep the event.
-  const events: AssEvent[] = [];
-  for (const { cue, rel } of targets) {
-    const boff = cue.ccp + a.segStart + 4 + (vln.get(cue.ccp) ?? 0) + rel;
-    let buf = await a.read(boff, boff + ROW1_BLOCK_WINDOW - 1);
-    const blk = parseRow1Block(buf);
-    if (!blk || blk.track !== a.trackNum) continue;
-    if (blk.end > buf.length) {
-      const tail = await a.read(boff + buf.length, boff + blk.end - 1);
-      buf = joinBytes(buf, tail);
+  const offsets = targets.map(({ cue, rel }) => cue.ccp + a.segStart + 4 + (vln.get(cue.ccp) ?? 0) + rel);
+  const bufs: (Uint8Array | null)[] = new Array(targets.length).fill(null);
+  const blks: (Row1Block | null)[] = new Array(targets.length).fill(null);
+  if (readRanges) {
+    // one multi-range request for every window; a second one for the overflow tails
+    const wins = await readRanges(offsets.map((o) => [o, o + ROW1_BLOCK_WINDOW - 1]));
+    const tails: { i: number; start: number; end: number }[] = [];
+    wins.forEach((buf, i) => {
+      const blk = parseRow1Block(buf);
+      if (!blk || blk.track !== a.trackNum) return;
+      bufs[i] = buf;
+      blks[i] = blk;
+      if (blk.end > buf.length) tails.push({ i, start: offsets[i] + buf.length, end: offsets[i] + blk.end - 1 });
+    });
+    if (tails.length) {
+      const parts = await readRanges(tails.map((t) => [t.start, t.end]));
+      tails.forEach((t, j) => { bufs[t.i] = joinBytes(bufs[t.i]!, parts[j]); });
     }
+    // TEMP-DIAG (remove after the on-device check)
+    console.log("[rawass] row1", a.trackNum, "blocks fetched:", wins.length, "windows +", tails.length, "tails");
+  } else {
+    for (let i = 0; i < targets.length; i++) {
+      // TEMP-DIAG (remove after the on-device check)
+      if (i % 64 === 0) console.log("[rawass] row1", a.trackNum, "blocks", i + "/" + targets.length);
+      const o = offsets[i];
+      let buf = await a.read(o, o + ROW1_BLOCK_WINDOW - 1);
+      const blk = parseRow1Block(buf);
+      if (!blk || blk.track !== a.trackNum) continue;
+      if (blk.end > buf.length) buf = joinBytes(buf, await a.read(o + buf.length, o + blk.end - 1));
+      bufs[i] = buf;
+      blks[i] = blk;
+    }
+  }
+
+  const events: AssEvent[] = [];
+  for (let i = 0; i < targets.length; i++) {
+    const buf = bufs[i];
+    const blk = blks[i];
+    if (!buf || !blk) continue;
+    const { cue } = targets[i];
     const data = buf.subarray(blk.dataStart, blk.dataStart + blk.dataLen);
     events.push(parseAssBlock(data, tsToMs(cue.t, a.scale), tsToMs(cue.t + (cue.dur ?? 0), a.scale)));
   }
+  // TEMP-DIAG (remove after the on-device check)
+  console.log("[rawass] row1", a.trackNum, "done in", Date.now() - r0, "ms —", events.length, "events");
   return { ass: assembleAss(a.codecPrivate, events), cues: events.length };
 }

@@ -37,6 +37,8 @@ export interface RawAssRoute {
 export interface RouteArgs {
   /** ranged reader (inclusive end) */
   read: (start: number, end: number) => Promise<Uint8Array>;
+  /** optional: multi-range reader — row 1 batches its fetches through it */
+  readRanges?: (ranges: Array<[number, number]>) => Promise<Uint8Array[]>;
   /** segment payload start (the base of the +segStart rule) */
   segStart: number;
   /** TimestampScale (ns per time unit) */
@@ -59,6 +61,9 @@ export interface RouteArgs {
  * row 3 is the no-op.
  */
 export async function routeRawAss(a: RouteArgs): Promise<RawAssRoute> {
+  const t0 = Date.now();
+  // TEMP-DIAG (remove after the on-device check)
+  console.log("[rawass] route", a.trackNum, "start: validating Cues…");
   const v = await validateCues({
     read: a.read,
     segStart: a.segStart,
@@ -68,10 +73,18 @@ export async function routeRawAss(a: RouteArgs): Promise<RawAssRoute> {
     trackNum: a.trackNum,
     fileSize: a.fileSize,
   });
+  // TEMP-DIAG (remove after the on-device check)
+  console.log(
+    "[rawass] route",
+    a.trackNum,
+    "validated in", Date.now() - t0, "ms → row", v.row,
+    "(cluster", v.clusterOk + "/" + v.clusterN, "land", v.landOk + "/" + v.landN + ")",
+  );
 
   if (v.row === 1) {
     const r = await demuxAssRow1({
       read: a.read,
+      readRanges: a.readRanges,
       segStart: a.segStart,
       scale: a.scale,
       cues: a.cues,

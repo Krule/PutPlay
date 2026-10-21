@@ -331,6 +331,16 @@ const countingReader = (buf) => {
   return { st, read };
 };
 
+const R1_LINES = [
+  "Dialogue: 0,0:00:01.20,0:00:01.70,Default,N1,0,0,0,,hello",
+  "Dialogue: 1,0:00:02.30,0:00:03.00,Default,N2,0,0,0,,bye",
+];
+// The assembled .ass for the 2-cue R1 fixture: header (CRLF→LF, trailing NL
+// stripped) + the Dialogue lines + one final blank line.
+function r1ExpectedAss() {
+  return Buffer.from(SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + R1_LINES.join("\n") + "\n" + "\n");
+}
+
 test("demuxAssRow1: block fetches from Cues; times from CueTime/CueDuration; byte-exact", async () => {
   const { st, read } = countingReader(R1);
   const cues = parseCues(cuesPayload(r1Cues));
@@ -339,12 +349,7 @@ test("demuxAssRow1: block fetches from Cues; times from CueTime/CueDuration; byt
   const res = await demuxAssRow1({ read, segStart: 0, scale: 1_000_000, cues, trackNum: 1, codecPrivate: enc(SYNTH_CP) });
   assert.equal(res.cues, 2);
 
-  const l1 = "Dialogue: 0,0:00:01.20,0:00:01.70,Default,N1,0,0,0,,hello";
-  const l2 = "Dialogue: 1,0:00:02.30,0:00:03.00,Default,N2,0,0,0,,bye";
-  const expected = Buffer.from(
-    SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + l1 + "\n" + l2 + "\n" + "\n"
-  );
-  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact .ass");
+  assert.ok(Buffer.compare(Buffer.from(res.ass), r1ExpectedAss()) === 0, "byte-exact .ass");
   assert.equal(st.reads, 4, "2 cluster-header reads + 2 block reads");
   assert.ok(st.bytes <= 2200, `bytes ${st.bytes}`);
 });
@@ -367,7 +372,9 @@ test("demuxAssRow1: SimpleBlock (0xA3) targets parse like BlockGroups", async ()
   assert.equal(st.reads, 2, "1 cluster-header read + 1 block read");
 });
 
-test("demuxAssRow1: a block longer than the 1 KB window triggers one follow-up read", async () => {
+// A single 1500 B block that overflows the 1 KB window (the tail path),
+// shared by the sequential and batched follow-up-read tests.
+function tailFixture() {
   const text = "x".repeat(1500);
   const cluster = elem(0x1f43b675,
     elem(0xbf, be(0, 4)),
@@ -378,15 +385,72 @@ test("demuxAssRow1: a block longer than the 1 KB window triggers one follow-up r
     ),
   );
   const cues = cuesEl(cuePoint(1100, 1, 0, 10, 300));
-  const { st, read } = countingReader(concat([cluster, cues]));
+  return {
+    buf: concat([cluster, cues]),
+    cues: parseCues(cuesPayload(cues)),
+    line: "Dialogue: 0,0:00:01.10,0:00:01.40,Default,B,0,0,0,," + text,
+  };
+}
 
-  const res = await demuxAssRow1({ read, segStart: 0, scale: 1_000_000, cues: parseCues(cuesPayload(cues)), trackNum: 1, codecPrivate: enc(SYNTH_CP) });
+test("demuxAssRow1: a block longer than the 1 KB window triggers one follow-up read", async () => {
+  const { buf, cues, line } = tailFixture();
+  const { st, read } = countingReader(buf);
+
+  const res = await demuxAssRow1({ read, segStart: 0, scale: 1_000_000, cues, trackNum: 1, codecPrivate: enc(SYNTH_CP) });
   assert.equal(res.cues, 1);
 
-  const l = "Dialogue: 0,0:00:01.10,0:00:01.40,Default,B,0,0,0,," + text;
-  const expected = Buffer.from(SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + l + "\n" + "\n");
+  const expected = Buffer.from(SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + line + "\n" + "\n");
   assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact .ass");
   assert.equal(st.reads, 3, "header + first window + one follow-up");
+});
+
+// ---------------- the batched (multi-range) path ----------------
+//
+// readRanges(ranges) = "one multi-range HTTP request": every range is
+// served in a single round trip (the CDN's multipart/byteranges 206).
+// The demuxer must collapse both phases — and the overflow tail — into
+// at most three such calls, with zero sequential reads.
+
+function countingRangeReader(buf) {
+  const st = { reads: 0, bytes: 0 };
+  const read = async (s, e) => {
+    st.reads += 1;
+    st.bytes += e - s + 1;
+    return buf.subarray(s, e + 1);
+  };
+  const rng = { calls: 0, counts: [], bytes: 0 };
+  const readRanges = async (ranges) => {
+    rng.calls += 1;
+    rng.counts.push(ranges.length);
+    rng.bytes += ranges.reduce((n, [s, e]) => n + (e - s + 1), 0);
+    return ranges.map(([s, e]) => buf.subarray(s, e + 1));
+  };
+  return { st, read, rng, readRanges };
+}
+
+test("demuxAssRow1: readRanges batches both phases — 2 calls, zero sequential reads, byte-exact", async () => {
+  const { st, read, rng, readRanges } = countingRangeReader(R1);
+  const cues = parseCues(cuesPayload(r1Cues));
+
+  const res = await demuxAssRow1({ read, readRanges, segStart: 0, scale: 1_000_000, cues, trackNum: 1, codecPrivate: enc(SYNTH_CP) });
+
+  assert.ok(Buffer.compare(Buffer.from(res.ass), r1ExpectedAss()) === 0, "byte-exact .ass");
+  assert.equal(rng.calls, 2, "one multi-range call per phase (headers, blocks)");
+  assert.deepEqual(rng.counts, [2, 2], "2 cluster headers + 2 blocks");
+  assert.equal(st.reads, 0, "no sequential reads when readRanges is provided");
+});
+
+test("demuxAssRow1: readRanges batches the overflow tail too — 3 calls, zero sequential reads", async () => {
+  const { buf, cues, line } = tailFixture();
+  const { st, read, rng, readRanges } = countingRangeReader(buf);
+
+  const res = await demuxAssRow1({ read, readRanges, segStart: 0, scale: 1_000_000, cues, trackNum: 1, codecPrivate: enc(SYNTH_CP) });
+
+  assert.equal(res.cues, 1);
+  const expected = Buffer.from(SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + line + "\n" + "\n");
+  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact .ass");
+  assert.equal(rng.calls, 3, "headers + windows + one tail round");
+  assert.equal(st.reads, 0, "the tail is batched, never sequential");
 });
 
 // vint helpers for the real-file test (same shape as test/cues.test.mjs)
@@ -438,6 +502,32 @@ t("demuxAssRow1: real file — byte-exact at oracle parity, ≤ 1 MB transferred
   assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact vs the FFmpeg oracle");
   assert.ok(st.bytes <= 1_000_000, `transferred ${st.bytes} B > 1 MB`);
   console.log(`row1: ${res.cues} cues, ${st.bytes} B (${((100 * st.bytes) / FILE_SIZE).toFixed(2)} %) in ${st.reads} reads`);
+});
+
+t("demuxAssRow1 + readRanges: byte-exact, everything batched (≤ 3 multi-range calls, 0 sequential reads)", { timeout: 30_000 }, async () => {
+  const buf = new Uint8Array(readFileSync(MKV));
+  const plain = async (s, e) => buf.subarray(s, e + 1);
+
+  const head = await readAssHead(plain);
+  const cuesOff = head.cuesFileOffset ?? findCuesId(buf);
+  assert.ok(cuesOff > 0, "the Cues element must be locatable");
+  const cues = (await parseCues(await readCuesPayload(plain, cuesOff))).filter((c) => c.track === 3);
+  assert.equal(cues.length, 325);
+
+  const v = await validateCues({ read: plain, segStart: head.segStart, scale: head.scale, cuesFileOffset: cuesOff, cues, trackNum: 3, fileSize: FILE_SIZE });
+  assert.equal(v.row, 1, `expected row 1, got ${v.row} (clusters ${v.clusterOk}/${v.clusterN}, landings ${v.landOk}/${v.landN})`);
+
+  const track = head.tracks.find((tr) => tr.num === 3);
+  const { st, read, rng, readRanges } = countingRangeReader(buf);
+  const res = await demuxAssRow1({ read, readRanges, segStart: head.segStart, scale: head.scale, cues, trackNum: 3, codecPrivate: track.priv });
+
+  const expected = readFileSync(join(here, "fixtures/kusuriya-eng-track.ass"));
+  assert.equal(res.cues, 325);
+  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact vs the FFmpeg oracle");
+  assert.ok(rng.calls <= 3, `expected ≤ 3 multi-range calls, got ${rng.calls} (${JSON.stringify(rng.counts)})`);
+  assert.equal(st.reads, 0, "zero sequential reads when readRanges is provided");
+  assert.ok(rng.bytes <= 1_000_000, `batched ${rng.bytes} B > 1 MB`);
+  console.log(`row1-batched: ${res.cues} cues, ${rng.bytes} B in ${rng.calls} multi-range calls ${JSON.stringify(rng.counts)}`);
 });
 
 t("ass demux: the reader is only ever asked for ranges inside the file", async () => {

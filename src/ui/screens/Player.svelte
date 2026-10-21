@@ -220,6 +220,7 @@
   /** The engine probe's ASS track table (num/name/lang) — maps put.io's
    *  embedded entries onto the Matroska tracks the raw-ASS upgrade walks. */
   let subAssTracks: AssTrackInfo[] = [];
+  let armedSubs = new Set<number>(); // put.io subtitle indices already upgraded for this file
   /** The embedded ASS style table the engine's header probe found first
    *  (the default track); null = plain overlay (no MKV or probe failed). */
   let styleTable: AssStyleTable | null = null;
@@ -305,7 +306,10 @@
     // the header probe landed — the overlay now renders per style
     // (first table = the default track, which the pick panel defaults to)
     if (p.subStyleTables !== undefined) styleTable = p.subStyleTables[0] ?? null;
-    if (p.subAssTracks !== undefined) subAssTracks = p.subAssTracks;
+    if (p.subAssTracks !== undefined) {
+      subAssTracks = p.subAssTracks;
+      scheduleRawAssUpgrade(); // the probe's track list can land AFTER the subtitles
+    }
     if (p.subChapters !== undefined) {
       fileChapters = p.subChapters.length > 0 ? p.subChapters : null;
       if (dbSegs !== null) applySegs(); // late probe: the DB already settled
@@ -390,6 +394,7 @@
       subLines = [];
       styleTable = null; // the new file's probe result is pending
       subUpgrades = {}; // row-2 schedulers belong to the previous file
+      armedSubs = new Set();
       startedPlaying = false;
       metaStarted = false; // the new file's lookups haven't fired yet
       abortMeta(); // the old file's in-flight lookups die with it
@@ -820,16 +825,36 @@
    *  the playhead passes. put.io's cues stay on screen until each window
    *  lands. OpenSubtitles/folder tracks never take this path. */
   function scheduleRawAssUpgrade() {
-    if (source === "hls" || !engine) return; // HLS overlay uses the renditions
-    const eng = engine; // stable handle for the async upgrades below
-    const fileKey = file.id;
-    for (let i = 0; i < subtitles.length; i++) {
-      const sub = subtitles[i];
-      if ((sub.source || "").toLowerCase() !== "mkv") continue; // everything else stays put.io's SRT
-      const num = matchAssTrack(sub, subAssTracks);
-      if (num === null) continue; // ambiguous mapping: keep the put.io file
-      void upgradeSub(i, num, eng, fileKey);
+    if (source === "hls" || !engine) {
+      // TEMP-DIAG (remove after the on-device check)
+      console.log("[rawass] schedule skipped: source=", source, "engine=", !!engine);
+      return; // HLS overlay uses the renditions
     }
+    // Both inputs are async: the put.io subtitles and the head probe's track
+    // list. Whichever lands LAST re-arms this (the probe's onState also calls
+    // scheduleRawAssUpgrade) — arming with an empty track list is a silent
+    // no-op, every match fails.
+    if (!subtitles.length || !subAssTracks.length) return;
+    // Only the ACTIVE subtitle gets upgraded: the user watches one language
+    // at a time, and each armed track costs real requests. selectSubTrack
+    // re-arms when the user switches (m02708).
+    if (activeSub < 0) return;
+    const sub = subtitles[activeSub];
+    if (!sub || (sub.source || "").toLowerCase() !== "mkv") return; // everything else stays put.io's SRT
+    if (armedSubs.has(activeSub)) return; // armed at most once per file+subtitle
+    armedSubs.add(activeSub); // a null match never recovers (track list is static) — no retry loop
+    const num = matchAssTrack(sub, subAssTracks);
+    // TEMP-DIAG (remove after the on-device check)
+    console.log(
+      "[rawass] arming sub",
+      activeSub,
+      sub.languageCode,
+      "→",
+      num === null ? "NO MATCH (kept put.io file)" : "track " + num,
+    );
+    if (num === null) return; // ambiguous mapping: keep the put.io file
+    const eng = engine; // stable handle for the async upgrade below
+    void upgradeSub(activeSub, num, eng, file.id);
   }
 
   /** Row-2 upgrade state, per subtitle index: the playhead-paced scheduler
@@ -860,20 +885,35 @@
    *  they land; row 3 = nothing (put.io's converted file is final). */
   async function upgradeSub(i: number, num: number, eng: MediaEngine, fileKey: number) {
     const route = await eng.probeRawAss(num);
+    // TEMP-DIAG (remove after the on-device check)
+    console.log("[rawass] upgrade", i, "route:", route ? `row ${route.row}` : "null");
     // the file (or the subtitle list) may have changed while the probe ran
     if (!route || file.id !== fileKey || !subtitles[i]) return;
     if (route.row === 3) return; // no upgrade: the base layer stands
     if (route.row === 1) {
       if (!route.ass) return;
       const cues = parseAssCues(route.ass);
-      if (!shouldUpgradeCues(subtitles[i].cues?.length || 0, cues.length)) return;
+      const ok = shouldUpgradeCues(subtitles[i].cues?.length || 0, cues.length);
+      // TEMP-DIAG (remove after the on-device check)
+      console.log(
+        "[rawass] upgrade", i, "row1: base cues=",
+        subtitles[i].cues?.length ?? 0,
+        "fresh cues=", cues.length, "→", ok ? "SWAP" : "KEPT BASE",
+      );
+      if (!ok) return;
       const table = parseAssStyles(route.ass);
       if (table) styleTable = table; // the track's own table, not the first probed
       applySubCues(i, cues);
       return;
     }
     // row 2: arm the lazy scheduler; driveSubUpgrades feeds it the playhead
-    if (!route.plan || !route.codecPrivate || !route.scale) return;
+    if (!route.plan || !route.codecPrivate || !route.scale) {
+      // TEMP-DIAG (remove after the on-device check)
+      console.log("[rawass] upgrade", i, "row2: missing plan/codecPrivate/scale");
+      return;
+    }
+    // TEMP-DIAG (remove after the on-device check)
+    console.log("[rawass] upgrade", i, "row2 ARMED, plan=", route.plan.length, "clusters");
     armRow2Upgrade(i, num, eng, fileKey, route);
   }
 
@@ -949,6 +989,7 @@
     activeSub = i;
     hlsSub = -1;
     subCues = subtitles[i] ? subtitles[i].cues || [] : [];
+    scheduleRawAssUpgrade(); // a newly active track arms its own upgrade (m02708)
   }
 
   /** Subtitle size, picked directly on the player (issue: "an option to
