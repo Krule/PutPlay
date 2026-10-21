@@ -37,10 +37,23 @@ FFmpeg's ass muxer is the byte-exact oracle. Ground truth:
   block payload = `[0x00]["F0,F1,style,name,ML,MR,MV,Effect,Text"]` where F0 =
   readorder, F1 = layer; rel-ts is plain 2-byte big-endian (not a vint); lines are
   emitted in readorder, not pts order.
-- **Cues in this file are half-broken** (the warning case): cluster offsets valid
-  (all 323 verified), in-cluster `CueRelativePosition` garbage (lands 32–1,865 B
-  past the real block), track labels shifted (English cues labeled track 12),
-  323/325 entries. **Never trust an index that isn't validated.**
+- **Cues in this file are FULLY VALID** (verified 2026-10-21 after the audit
+  parser was fixed — an earlier "half-broken" reading was an artifact of a
+  size-vs-value bug in the validator script, not of the file): 3,613 CuePoints;
+  every subtitle block cued exactly once (English = 325/325, labels = true track
+  numbers); video cues = 277 (keyframes only). Empirical check, all 325 English
+  cues: `CueClusterPosition + 52` → cluster ID `1F 43 B6 75` (325/325);
+  `cluster_payload_start + CueRelativePosition` → the block element ID itself
+  (325/325 `0xA0` BlockGroups); track vint & 0x7F = label (325/325);
+  `cts + rel_ts − CueTime` = 0 ms (max). **Verified Cues semantics**:
+  `CueRelativePosition` is measured from the **cluster payload start** (cluster ID
+  + 4 + size-vint length) and points at the block's **element ID** (`0xA0`/`0xA3`),
+  not at the track vint; for `0xA0` the track vint sits behind the nested `0xA1`
+  element; `CueTime`/`CueDuration` are absolute, in TimestampScale units — **row 1
+  needs no cluster prefix fetch at all** (start = `tsToMs(CueTime)`, end =
+  `tsToMs(CueTime + CueDuration)`). Cluster prefixes begin with an **optional
+  `0xBF` CRC-32 element** (present in this file; skip as an element, never assume a
+  fixed width), then `0xE7` ClusterTimestamp.
 
 ## 3. The ladder (design)
 
@@ -58,13 +71,15 @@ each track is routed independently through its own Cues label (§4c).
 ### Row 1 — fully valid Cues
 
 - Fetch: multi-range, ≤200 ranges/request. Per cue: one range
-  `[claimed_offset, claimed_offset + 1024]` (1 KB margin — Cues carry duration in
-  *time*, not bytes; the block's own size vint terminates the payload; a rare
-  >1 KB block gets one follow-up range).
-- Include the unique cluster prefixes (`0xE7` cts) in the same batches
-  (start = cts + rel_ts; ~220–1,400 prefixes at these sizes).
+  `[cluster_payload_start + rel, cluster_payload_start + rel + 1024]` (1 KB margin
+  — Cues carry duration in *time*, not bytes; the block's own size vint terminates
+  the payload; a rare >1 KB block gets one follow-up range).
+- No cluster prefixes needed: `start = tsToMs(CueTime)`, `end = tsToMs(CueTime +
+  CueDuration)` (verified 0 ms error across all 325 cues of the reference file).
 - Parse with the existing `parseAssBlock`/`assembleAss` (byte-exact parity with the
-  oracle is what `test/ass-demux.test.mjs` pins).
+  oracle is what `test/ass-demux.test.mjs` pins) — block layout: `0xA0`{`0xA1`
+  [track vint][2B rel-ts][payload]} + `0x9B` duration, or `0xA3`[track vint][2B
+  rel-ts][payload]; strip the one leading `0x00`.
 - Merge: full replacement, guarded by `shouldUpgradeCues` (fresh ≥ existing).
 - Scale: 2000 cues / 50 GB / 2 h → ~17 requests, ~0.5–1 MB. **Flat at any file size.**
 
@@ -99,13 +114,17 @@ track table (`probe.assTracks`), and the put.io SRT cue times for mapped tracks.
 
 1. **Cluster check** — for ~10 unique `CueClusterPosition`s: fetch 4 B at
    `value + 52`, expect `1F 43 B6 75`. Pass ⇒ row 2 eligible.
-2. **Block check** — for ~5–8 cues: fetch ~10 B at `cluster + rel`: first byte
-   `0x80|track`, rel-ts parseable, and `cts + rel_ts ≈ CueTime` (± small ε).
-   Pass ⇒ row 1 eligible.
-3. **Label→track / label→language** — the sampled block's first byte *is* the real
-   track vint; correlate each candidate label's cue times against each put.io
-   entry's SRT times (already in memory) to bind label → language → container
-   track. Robust to shifted labels (Kusuriya: English cues labeled "12").
+2. **Block check** — for ~5–8 cues: fetch ~12 B at `cluster_payload_start + rel`
+   (payload start = `ccp + 52 + 4 + len(size vint)`): first byte `0xA0` (then inner
+   `0xA1`, track vint behind it) or `0xA3` (track vint directly); track vint & 0x7F
+   = label; `cts + rel_ts ≈ CueTime` (cts from the cluster prefix, CRC element
+   skipped properly). Pass ⇒ row 1 eligible.
+3. **Label→track** — the sampled block's track vint *is* the real track number;
+   vint = label ⇒ label IS the container track number (language known from the
+   probe's track table — no correlation needed; this held on all six audited
+   files). vint ≠ label ⇒ **demote to row 3** for that track (safe default;
+   an SRT-time-correlation resolver for shifted labels is a possible later
+   refinement, out of I1 scope).
 
 Verdict per track: all pass → **row 1**; cluster passes, block fails → **row 2**
 (if ≤2 GiB, else row 3); else → **row 3**. Demotion is one-way (1→2→3).
@@ -148,18 +167,29 @@ Verdict per track: all pass → **row 1**; cluster passes, block fails → **row
   `video/webm; codecs="av01.0.05M.08,opus"` (expect false on this webview — AV1
   MSE is the gate on the future zero-byte tap). If the in-page fetch fails, rows
   1–2 die and the already-shipped base layer stands — pure de-risking either way.
-- **E2 — 6-file Cues audit** (finish `cuescheck.py`: HEAD must follow the 302 to
-  the CDN; fix the TNUM/TimestampScale parse — hexdump ground truth recorded in
-  session b29): files 1615911660, 1614058473, 1617596622, 1618364461, 1618364460,
-  1615182727. Answer: **which row does each real file land in** — where the mass is.
-  (1614058473 is a Blu-ray rip with 13 PGS tracks — expect no ASS upgrade path at
-  all; 1615182727 is H.264 — the MSE-tap candidate.)
+- **E2 — 6-file Cues audit — DONE 2026-10-21.** All six files (1615911660,
+  1614058473, 1617596622, 1618364461, 1618364460, 1615182727): cluster offsets
+  12/12, block landing 40/40, label = true track number, `|block-start − CueTime|`
+  max 0 ms. Cues counts 1,192–37,266. **No file is half-broken** — row 2 is a
+  safety net for a pattern absent from this sample (its I1 fixture is synthetic).
+  ASS tracks exist only in the three fansub rips (1618364461: 9 tracks, up to 453
+  cues; 1618364460: 10 tracks; 1615182727: 1 track, 151 cues — H.264, the
+  MSE-tap candidate) → all **row 1** (max ~3 requests / ~60 KB each). The other
+  three (4K HEVC rips, S_TEXT/UTF8 and PGS subs) have no ASS to upgrade — base
+  layer is the final state there. Consequence: the validator still ships (cheap
+  insurance, and the row-1 precondition), but row 1 is the shipping path.
+  Note: S_TEXT/UTF8 cues are equally valid — the row-1 transport is
+  codec-agnostic (future: embedded UTF8 fetch could replace put.io-converted SRT
+  byte-for-byte too; not in scope).
 
 ## 8. Build plan (TDD, after E1/E2)
 
 - **I1 validator** — RED: synthetic MKV fixtures with (a) fully-valid Cues
   (ffmpeg-muxed `.ass` → valid Cues; row-1 oracle = the same ffmpeg file),
-  (b) Kusuriya-style half-broken Cues, (c) no Cues → assert row verdicts 1/2/3.
+  (b) half-broken Cues (valid cluster offsets, corrupted rels — synthesize by
+  rewriting CueRelativePosition bytes in a copy; the reference file is NOT
+  half-broken, that was a parser artifact), (c) no Cues → assert row verdicts
+  1/2/3. Expected per-file verdicts from the E2 audit double as acceptance pins.
 - **I2 row 1 batcher** — RED: valid-Cues fixture → batched ranges ≤200, 1 KB
   margin, cluster prefixes; assembled cues byte-identical to the oracle track.
 - **I3 row 2 scheduler** — RED: prune rule + fake-playhead state machine

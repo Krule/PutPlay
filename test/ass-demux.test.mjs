@@ -125,13 +125,14 @@ const concat = (parts) => {
 const vintSize = (v) =>
   v < 0x80 ? Uint8Array.of(0x80 | v) : Uint8Array.of(0x40 | (v >> 8), v & 0xff);
 const idBytes = (id) =>
+  // marker bits are part of the ID constants (0x80/0x40/0x20/0x10 leading nibble)
   id < 0x100
-    ? Uint8Array.of(id) // 1-byte IDs always carry the 0x80 marker bit
+    ? Uint8Array.of(id)
     : id < 0x10000
-      ? Uint8Array.of((id >> 8) | 0x40, id & 0xff)
+      ? Uint8Array.of((id >> 8) & 0xff, id & 0xff)
       : id < 0x1000000
-        ? Uint8Array.of((id >> 16) | 0x20, (id >> 8) & 0xff, id & 0xff)
-        : Uint8Array.of((id >> 24) | 0x10, (id >> 16) & 0xff, (id >> 8) & 0xff, id & 0xff);
+        ? Uint8Array.of((id >> 16) & 0xff, (id >> 8) & 0xff, id & 0xff)
+        : Uint8Array.of((id >> 24) & 0xff, (id >> 16) & 0xff, (id >> 8) & 0xff, id & 0xff);
 const elem = (id, ...payloads) => {
   const p = concat(payloads);
   return concat([idBytes(id), vintSize(p.length), p]);
