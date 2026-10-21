@@ -67,7 +67,18 @@ test("probe: assTracks lists every ASS subtitle track with num/name/lang", () =>
       assert.ok(t.num >= 1, `track entry has a number: ${JSON.stringify(t)}`);
       assert.equal(typeof t.name, "string");
       assert.equal(typeof t.lang, "string");
+      // the row-routed upgrade needs the track's raw CodecPrivate (the .ass
+      // header) — the probe already fetched it for the style table, so it is
+      // kept, not just parsed away
+      assert.ok(t.priv.length > 0, `track ${t.num} keeps its CodecPrivate`);
     }
+    assert.equal(eng.priv.length, 1976, "track 3's CodecPrivate is 1,976 B");
+    assert.ok(
+      new TextDecoder().decode(eng.priv).startsWith("[Script Info]"),
+      "the raw CodecPrivate IS the .ass header",
+    );
+    assert.equal(r.segStart, 52, "segment payload start — the base of the +52 rule");
+    assert.equal(r.scale, 1_000_000, "TimestampScale (ns per unit; 1e6 = ms units)");
     // The Tracks element is inside the existing 64 KB head window — the
     // track table must cost no extra transfer.
     assert.ok(bytes <= 65536, `track table stayed in the head window (${bytes} B read)`);
@@ -188,22 +199,33 @@ test("shouldUpgradeCues: the raw-ASS upgrade never loses cue coverage", () => {
   assert.equal(shouldUpgradeCues(0, 0), false, "an empty demux is no upgrade");
 });
 
-test("MediaEngine: publishes subAssTracks from the probe and offers loadRawAss", () => {
+test("MediaEngine: probes each embedded track's raw-ASS route (row-routed)", () => {
   const media = readSrc("src/putio/media.ts");
   assert.ok(/subAssTracks/.test(media), "MediaEngine state must carry subAssTracks");
   assert.ok(
     /onState\(\s*\{[^}]*subAssTracks/.test(media),
     "the probe result's track table must be published via onState"
   );
-  const raw = media.slice(media.indexOf("loadRawAss("));
-  assert.ok(raw.length > 0, "MediaEngine must offer loadRawAss(trackNum)");
+  // The 411k-request full walk is retired — the upgrade is row-routed
+  // (cues.ts validator → row 1 batcher | row 2 scheduler | nothing).
+  assert.ok(!/loadRawAss/.test(media), "the retired loadRawAss (full walk) must be gone");
+  const raw = media.slice(media.indexOf("probeRawAss("));
+  assert.ok(raw.length > 0, "MediaEngine must offer probeRawAss(trackNum)");
+  assert.ok(/cuesFileOffset/.test(raw), "no Cues offset → row 3 (the put.io file stands)");
+  assert.ok(/fetchCues\(/.test(raw), "the Cues element is fetched by file offset");
   assert.ok(
-    /demuxAssTrack\(/.test(raw),
-    "loadRawAss must demux via demuxAssTrack (the byte-exact cluster walk)"
+    /routeRawAss\(/.test(raw),
+    "the route (validate → row 1 | row 2 | row 3) decides the path"
   );
   assert.ok(
     /rangeReader\(\)/.test(raw),
-    "loadRawAss must read through the engine's stream range reader"
+    "the probe must read through the engine's stream range reader"
+  );
+  // rangeReader is PUBLIC: the Player's row-2 scheduler fetches through it
+  const declStart = media.lastIndexOf("\n", media.indexOf("rangeReader()"));
+  assert.ok(
+    !/private/.test(media.slice(declStart, declStart + 60)),
+    "rangeReader must be public (the row-2 scheduler fetches via it)"
   );
   const reader = media.slice(media.indexOf("rangeReader():"));
   assert.ok(
@@ -214,7 +236,7 @@ test("MediaEngine: publishes subAssTracks from the probe and offers loadRawAss",
 
 // ---------------- T4: Player wiring (source contract) ---------------------
 
-test("Player: maps embedded subs onto tracks and upgrades with raw ASS", () => {
+test("Player: row-routes the raw-ASS upgrade (batch or playhead-paced, never the full walk)", () => {
   const player = readSrc("src/ui/screens/Player.svelte");
   assert.ok(
     /subAssTracks\s*=\s*p\.subAssTracks/.test(player),
@@ -225,8 +247,17 @@ test("Player: maps embedded subs onto tracks and upgrades with raw ASS", () => {
     "embedded (source mkv) subs must be matched onto Matroska tracks"
   );
   assert.ok(
-    /loadRawAss\(/.test(player),
-    "the Player must request the raw ASS demux for matched tracks"
+    /probeRawAss\(/.test(player),
+    "the upgrade must go through the engine's row-routed probe"
+  );
+  assert.ok(!/loadRawAss/.test(player), "the retired loadRawAss (full walk) must be gone");
+  assert.ok(
+    /createLazyScheduler\(/.test(player),
+    "row 2 (clusters valid, rels not) must be playhead-paced via the lazy scheduler"
+  );
+  assert.ok(
+    /mergeUpgradedCues\(/.test(player),
+    "row 2 windows must merge per-cue (upgraded twins replace put.io's; the rest stand)"
   );
   assert.ok(
     /parseAssCues\(/.test(player),

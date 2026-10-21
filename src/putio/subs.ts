@@ -331,6 +331,42 @@ export function shouldUpgradeCues(existingCueCount: number, freshCueCount: numbe
   return freshCueCount >= existingCueCount;
 }
 
+/** Twin-match window: the put.io conversion and the demuxed track share the
+ *  container's timestamps (centisecond resolution here) — 50 ms is half a
+ *  centisecond, wide enough for rounding modes, narrow enough that two
+ *  different cues never match. */
+const TWIN_TOLERANCE_S = 0.05;
+
+/**
+ * Row 2's per-window merge: each freshly demuxed cue REPLACES its put.io
+ * twin (same start+end within the tolerance) instead of stacking on top of
+ * it; base cues whose twin has not landed yet stand as they are. Each
+ * upgraded cue consumes at most one base cue, so a bilingual pair
+ * (two cues, one start) maps 2↔2. Re-merging a growing set stays stable:
+ * previously-upgraded cues re-match themselves and are replaced in place.
+ */
+export function mergeUpgradedCues(base: AnyCue[], upgraded: AnyCue[]): AnyCue[] {
+  const consumed = new Array(base.length).fill(false);
+  for (const u of upgraded) {
+    for (let i = 0; i < base.length; i++) {
+      if (consumed[i]) continue;
+      const b = base[i];
+      if (
+        Math.abs(u.start - b.start) <= TWIN_TOLERANCE_S &&
+        Math.abs(u.end - b.end) <= TWIN_TOLERANCE_S
+      ) {
+        consumed[i] = true;
+        break;
+      }
+    }
+  }
+  const out: AnyCue[] = upgraded.slice();
+  for (let i = 0; i < base.length; i++) {
+    if (!consumed[i]) out.push(base[i]);
+  }
+  return out;
+}
+
 /**
  * The languages the subtitle SEARCH is asked for: the union of the language
  * the user set in the APP (config.subtitleLang) and the put.io web account's

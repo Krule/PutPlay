@@ -58,12 +58,14 @@ export interface Chapter {
 
 /** One ASS subtitle track as the container declares it — maps put.io's
  *  converted subtitle entries back onto the Matroska track number that
- *  demuxAssTrack walks. */
+ *  the row-routed upgrade demuxes. */
 export interface AssTrackInfo {
   num: number;
   name: string;
   /** RFC 3066 language code ("eng", "spa", …); "" when the file omits it */
   lang: string;
+  /** the raw CodecPrivate — the track's own .ass header (styles + Format) */
+  priv: Uint8Array;
 }
 
 export interface ProbeResult {
@@ -77,6 +79,11 @@ export interface ProbeResult {
    *  SeekHead carries no Cues entry — the caller falls back (tail scan) or
    *  treats the file as cue-less. */
   cuesFileOffset: number | null;
+  /** segment payload start (the base of the +segStart rule for all
+   *  segment-relative positions); -1 when no segment was found */
+  segStart: number;
+  /** TimestampScale (ns per timestamp unit; 1_000_000 = ms units) */
+  scale: number;
 }
 
 const FIRST_WINDOW = 65536; // 64 KB
@@ -346,7 +353,7 @@ async function collectTrackTables(
     const table = parseAssStyles(text);
     if (table) {
       tables.push(table);
-      tracks.push({ num, name, lang });
+      tracks.push({ num, name, lang, priv: privData });
     }
   });
   return { tables, tracks };
@@ -412,16 +419,27 @@ export async function probeHeader(
 ): Promise<ProbeResult> {
   const r = new BoundedReader(read);
   const first = await r.fetchAt(0, FIRST_WINDOW);
-  if (!first.length) return { styleTables: [], assTracks: [], chapters: [], cuesFileOffset: null };
+  if (!first.length)
+    return { styleTables: [], assTracks: [], chapters: [], cuesFileOffset: null, segStart: -1, scale: 1_000_000 };
 
   const styleTables: AssStyleTable[] = [];
   const assTracks: AssTrackInfo[] = [];
   const chapters: Chapter[] = [];
   let cuesFileOffset: number | null = null;
+  let scale = 1_000_000;
   const segStart = await findSegmentStart(r);
-  if (segStart < 0) return { styleTables, assTracks, chapters, cuesFileOffset };
+  if (segStart < 0) return { styleTables, assTracks, chapters, cuesFileOffset, segStart, scale };
 
   await walkSegmentTop(r, segStart, async (h, payloadStart, payloadEnd) => {
+    if (h.id === MATROSKA.INFO) {
+      if (payloadEnd > r.bufferedEnd) await r.fetchAt(payloadStart, h.size);
+      if (payloadEnd <= r.bufferedEnd) {
+        await walkChildren(r, payloadStart, payloadEnd, async (c, cp) => {
+          if (c.id === MATROSKA.TIMESTAMP_SCALE) scale = await readInt(r, cp, c.size);
+        });
+      }
+      return false;
+    }
     if (h.id === MATROSKA.TRACKS || h.id === MATROSKA.EDITIONS) {
       if (payloadEnd > r.bufferedEnd) await r.fetchAt(payloadStart, h.size);
       if (payloadEnd <= r.bufferedEnd) {
@@ -445,5 +463,5 @@ export async function probeHeader(
     if (h.id === MATROSKA.CLUSTER) return true; // header region over
     return false; // anything else (Void, Cues, Tags, …): skip by offset
   });
-  return { styleTables, assTracks, chapters, cuesFileOffset };
+  return { styleTables, assTracks, chapters, cuesFileOffset, segStart, scale };
 }

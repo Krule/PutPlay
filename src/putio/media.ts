@@ -15,7 +15,8 @@ import { parseHlsAudioRenditions, type HlsAudioRendition } from "./hls-manifest"
 import { freshSkip, type Seg } from "./segments";
 import { autoResumeTarget } from "./resume";
 import { probeHeader, type Chapter, type AssTrackInfo } from "./probe";
-import { demuxAssTrack } from "./ass-demux";
+import { fetchCues } from "./cues";
+import { routeRawAss, type RawAssRoute } from "./ass-route";
 import type { AssStyleTable } from "./substyle";
 import Hls from "hls.js";
 
@@ -91,9 +92,9 @@ export interface MediaState {
    *  (bounded probe, best-effort). The subtitle overlay renders per style
    *  (colour/outline/position); empty = the plain unstyled overlay. */
   subStyleTables?: AssStyleTable[];
-  /** ASS subtitle tracks the container declares (num/name/lang) — maps
-   *  put.io's converted entries onto the Matroska track numbers the raw-ASS
-   *  demux (loadRawAss) walks. */
+  /** ASS subtitle tracks the container declares (num/name/lang + CodecPrivate)
+   *  — maps put.io's converted entries onto the Matroska track numbers the
+   *  row-routed raw-ASS upgrade (probeRawAss) fetches. */
   subAssTracks?: AssTrackInfo[];
   /** Chapters from the same header probe (start/end seconds, title). */
   subChapters?: Chapter[];
@@ -114,8 +115,14 @@ export class MediaEngine {
   subAssTracks: AssTrackInfo[] = [];
   /** MKV chapters from the header probe (start/end seconds, title). */
   subChapters: Chapter[] = [];
+  /** Segment payload start (header probe) — CueClusterPosition + segStart = file offset. */
+  segStart: number = -1;
+  /** TimestampScale (header probe; 1 000 000 = ms per unit, the common case). */
+  scale: number = 1_000_000;
+  /** Cues element file offset (header probe; null = none → row 3). */
+  cuesFileOffset: number | null = null;
   source: SourceKind = "original";
-  private file: { id: number; is_mp4_available?: boolean; start_from?: number };
+  private file: { id: number; is_mp4_available?: boolean; start_from?: number; size?: number };
   private auth: Auth;
   private hls: HlsLike | null = null;
   private unsub: (() => void)[] = [];
@@ -475,8 +482,9 @@ export class MediaEngine {
     }
   }
 
-  /** One Range request per call, on the file's original stream URL. */
-  private rangeReader(): (start: number, end: number) => Promise<Uint8Array> {
+  /** One Range request per call, on the file's original stream URL. Public
+   *  because the row-2 scheduler (Player) drives its own fetches. */
+  rangeReader(): (start: number, end: number) => Promise<Uint8Array> {
     const url = streamURL(this.auth, this.file.id);
     return async (start, end) => {
       const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
@@ -496,25 +504,40 @@ export class MediaEngine {
       this.subStyleTables = result.styleTables;
       this.subAssTracks = result.assTracks;
       this.subChapters = result.chapters;
+      this.segStart = result.segStart;
+      this.scale = result.scale;
+      this.cuesFileOffset = result.cuesFileOffset;
       this.onState({ subStyleTables: this.subStyleTables, subAssTracks: this.subAssTracks, subChapters: this.subChapters });
     } catch {
       /* non-fatal: the overlay stays plain */
     }
   }
 
-  /** Demux one embedded ASS track straight off the ORIGINAL stream — the
-   *  full-fidelity upgrade of put.io's stripped conversion (which keeps only
-   *  a leading {\an8}): the cluster walk (ass-demux.ts) reassembles the
-   *  container's own .ass byte-exact. Runs as a BACKGROUND upgrade: the
-   *  walk is byte-cheap (~0.4% of the file) but issues many small Range
-   *  requests, so it must never block playback or the (already shown)
-   *  put.io cues. Non-fatal: any failure returns null and the put.io file
-   *  stands. */
-  async loadRawAss(trackNum: number): Promise<string | null> {
+  /** Decide how this track's raw ASS should be fetched (docs/raw-ass-upgrade.md):
+   *  row 1 = validated Cues → a few batched block ranges (the whole track at
+   *  ~0.23% of the file, byte-exact); row 2 = validated cluster offsets but
+   *  untrusted in-cluster offsets → the Player's lazy whole-cluster scheduler
+   *  (playhead-paced); row 3 = no upgrade (put.io's converted file stands).
+   *  Non-fatal: any failure returns null and the put.io file stands. */
+  async probeRawAss(trackNum: number): Promise<RawAssRoute | null> {
+    const track = this.subAssTracks.find((t) => t.num === trackNum);
+    if (!track) return null;
+    // row 2 needs the size for its 2 GiB cap; without it there is no upgrade path
+    if (this.cuesFileOffset === null || !this.file.size) return { row: 3, trackNum };
     try {
-      const result = await demuxAssTrack(this.rangeReader(), trackNum);
+      const reader = this.rangeReader();
+      const cues = await fetchCues(reader, this.cuesFileOffset);
       if (this.cleaning) return null;
-      return new TextDecoder("utf-8").decode(result.ass);
+      return await routeRawAss({
+        read: reader,
+        segStart: this.segStart,
+        scale: this.scale,
+        cuesFileOffset: this.cuesFileOffset,
+        fileSize: this.file.size,
+        cues,
+        trackNum,
+        codecPrivate: track.priv,
+      });
     } catch {
       return null; // non-fatal: the put.io cues stand
     }

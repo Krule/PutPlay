@@ -70,22 +70,27 @@ const TIME_TOLERANCE = 1;
 
 // ----------------------------------------------------------------- byte util
 
-/** Element ID at `off`: 1–4 bytes, the length is the marker bit. null = not an ID. */
+/** Element ID at `off`: 1–4 bytes, the length is the marker bit. The marker
+ *  stays PART of the returned ID value (codebase convention — e.g. the 4-byte
+ *  Cluster ID is 0x1F43B675, marker bit included). null = not an ID. */
 function readId(buf: Uint8Array, off: number): { id: number; len: number } | null {
   if (off >= buf.length) return null;
   const b = buf[off];
   if (b & 0x80) return { id: b, len: 1 };
   if (b & 0x40) {
     if (off + 1 >= buf.length) return null;
-    return { id: ((b & 0x3f) << 8) | buf[off + 1], len: 2 };
+    return { id: 0x4000 | ((b & 0x3f) << 8) | buf[off + 1], len: 2 };
   }
   if (b & 0x20) {
     if (off + 2 >= buf.length) return null;
-    return { id: ((b & 0x1f) << 16) | (buf[off + 1] << 8) | buf[off + 2], len: 3 };
+    return { id: 0x200000 | ((b & 0x1f) << 16) | (buf[off + 1] << 8) | buf[off + 2], len: 3 };
   }
   if (b & 0x10) {
     if (off + 3 >= buf.length) return null;
-    return { id: ((b & 0x0f) << 24) | (buf[off + 1] << 16) | (buf[off + 2] << 8) | buf[off + 3], len: 4 };
+    return {
+      id: 0x10000000 | ((b & 0x0f) << 24) | (buf[off + 1] << 16) | (buf[off + 2] << 8) | buf[off + 3],
+      len: 4,
+    };
   }
   return null;
 }
@@ -136,6 +141,30 @@ export function parseCues(bytes: Uint8Array): CueEntry[] {
     }
   }
   return out;
+}
+
+/**
+ * Fetch + parse the Cues element at its file offset (the ID 1C53BB6B
+ * position the probe's SeekHead walk reports): one 12 B header read
+ * (ID + size vint) and one payload read — the element itself is small
+ * (~87 KB on the 218 MB reference file). [] when the offset is stale or
+ * the bytes are not the Cues element (the caller routes to row 3).
+ */
+export async function fetchCues(
+  read: (start: number, end: number) => Promise<Uint8Array>,
+  cuesFileOffset: number,
+): Promise<CueEntry[]> {
+  const hdr = await read(cuesFileOffset, cuesFileOffset + 11);
+  const id = readId(hdr, 0);
+  if (!id || id.id !== 0x1c53bb6b) return [];
+  const sln = vintLenAt(hdr, id.len);
+  if (!sln || id.len + sln > hdr.length) return [];
+  const size = vintValue(hdr, id.len, sln);
+  const payload = await read(
+    cuesFileOffset + id.len + sln,
+    cuesFileOffset + id.len + sln + size - 1,
+  );
+  return parseCues(payload);
 }
 
 /** The CuePoint (0xBB) elements in a Cues payload: [payloadStart, payloadSize]. */

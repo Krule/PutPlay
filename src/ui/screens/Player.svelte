@@ -24,8 +24,12 @@
     unionSubtitleLanguages,
     matchAssTrack,
     shouldUpgradeCues,
+    mergeUpgradedCues,
     type LoadedSubtitle,
   } from "../../putio/subs";
+  import { assembleAss } from "../../putio/ass-demux";
+  import { createLazyScheduler, type Row2Scheduler } from "../../putio/ass-row2";
+  import type { RawAssRoute } from "../../putio/ass-route";
   import {
     renderSubtitleLines,
     parseAssCues,
@@ -279,6 +283,9 @@
     if (p.source !== undefined) source = p.source;
     if (p.duration !== undefined && p.duration !== Infinity) duration = p.duration;
     if (p.currentTime !== undefined) currentTime = p.currentTime;
+    // row-2 fidelity upgrades are playhead-paced: feed the schedulers the
+    // new time (no-op unless one is running)
+    if (p.currentTime !== undefined && Object.keys(subUpgrades).length > 0) void driveSubUpgrades();
     if (p.paused !== undefined) paused = p.paused;
     if (p.buffering !== undefined) buffering = p.buffering;
     if (p.buffered !== undefined) bufferEnd = p.buffered;
@@ -382,6 +389,7 @@
       subCues = [];
       subLines = [];
       styleTable = null; // the new file's probe result is pending
+      subUpgrades = {}; // row-2 schedulers belong to the previous file
       startedPlaying = false;
       metaStarted = false; // the new file's lookups haven't fired yet
       abortMeta(); // the old file's in-flight lookups die with it
@@ -807,10 +815,10 @@
   }
 
   /** T3 fidelity upgrade: put.io's converted embedded-track files keep only
-   *  a leading {\an8} — the raw-ASS demux (engine.loadRawAss) reassembles the
-   *  container's own .ass byte-exact. Runs in the background; put.io's cues
-   *  stay on screen until the demux lands with full coverage
-   *  (shouldUpgradeCues). OpenSubtitles/folder tracks never take this path. */
+   *  a leading {\an8} — the row-routed probe (engine.probeRawAss) reassembles
+   *  the container's own .ass: row 1 in one batch, row 2 window-by-window as
+   *  the playhead passes. put.io's cues stay on screen until each window
+   *  lands. OpenSubtitles/folder tracks never take this path. */
   function scheduleRawAssUpgrade() {
     if (source === "hls" || !engine) return; // HLS overlay uses the renditions
     const eng = engine; // stable handle for the async upgrades below
@@ -824,17 +832,100 @@
     }
   }
 
-  /** The background walk + coverage-guarded swap for one embedded track. */
-  async function upgradeSub(i: number, num: number, eng: MediaEngine, fileKey: number) {
-    const ass = await eng.loadRawAss(num);
-    // the file (or the subtitle list) may have changed while the walk ran
-    if (!ass || file.id !== fileKey || !subtitles[i]) return;
-    const cues = parseAssCues(ass);
-    if (!shouldUpgradeCues(subtitles[i].cues?.length || 0, cues.length)) return;
-    const table = parseAssStyles(ass);
-    if (table) styleTable = table; // the track's own table, not the first probed
+  /** Row-2 upgrade state, per subtitle index: the playhead-paced scheduler
+   *  plus what each merge needs. */
+  interface SubUpgrade {
+    fileKey: number;
+    scheduler: Row2Scheduler;
+    cp: Uint8Array; // the track's CodecPrivate (header + styles)
+    lastCount: number; // demuxed events merged so far
+    table: AssStyleTable | null; // the track's own style table
+  }
+  let subUpgrades: Record<number, SubUpgrade> = {};
+  /** Row 2 fetches a cluster this far ahead of the playhead (~one lookahead
+   *  per ~0.7 MB of clusters on the reference file — covered by buffering). */
+  const SUB_UPGRADE_LOOKAHEAD_MS = 10_000;
+
+  /** Swap a subtitle's cues in place; if it's the active one, the overlay
+   *  re-renders from the new set on the very next frame. */
+  function applySubCues(i: number, cues: AnyCue[]) {
     subtitles[i] = { ...subtitles[i], cues };
     if (activeSub === i) subCues = cues; // live swap: the overlay re-renders
+  }
+
+  /** The row-routed fidelity upgrade for one embedded track (docs/raw-
+   *  ass-upgrade.md): row 1 = the engine already demuxed the whole track (a
+   *  few batched ranges) → one coverage-guarded swap; row 2 = cluster
+   *  offsets only → a playhead-paced scheduler whose windows merge in as
+   *  they land; row 3 = nothing (put.io's converted file is final). */
+  async function upgradeSub(i: number, num: number, eng: MediaEngine, fileKey: number) {
+    const route = await eng.probeRawAss(num);
+    // the file (or the subtitle list) may have changed while the probe ran
+    if (!route || file.id !== fileKey || !subtitles[i]) return;
+    if (route.row === 3) return; // no upgrade: the base layer stands
+    if (route.row === 1) {
+      if (!route.ass) return;
+      const cues = parseAssCues(route.ass);
+      if (!shouldUpgradeCues(subtitles[i].cues?.length || 0, cues.length)) return;
+      const table = parseAssStyles(route.ass);
+      if (table) styleTable = table; // the track's own table, not the first probed
+      applySubCues(i, cues);
+      return;
+    }
+    // row 2: arm the lazy scheduler; driveSubUpgrades feeds it the playhead
+    if (!route.plan || !route.codecPrivate || !route.scale) return;
+    armRow2Upgrade(i, num, eng, fileKey, route);
+  }
+
+  /** Row 2: start the playhead-paced scheduler for one subtitle (its
+   *  windows merge in via driveSubUpgrades as the playhead passes). */
+  function armRow2Upgrade(i: number, num: number, eng: MediaEngine, fileKey: number, route: RawAssRoute) {
+    const cp = route.codecPrivate!;
+    subUpgrades[i] = {
+      fileKey,
+      scheduler: createLazyScheduler({
+        read: eng.rangeReader(),
+        scale: route.scale!,
+        plan: route.plan!,
+        trackNum: num,
+        lookaheadMs: SUB_UPGRADE_LOOKAHEAD_MS,
+        concurrency: 1,
+      }),
+      cp,
+      lastCount: 0,
+      table: parseAssStyles(new TextDecoder("utf-8").decode(cp)),
+    };
+  }
+
+  /** Row-2 driver (on every playhead update): settle what's due and merge
+   *  the newly demuxed windows in place — twin replacement, so put.io's cue
+   *  stays on screen until its demuxed twin lands. Non-fatal: on a scheduler
+   *  error the put.io cues stand. */
+  async function driveSubUpgrades() {
+    const tMs = currentTime * 1000;
+    for (const key of Object.keys(subUpgrades)) {
+      const i = Number(key);
+      const up = subUpgrades[i];
+      if (up.fileKey !== file.id || !subtitles[i]) {
+        delete subUpgrades[i];
+        continue;
+      }
+      up.scheduler.onPlayhead(tMs);
+      try {
+        await up.scheduler.settle();
+      } catch {
+        delete subUpgrades[i]; // non-fatal: the put.io cues stand
+        continue;
+      }
+      const events = up.scheduler.events();
+      if (events.length > up.lastCount) {
+        up.lastCount = events.length;
+        const cues = parseAssCues(new TextDecoder("utf-8").decode(assembleAss(up.cp, events)));
+        applySubCues(i, mergeUpgradedCues(subtitles[i].cues || [], cues));
+        if (up.table) styleTable = up.table; // the track's own table
+      }
+      if (up.scheduler.isDone()) delete subUpgrades[i];
+    }
   }
 
   async function selectSubTrack(i: number) {
