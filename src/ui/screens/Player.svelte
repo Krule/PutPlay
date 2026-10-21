@@ -22,15 +22,20 @@
     orderSubtitleSources,
     pickSubtitleDefault,
     unionSubtitleLanguages,
+    matchAssTrack,
+    shouldUpgradeCues,
     type LoadedSubtitle,
-    type SubtitleCue,
   } from "../../putio/subs";
   import {
     renderSubtitleLines,
+    parseAssCues,
+    parseAssStyles,
     type AssStyleTable,
+    type AnyCue,
     type RenderedLine,
     type RenderedSegment,
   } from "../../putio/substyle";
+  import type { AssTrackInfo } from "../../putio/probe";
   import { segAction, type Seg } from "../../putio/segments";
   import { lookupSegments } from "../../putio/seglookup";
   import { chaptersToSegs, mergeChapterSegs } from "../../putio/chapter-segs";
@@ -206,8 +211,11 @@
   let subtitles: LoadedSubtitle[] = [];
   let activeSub = -1; // -1 = off, 0.. = index into put.io subtitles (progressive overlay)
   let hlsSub = -1; // -1 = off, index into hls textTracks (MKV-embedded renditions)
-  let subCues: SubtitleCue[] = [];
+  let subCues: AnyCue[] = [];
   let subLines: RenderedLine[] = [];
+  /** The engine probe's ASS track table (num/name/lang) — maps put.io's
+   *  embedded entries onto the Matroska tracks the raw-ASS upgrade walks. */
+  let subAssTracks: AssTrackInfo[] = [];
   /** The embedded ASS style table the engine's header probe found first
    *  (the default track); null = plain overlay (no MKV or probe failed). */
   let styleTable: AssStyleTable | null = null;
@@ -290,6 +298,7 @@
     // the header probe landed — the overlay now renders per style
     // (first table = the default track, which the pick panel defaults to)
     if (p.subStyleTables !== undefined) styleTable = p.subStyleTables[0] ?? null;
+    if (p.subAssTracks !== undefined) subAssTracks = p.subAssTracks;
     if (p.subChapters !== undefined) {
       fileChapters = p.subChapters.length > 0 ? p.subChapters : null;
       if (dbSegs !== null) applySegs(); // late probe: the DB already settled
@@ -790,10 +799,42 @@
           : pickSubtitleDefault(subtitles, subtitleLanguages);
         if (i >= 0) selectSubTrack(i);
       }
+      scheduleRawAssUpgrade();
     } catch (e: any) {
       platform.toast("Couldn't load subtitles");
     }
     subsLoading = false;
+  }
+
+  /** T3 fidelity upgrade: put.io's converted embedded-track files keep only
+   *  a leading {\an8} — the raw-ASS demux (engine.loadRawAss) reassembles the
+   *  container's own .ass byte-exact. Runs in the background; put.io's cues
+   *  stay on screen until the demux lands with full coverage
+   *  (shouldUpgradeCues). OpenSubtitles/folder tracks never take this path. */
+  function scheduleRawAssUpgrade() {
+    if (source === "hls" || !engine) return; // HLS overlay uses the renditions
+    const eng = engine; // stable handle for the async upgrades below
+    const fileKey = file.id;
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = subtitles[i];
+      if ((sub.source || "").toLowerCase() !== "mkv") continue; // everything else stays put.io's SRT
+      const num = matchAssTrack(sub, subAssTracks);
+      if (num === null) continue; // ambiguous mapping: keep the put.io file
+      void upgradeSub(i, num, eng, fileKey);
+    }
+  }
+
+  /** The background walk + coverage-guarded swap for one embedded track. */
+  async function upgradeSub(i: number, num: number, eng: MediaEngine, fileKey: number) {
+    const ass = await eng.loadRawAss(num);
+    // the file (or the subtitle list) may have changed while the walk ran
+    if (!ass || file.id !== fileKey || !subtitles[i]) return;
+    const cues = parseAssCues(ass);
+    if (!shouldUpgradeCues(subtitles[i].cues?.length || 0, cues.length)) return;
+    const table = parseAssStyles(ass);
+    if (table) styleTable = table; // the track's own table, not the first probed
+    subtitles[i] = { ...subtitles[i], cues };
+    if (activeSub === i) subCues = cues; // live swap: the overlay re-renders
   }
 
   async function selectSubTrack(i: number) {

@@ -1,3 +1,5 @@
+import type { AnyCue } from "./substyle";
+
 export interface SubtitleCue {
   start: number;
   end: number;
@@ -96,8 +98,8 @@ export function cueAt(cues: SubtitleCue[], t: number): SubtitleCue | null {
  * pair invisible. Cues are already sorted by start, so this preserves file
  * order; identical text is shown once.
  */
-export function cuesAt(cues: SubtitleCue[], t: number): SubtitleCue[] {
-  const out: SubtitleCue[] = [];
+export function cuesAt(cues: AnyCue[], t: number): AnyCue[] {
+  const out: AnyCue[] = [];
   const seen = new Set<string>();
   for (const c of cues) {
     if (t < c.start || t > c.end) continue;
@@ -218,7 +220,7 @@ export interface LoadedSubtitle {
   /** Where put.io says this subtitle came from ("OpenSubtitles", "upload", …). */
   source?: string;
   blobURL?: string; // created after conversion
-  cues?: SubtitleCue[]; // parsed for the self-rendered overlay
+  cues?: AnyCue[]; // parsed for the self-rendered overlay (put.io SRT/VTT, or the raw-ASS demux)
 }
 
 /**
@@ -275,6 +277,58 @@ export function pickSubtitleDefault(
     if (wanted.includes(code) || wanted.includes(name)) return i;
   }
   return -1;
+}
+
+/**
+ * Map a put.io subtitle entry onto the Matroska track number that
+ * demuxAssTrack walks (the raw-ASS upgrade path). put.io's `name` is the
+ * converted file's filename ("…-eng.srt"), never the container's TrackName
+ * ("CR_English") — so language_code is the key and the name is only a hint
+ * for same-language ties. A tie resolves to the entry whose container name
+ * the entry name contains (most specific wins); anything ambiguous returns
+ * null and the caller keeps the put.io file — a wrong-language swap is
+ * worse than flat subtitles.
+ */
+export function matchAssTrack(
+  sub: { languageCode?: string; name?: string },
+  tracks: { num: number; name: string; lang: string }[],
+): number | null {
+  const code = (sub.languageCode || "").toLowerCase();
+  if (!code || !tracks.length) return null;
+  const sameLang = tracks.filter((t) => (t.lang || "").toLowerCase() === code);
+  if (sameLang.length === 1) return sameLang[0].num;
+  if (sameLang.length === 0) return null;
+  // Same-language tie: the entry's name must contain one of the container
+  // names; the longest contained name is the most specific match.
+  const nm = (sub.name || "").toLowerCase();
+  if (!nm) return null;
+  let bestNum: number | null = null;
+  let bestLen = 0;
+  let tied = false;
+  for (const t of sameLang) {
+    const tn = (t.name || "").toLowerCase();
+    if (!tn || !nm.includes(tn)) continue;
+    if (tn.length > bestLen) {
+      bestNum = t.num;
+      bestLen = tn.length;
+      tied = false;
+    } else if (tn.length === bestLen) {
+      tied = true;
+    }
+  }
+  return tied ? null : bestNum;
+}
+
+/**
+ * The raw-ASS upgrade (loadRawAss → parseAssCues) replaces the put.io cues
+ * only when it cannot lose coverage: an empty demux is never an upgrade, and
+ * a demux with fewer cues than the fallback (e.g. two cue points missing) is
+ * kept out — flat subtitles with every line beat styled subtitles with a gap.
+ * (Counts only: the contract is about coverage, not identity.)
+ */
+export function shouldUpgradeCues(existingCueCount: number, freshCueCount: number): boolean {
+  if (freshCueCount === 0) return false;
+  return freshCueCount >= existingCueCount;
 }
 
 /**

@@ -6,6 +6,15 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Embedded (MKV) subtitles now render the full effects the file itself
+  specifies — fades, clips, exact text placement, per-line colours —
+  not just the header's style table. The player reassembles the
+  container's own subtitle track in the background with a small bounded
+  fetch (byte-for-byte identical to the file's track); the converted
+  subtitles stay on screen until that lands, and OpenSubtitles and
+  folder subtitles are untouched.
+
 ## [1.2.2] - 2026-10-20
 
 ### Added

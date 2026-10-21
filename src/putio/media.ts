@@ -14,7 +14,8 @@ import {
 import { parseHlsAudioRenditions, type HlsAudioRendition } from "./hls-manifest";
 import { freshSkip, type Seg } from "./segments";
 import { autoResumeTarget } from "./resume";
-import { probeHeader, type Chapter } from "./probe";
+import { probeHeader, type Chapter, type AssTrackInfo } from "./probe";
+import { demuxAssTrack } from "./ass-demux";
 import type { AssStyleTable } from "./substyle";
 import Hls from "hls.js";
 
@@ -90,6 +91,10 @@ export interface MediaState {
    *  (bounded probe, best-effort). The subtitle overlay renders per style
    *  (colour/outline/position); empty = the plain unstyled overlay. */
   subStyleTables?: AssStyleTable[];
+  /** ASS subtitle tracks the container declares (num/name/lang) — maps
+   *  put.io's converted entries onto the Matroska track numbers the raw-ASS
+   *  demux (loadRawAss) walks. */
+  subAssTracks?: AssTrackInfo[];
   /** Chapters from the same header probe (start/end seconds, title). */
   subChapters?: Chapter[];
   live: boolean;
@@ -105,6 +110,8 @@ export class MediaEngine {
   video: HTMLVideoElement;
   /** Embedded ASS style tables (MKV header probe; [] = none/failed). */
   subStyleTables: AssStyleTable[] = [];
+  /** ASS subtitle track table (MKV header probe; [] = none/failed). */
+  subAssTracks: AssTrackInfo[] = [];
   /** MKV chapters from the header probe (start/end seconds, title). */
   subChapters: Chapter[] = [];
   source: SourceKind = "original";
@@ -468,24 +475,48 @@ export class MediaEngine {
     }
   }
 
+  /** One Range request per call, on the file's original stream URL. */
+  private rangeReader(): (start: number, end: number) => Promise<Uint8Array> {
+    const url = streamURL(this.auth, this.file.id);
+    return async (start, end) => {
+      const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+      if (!res.ok) throw new Error(`range ${res.status}`);
+      return new Uint8Array(await res.arrayBuffer());
+    };
+  }
+
   /** Best-effort bounded probe of the ORIGINAL stream's MKV header:
    *  the embedded ASS style tables (and chapters) let the subtitle overlay
    *  render per style (colour/outline/position) instead of a flat blob.
    *  Non-fatal: on failure the overlay degrades to the plain render. */
   private async fetchSubtitleHeader(): Promise<void> {
     try {
-      const url = streamURL(this.auth, this.file.id);
-      const result = await probeHeader(async (start, end) => {
-        const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
-        if (!res.ok) throw new Error(`range ${res.status}`);
-        return new Uint8Array(await res.arrayBuffer());
-      });
+      const result = await probeHeader(this.rangeReader());
       if (this.cleaning) return;
       this.subStyleTables = result.styleTables;
+      this.subAssTracks = result.assTracks;
       this.subChapters = result.chapters;
-      this.onState({ subStyleTables: this.subStyleTables, subChapters: this.subChapters });
+      this.onState({ subStyleTables: this.subStyleTables, subAssTracks: this.subAssTracks, subChapters: this.subChapters });
     } catch {
       /* non-fatal: the overlay stays plain */
+    }
+  }
+
+  /** Demux one embedded ASS track straight off the ORIGINAL stream — the
+   *  full-fidelity upgrade of put.io's stripped conversion (which keeps only
+   *  a leading {\an8}): the cluster walk (ass-demux.ts) reassembles the
+   *  container's own .ass byte-exact. Runs as a BACKGROUND upgrade: the
+   *  walk is byte-cheap (~0.4% of the file) but issues many small Range
+   *  requests, so it must never block playback or the (already shown)
+   *  put.io cues. Non-fatal: any failure returns null and the put.io file
+   *  stands. */
+  async loadRawAss(trackNum: number): Promise<string | null> {
+    try {
+      const result = await demuxAssTrack(this.rangeReader(), trackNum);
+      if (this.cleaning) return null;
+      return new TextDecoder("utf-8").decode(result.ass);
+    } catch {
+      return null; // non-fatal: the put.io cues stand
     }
   }
 

@@ -1,0 +1,353 @@
+[Script Info]
+Title: [Erai-raws]
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: 640
+PlayResY: 360
+LayoutResX: 640
+LayoutResY: 360
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,18,0
+Style: top,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,8,10,10,18,0
+Style: italics,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,-1,0,0,100,100,0,0,1,2,1,2,10,10,18,0
+Style: italicstop,Trebuchet MS,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,-1,0,0,100,100,0,0,1,2,1,8,10,10,18,0
+Style: overlaptop,Trebuchet MS,24,&H007FD3F2,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,8,10,10,18,0
+Style: Ep_Title,Times New Roman,20,&H00FFFFFF,&H000000FF,&HD2000000,&HB4000000,0,0,0,0,100,100,0,0,1,1,1,3,18,42,56,0
+Style: Next_Time,Times New Roman,22,&H00FFFFFF,&H000000FF,&HD2000000,&HC8000000,0,0,0,0,100,100,0,0,1,1,1,7,36,18,43,0
+Style: Next_Ep_Title,Times New Roman,20,&H00FFFFFF,&H000000FF,&HBE000000,&HBE000000,0,0,0,0,100,100,0,0,1,1,1,3,18,41,51,0
+Style: Title,Times New Roman,22,&H00FFFFFF,&H000000FF,&H001F38B6,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,8,18,18,18,0
+Style: Fiction_Disclaimer,Arial,10,&H00FFFFFF,&H000000FF,&H90000000,&H9C000000,0,0,0,0,100,100,0,0,1,1,1,1,143,18,49,0
+Style: sign_25092_237_Plants_Vol__Two,Times New Roman,8,&H003C4140,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,8,18,18,164,0
+Style: sign_20473_197_White_Lady,Times New Roman,20,&H00191B1B,&H000000FF,&H0045253D,&H00000000,-1,0,0,0,100,100,0,31.35,1,0,0,8,236,289,100,0
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:06.40,0:00:13.53,Title,Text,0,0,0,,{\fad(439,436)\bord0\clip(210,14.714,357.572,44)\t(773,4485,\clip(210,15,430,44))}The Apothecary Diaries
+Dialogue: 1,0:00:06.40,0:00:13.53,Title,Text,0,0,0,,{\fad(0,436)\blur3\1a&HFF&\clip(210,15,211,44)\t(400,4902,\clip(210,15,430,44))}The Apothecary {\bord1\blur2\c&H000000&\1a&H00&\3c&HFFFFFF&\3a&H56&}Diaries
+Dialogue: 0,0:01:30.40,0:01:33.41,Fiction_Disclaimer,Text,0,0,0,,{\fad(277,260)\blur0.5}This story is a work of fiction. The names of all of the characters, organizations, and so on\N are imaginary. It also bears no connection to any specific real-life events.
+Dialogue: 0,0:01:37.83,0:01:41.04,Default,Father,0,0,0,,Apothecary! Come out right now!
+Dialogue: 0,0:01:41.60,0:01:42.72,Default,Father,0,0,0,,Hey!
+Dialogue: 0,0:01:43.71,0:01:44.68,overlaptop,Father,0,0,0,,Open up!
+Dialogue: 0,0:01:43.71,0:01:46.25,top,Chou-u,0,0,0,,What's going on? It's so early.
+Dialogue: 0,0:01:44.46,0:01:48.46,Ep_Title,Text,0,0,0,,{\fad(430,470)\fsp1\blur0.5}Episode 51: Let Them Eat Cake
+Dialogue: 0,0:01:46.89,0:01:48.67,top,Father,0,0,0,,Hey! I know you're here!
+Dialogue: 0,0:01:48.67,0:01:49.84,Default,Father,0,0,0,,Apothecary!
+Dialogue: 0,0:01:51.55,0:01:54.61,Default,Father,0,0,0,,Someone's sick! Come to my house now!
+Dialogue: 0,0:01:57.75,0:01:58.76,Default,Father,0,0,0,,Hey!
+Dialogue: 0,0:02:01.16,0:02:02.98,Default,Maomao,0,0,0,,Do you have money to pay?
+Dialogue: 0,0:02:03.26,0:02:06.13,Default,Father,0,0,0,,What? Will you abandon us if I don't?!
+Dialogue: 0,0:02:06.13,0:02:07.86,Default,Father,0,0,0,,You're an apothecary, aren't you?!
+Dialogue: 0,0:02:07.86,0:02:10.57,Default,Maomao,0,0,0,,Yes. And apothecaries charge for medicine.
+Dialogue: 0,0:02:10.57,0:02:13.29,Default,Father,0,0,0,,You'll take money from a poor person?!
+Dialogue: 0,0:02:13.29,0:02:14.86,Default,Father,0,0,0,,Where's the old man who's always here?!
+Dialogue: 0,0:02:15.48,0:02:19.36,italics,Maomao,0,0,0,,I guess dad showed some \Nhalf-baked generosity.
+Dialogue: 0,0:02:20.03,0:02:22.73,Default,Maomao,0,0,0,,The old man is out making money.
+Dialogue: 0,0:02:22.73,0:02:24.29,Default,Maomao,0,0,0,,Go away if you can't pay.
+Dialogue: 0,0:02:28.06,0:02:32.17,Default,Maomao,0,0,0,,We have to live in this run-down \Nshack because of people like you.
+Dialogue: 0,0:02:33.92,0:02:36.48,italics,Maomao,0,0,0,,Always behaving like you \Ndeserve to get free stuff.
+Dialogue: 0,0:02:40.89,0:02:45.40,Default,Father,0,0,0,,Please. I'll pay you \Nwhen I can, I promise.
+Dialogue: 0,0:02:45.40,0:02:47.79,Default,Father,0,0,0,,My daughter is sick.
+Dialogue: 0,0:02:54.08,0:02:58.02,Default,Maomao,0,0,0,,Chou-u, bring ink and a brush. \NAnd a wood plate.
+Dialogue: 0,0:03:05.54,0:03:08.88,Default,Maomao,0,0,0,,This is a bond. Can you write your name?
+Dialogue: 0,0:03:08.88,0:03:12.34,Default,Father,0,0,0,,I can't. What does it say?
+Dialogue: 0,0:03:12.34,0:03:15.49,Default,Maomao,0,0,0,,"I promise to pay for the medicine."
+Dialogue: 0,0:03:15.49,0:03:18.55,Default,Maomao,0,0,0,,Fine, just push your thumb on it. A stamp.
+Dialogue: 0,0:03:21.93,0:03:24.02,Default,Father,0,0,0,,Is this okay?
+Dialogue: 0,0:03:25.19,0:03:26.87,Default,Maomao,0,0,0,,Sheesh. Fine.
+Dialogue: 0,0:03:26.87,0:03:29.07,Default,Chou-u,0,0,0,,You seem kinda evil.
+Dialogue: 0,0:03:29.95,0:03:32.19,Default,Chou-u,0,0,0,,Ow! Ow...
+Dialogue: 0,0:03:35.87,0:03:37.07,Default,Father,0,0,0,,This way.
+Dialogue: 0,0:03:40.21,0:03:42.42,Default,Ukyou,0,0,0,,What are you doing out here?
+Dialogue: 0,0:03:42.42,0:03:45.30,Default,Maomao,0,0,0,,Sorry to make you come along, Ukyou.
+Dialogue: 0,0:03:45.30,0:03:47.12,Default,Maomao,0,0,0,,It's a bother, but there's \Nno way around it.
+Dialogue: 0,0:03:47.55,0:03:50.63,Default,Ukyou,0,0,0,,You're just like your dad after all.
+Dialogue: 0,0:03:52.30,0:03:53.60,Default,Father,0,0,0,,We're here.
+Dialogue: 0,0:03:54.72,0:03:55.80,Default,Father,0,0,0,,Come in.
+Dialogue: 0,0:03:57.37,0:03:59.35,Default,Father,0,0,0,,I brought the apothecary!
+Dialogue: 0,0:03:59.92,0:04:01.05,Default,Older Sister,0,0,0,,Dad...
+Dialogue: 0,0:04:02.03,0:04:03.51,italics,Maomao,0,0,0,,This rotten smell...
+Dialogue: 0,0:04:14.62,0:04:16.09,Default,Maomao,0,0,0,,How long has she been like this?
+Dialogue: 0,0:04:16.09,0:04:20.88,Default,Older Sister,0,0,0,,A few days. But she's had issues \Nwith her hands for longer.
+Dialogue: 0,0:04:21.95,0:04:24.83,Default,Father,0,0,0,,Please! Come on, take a look at her!
+Dialogue: 0,0:04:26.88,0:04:28.21,Default,Father,0,0,0,,What's that for?!
+Dialogue: 0,0:04:28.50,0:04:30.79,Default,Maomao,0,0,0,,If I catch it too, \Nthis is all for nothing.
+Dialogue: 0,0:04:31.28,0:04:33.00,Default,Maomao,0,0,0,,I could walk away, you know.
+Dialogue: 0,0:04:40.75,0:04:42.66,italics,Maomao,0,0,0,,How protective.
+Dialogue: 0,0:04:42.66,0:04:44.76,italics,Maomao,0,0,0,,Now, about the symptoms...
+Dialogue: 0,0:04:45.59,0:04:49.96,italics,Maomao,0,0,0,,Looks like frostbite, \Nbut it's nowhere near cold enough.
+Dialogue: 0,0:04:51.11,0:04:53.81,italics,Maomao,0,0,0,,Dilated pupils. And...
+Dialogue: 0,0:04:56.20,0:04:58.14,Default,Older Sister,0,0,0,,She's worse than she was this morning.
+Dialogue: 0,0:04:58.55,0:05:00.32,Default,Older Sister,0,0,0,,Dad! What are we going to do?!
+Dialogue: 0,0:05:00.65,0:05:02.20,Default,Older Sister,0,0,0,,She'll end up like Mom!
+Dialogue: 0,0:05:02.65,0:05:04.16,Default,Father,0,0,0,,No...
+Dialogue: 0,0:05:08.54,0:05:10.37,Default,Father,0,0,0,,Please! Save her!
+Dialogue: 0,0:05:10.37,0:05:13.70,Default,Father,0,0,0,,I can't afford to have less family!
+Dialogue: 0,0:05:13.70,0:05:16.45,italics,Maomao,0,0,0,,Can't "afford" to, huh?
+Dialogue: 0,0:05:17.55,0:05:20.27,Default,Maomao,0,0,0,,Did her mother die similarly?
+Dialogue: 0,0:05:20.27,0:05:23.96,Default,Father,0,0,0,,No, she died from a miscarriage.
+Dialogue: 0,0:05:24.52,0:05:25.67,Default,Maomao,0,0,0,,A miscarriage?
+Dialogue: 0,0:05:29.85,0:05:31.60,Default,Maomao,0,0,0,,Did you feed her anything?
+Dialogue: 0,0:05:32.50,0:05:34.20,Default,Older Sister,0,0,0,,A bit of porridge.
+Dialogue: 0,0:05:35.55,0:05:37.57,Default,Maomao,0,0,0,,Almost no rice in here.
+Dialogue: 0,0:05:37.91,0:05:39.12,Default,Maomao,0,0,0,,What else did you add?
+Dialogue: 0,0:05:39.66,0:05:41.84,Default,Older Sister,0,0,0,,Oh. To pad it a bit...
+Dialogue: 0,0:05:48.82,0:05:51.46,Default,Maomao,0,0,0,,Nothing wrong with those. Anything else?
+Dialogue: 0,0:05:51.94,0:05:53.33,Default,Older Sister,0,0,0,,Well...
+Dialogue: 0,0:05:53.99,0:05:55.01,Default,Maomao,0,0,0,,Nothing?
+Dialogue: 0,0:06:21.03,0:06:24.16,Default,Father,0,0,0,,Hey, what is that?!
+Dialogue: 0,0:06:25.45,0:06:27.28,Default,Father,0,0,0,,Where did you get that?!
+Dialogue: 0,0:06:27.70,0:06:28.80,Default,Older Sister,0,0,0,,Someone gave it to us.
+Dialogue: 0,0:06:28.80,0:06:32.91,Default,Older Sister,0,0,0,,Mom said, "Let's eat it bit by bit, \Nwhen there's nothing else to eat."
+Dialogue: 0,0:06:33.32,0:06:35.60,Default,Older Sister,0,0,0,,She wanted to keep it a secret from Dad.
+Dialogue: 0,0:06:37.51,0:06:39.93,Default,Father,0,0,0,,I'm the head of this household!
+Dialogue: 0,0:06:39.93,0:06:45.34,Default,Older Sister,0,0,0,,You don't even work, Dad! \NYou just gamble and make us beg!
+Dialogue: 0,0:06:45.34,0:06:47.64,Default,Older Sister,0,0,0,,You gamble away even the money we make!
+Dialogue: 0,0:06:49.99,0:06:52.11,italics,Maomao,0,0,0,,Tale as old as time.
+Dialogue: 0,0:06:52.11,0:06:53.28,Default,Maomao,0,0,0,,Show me.
+Dialogue: 0,0:07:00.55,0:07:02.12,italics,Maomao,0,0,0,,A sweet smell?
+Dialogue: 0,0:07:04.47,0:07:09.05,italics,Maomao,0,0,0,,Sugar. That's quite extravagant \Nto give to a beggar.
+Dialogue: 0,0:07:09.05,0:07:10.12,Default,Maomao,0,0,0,,Who gave you this?
+Dialogue: 0,0:07:10.12,0:07:15.45,Default,Older Sister,0,0,0,,I don't know. It was given to\N my sister, but she can't talk.
+Dialogue: 0,0:07:15.45,0:07:16.98,Default,Maomao,0,0,0,,When did you get it?
+Dialogue: 0,0:07:16.98,0:07:21.46,Default,Older Sister,0,0,0,,It was before Mom died, \Nso about a month ago.
+Dialogue: 0,0:07:21.46,0:07:26.47,Default,Maomao,0,0,0,,Who else got these snacks? \NOr who else had these symptoms?
+Dialogue: 0,0:07:26.82,0:07:29.20,Default,Older Sister,0,0,0,,The old man living behind us.
+Dialogue: 0,0:07:31.38,0:07:32.26,Default,Maomao,0,0,0,,Got it.
+Dialogue: 0,0:07:36.83,0:07:39.84,Default,Father,0,0,0,,H-Hey! What are you doing to my daughter?!
+Dialogue: 0,0:07:39.84,0:07:44.16,Default,Maomao,0,0,0,,I'm taking her with me. There's no way \Nshe'd recover in a place like this.
+Dialogue: 0,0:07:45.79,0:07:49.95,Default,Maomao,0,0,0,,Also, get rid of that. \NIt's the cause of the sickness.
+Dialogue: 0,0:07:53.63,0:07:54.87,italics,Maomao,0,0,0,,Maybe the miscarriage, too...
+Dialogue: 0,0:08:00.28,0:08:01.27,Default,Ukyou,0,0,0,,I'll take her.
+Dialogue: 0,0:08:04.88,0:08:08.16,Default,Ukyou,0,0,0,,The old man out back has \Nfingers that have rotted off.
+Dialogue: 0,0:08:08.16,0:08:09.39,Default,Maomao,0,0,0,,I see.
+Dialogue: 0,0:08:09.39,0:08:13.56,Default,Ukyou,0,0,0,,He tried to hide it, but started talking\N once I gave him some spare change.
+Dialogue: 0,0:08:13.93,0:08:17.19,Default,Ukyou,0,0,0,,He said a woman gave it to him.
+Dialogue: 0,0:08:18.52,0:08:20.47,Default,Ukyou,0,0,0,,Didn't see her face.
+Dialogue: 0,0:08:20.47,0:08:23.04,Default,Maomao,0,0,0,,Hmm. A woman.
+Dialogue: 0,0:08:23.94,0:08:26.49,Default,Chou-u,0,0,0,,What's wrong with her? She's nasty.
+Dialogue: 0,0:08:26.77,0:08:28.51,Default,Maomao,0,0,0,,Then go boil some water.
+Dialogue: 0,0:08:30.15,0:08:31.37,Default,Maomao,0,0,0,,Here, for your trouble.
+Dialogue: 0,0:08:31.82,0:08:33.18,Default,Maomao,0,0,0,,It's not much, but...
+Dialogue: 0,0:08:33.18,0:08:37.04,Default,Ukyou,0,0,0,,No need. I'm used to babysitting.
+Dialogue: 0,0:08:39.59,0:08:40.64,Default,Ukyou,0,0,0,,See ya.
+Dialogue: 0,0:08:43.65,0:08:45.74,Default,Chou-u,0,0,0,,I wish he stayed longer.
+Dialogue: 0,0:08:46.63,0:08:50.80,Default,Chou-u,0,0,0,,Hey, why are her fingers weird-colored?
+Dialogue: 0,0:08:50.80,0:08:52.42,Default,Maomao,0,0,0,,It's because of that baked snack.
+Dialogue: 0,0:08:52.85,0:08:55.95,Default,Maomao,0,0,0,,Or, more accurately, \Nbecause of the ergot in it.
+Dialogue: 0,0:08:56.47,0:08:57.68,Default,Maomao,0,0,0,,We have some, too.
+Dialogue: 0,0:08:57.68,0:08:58.56,Default,Chou-u,0,0,0,,Huh?
+Dialogue: 0,0:09:01.89,0:09:04.40,Default,Maomao,0,0,0,,It's used in abortion medicine, too.
+Dialogue: 0,0:09:04.97,0:09:09.47,Default,Maomao,0,0,0,,You can find it in bad grains, and it \Ncan cause issues even in small amounts.
+Dialogue: 0,0:09:09.90,0:09:12.04,Default,Maomao,0,0,0,,It restricts blood flow \Nto the hands and feet.
+Dialogue: 0,0:09:12.04,0:09:13.66,Default,Maomao,0,0,0,,At worst, it causes them to rot off.
+Dialogue: 0,0:09:13.66,0:09:16.71,Default,Maomao,0,0,0,,It can also cause paralysis \Nand hallucinations.
+Dialogue: 0,0:09:16.71,0:09:18.33,Default,Chou-u,0,0,0,,Is it curable?
+Dialogue: 0,0:09:18.59,0:09:20.82,Default,Maomao,0,0,0,,Just stop eating ergot.
+Dialogue: 0,0:09:20.82,0:09:23.42,Default,Maomao,0,0,0,,And some exercise, I guess.
+Dialogue: 0,0:09:23.42,0:09:24.70,Default,Chou-u,0,0,0,,That's it?
+Dialogue: 0,0:09:24.70,0:09:26.02,Default,Maomao,0,0,0,,That's it.
+Dialogue: 0,0:09:26.02,0:09:29.82,Default,Maomao,0,0,0,,In her case, what's more \Nserious is malnutrition.
+Dialogue: 0,0:09:30.87,0:09:32.50,Default,Maomao,0,0,0,,Where's that hot water?
+Dialogue: 0,0:09:32.50,0:09:33.34,Default,Chou-u,0,0,0,,Oh.
+Dialogue: 0,0:09:35.28,0:09:38.36,Default,Maomao,0,0,0,,Oh, and get some white rice \Nfrom the old lady.
+Dialogue: 0,0:09:38.36,0:09:40.43,Default,Chou-u,0,0,0,,White rice?! Got it!
+Dialogue: 0,0:09:42.80,0:09:46.77,Default,Maomao,0,0,0,,Oh, he forgot the hot water.
+Dialogue: 0,0:09:54.04,0:09:56.30,italics,Maomao,0,0,0,,The older sister probably \Ndidn't show symptoms
+Dialogue: 0,0:09:56.30,0:10:00.38,italics,Maomao,0,0,0,,because she held back and \Ngave the snack to the little sister.
+Dialogue: 0,0:10:01.01,0:10:04.19,italics,Maomao,0,0,0,,The mother must have eaten it \Nbecause she was with child.
+Dialogue: 0,0:10:05.11,0:10:07.10,italics,Maomao,0,0,0,,A snack containing sugar,
+Dialogue: 0,0:10:07.10,0:10:10.67,italics,Maomao,0,0,0,,and a mysterious woman \Ngiving it away to beggars...
+Dialogue: 0,0:10:12.62,0:10:14.32,Default,Maomao,0,0,0,,Something suspicious is going on.
+Dialogue: 0,0:10:23.19,0:10:26.84,Default,Chou-u,0,0,0,,One, two.
+Dialogue: 0,0:10:26.84,0:10:30.98,Default,Chou-u,0,0,0,,Wow! You're walking!
+Dialogue: 0,0:10:34.11,0:10:35.95,italics,Maomao,0,0,0,,Already acting like a big brother.
+Dialogue: 0,0:10:40.43,0:10:41.38,Default,Older Sister,0,0,0,,Um...
+Dialogue: 0,0:10:45.15,0:10:47.24,italics,Maomao,0,0,0,,She didn't get those from a fall.
+Dialogue: 0,0:10:47.77,0:10:49.04,Default,Older Sister,0,0,0,,My sister?
+Dialogue: 0,0:10:49.45,0:10:50.29,Default,Maomao,0,0,0,,Look.
+Dialogue: 0,0:10:56.36,0:10:57.76,Default,Maomao,0,0,0,,The money?
+Dialogue: 0,0:10:57.76,0:11:01.47,Default,Maomao,0,0,0,,Since your dad isn't here, \NI assume you didn't bring any.
+Dialogue: 0,0:11:04.35,0:11:08.05,Default,Maomao,0,0,0,,That's fine. \NI'll just sell off your sister.
+Dialogue: 0,0:11:08.05,0:11:08.65,Default,Older Sister,0,0,0,,Huh?
+Dialogue: 0,0:11:09.17,0:11:11.54,Default,Maomao,0,0,0,,She's young enough to be taught.
+Dialogue: 0,0:11:16.52,0:11:20.20,Default,Older Sister,0,0,0,,My sister can't talk. \NI'm worth more as a commodity!
+Dialogue: 0,0:11:20.83,0:11:24.20,italics,Maomao,0,0,0,,Oh, I assumed she'd try \Nto appeal to emotion.
+Dialogue: 0,0:11:24.70,0:11:26.70,Default,Maomao,0,0,0,,Do you understand what you're saying?
+Dialogue: 0,0:11:26.70,0:11:30.04,Default,Older Sister,0,0,0,,I know. At this rate, \Nwe'll be beggars forever.
+Dialogue: 0,0:11:30.04,0:11:32.80,Default,Older Sister,0,0,0,,We'll probably be forced \Nto be streetwalkers later.
+Dialogue: 0,0:11:32.80,0:11:35.55,Default,Older Sister,0,0,0,,What little we'd make, \NDad would take anyway.
+Dialogue: 0,0:11:35.55,0:11:38.97,Default,Maomao,0,0,0,,So, you'd rather just become \Na courtesan yourself?
+Dialogue: 0,0:11:38.97,0:11:41.85,Default,Older Sister,0,0,0,,Yeah! You work at\N the Verdigris House, right?
+Dialogue: 0,0:11:42.60,0:11:44.80,Default,Maomao,0,0,0,,You want an introduction?
+Dialogue: 0,0:11:45.18,0:11:45.85,Default,Older Sister,0,0,0,,Yeah.
+Dialogue: 0,0:11:47.59,0:11:50.31,Default,Maomao,0,0,0,,You really think you're worth that much?
+Dialogue: 0,0:11:51.51,0:11:53.65,Default,Older Sister,0,0,0,,Same as my sister.
+Dialogue: 0,0:11:53.65,0:11:57.24,Default,Maomao,0,0,0,,She's younger. We can train her, \Nand she'll learn quicker.
+Dialogue: 0,0:11:57.24,0:11:58.86,Default,Older Sister,0,0,0,,She can't talk!
+Dialogue: 0,0:11:58.86,0:12:01.53,Default,Maomao,0,0,0,,Some gentlemen appreciate silence.
+Dialogue: 0,0:12:01.53,0:12:03.89,Default,Older Sister,0,0,0,,But... I have to escape of this!
+Dialogue: 0,0:12:03.89,0:12:06.33,Default,Older Sister,0,0,0,,I don't want to die stuck in the mud!
+Dialogue: 0,0:12:06.67,0:12:07.71,Default,Older Sister,0,0,0,,No way...
+Dialogue: 0,0:12:08.08,0:12:10.48,Default,Older Sister,0,0,0,,I'll never accept that!
+Dialogue: 0,0:12:14.58,0:12:16.72,italics,Maomao,0,0,0,,Another tale as old as time.
+Dialogue: 0,0:12:17.09,0:12:21.66,italics,Maomao,0,0,0,,But I do prefer the types \Nwho struggle and put up a fight,
+Dialogue: 0,0:12:21.66,0:12:24.60,italics,Maomao,0,0,0,,rather than sit around waiting \Nfor someone to rescue them.
+Dialogue: 0,0:12:25.00,0:12:26.52,Default,Maomao,0,0,0,,What about your sister?
+Dialogue: 0,0:12:26.52,0:12:28.28,Default,Older Sister,0,0,0,,I'll work for both of us.
+Dialogue: 0,0:12:28.28,0:12:31.86,Default,Older Sister,0,0,0,,If I work hard enough, \Nthey'll take care of her too, right?
+Dialogue: 0,0:12:33.39,0:12:36.86,Default,Maomao,0,0,0,,If you're not useful, \Nyou'll both end up in the gutter.
+Dialogue: 0,0:12:34.61,0:12:35.80,top,Chou-u,0,0,0,,You okay?
+Dialogue: 0,0:12:37.32,0:12:38.70,Default,Older Sister,0,0,0,,I know.
+Dialogue: 0,0:12:51.38,0:12:52.42,Default,Older Sister,0,0,0,,Is this...
+Dialogue: 0,0:12:52.88,0:12:54.34,Default,Maomao,0,0,0,,Use the well.
+Dialogue: 0,0:12:54.34,0:12:56.26,Default,Maomao,0,0,0,,Wash your hair too, even if it's cold.
+Dialogue: 0,0:12:56.26,0:12:59.97,Default,Maomao,0,0,0,,If you go with lice in your hair, you'll \Nget smacked with a broom and tossed out.
+Dialogue: 0,0:13:09.37,0:13:14.27,italics,Maomao,0,0,0,,Who knows how she'll live \Nher life from here on.
+Dialogue: 0,0:13:15.07,0:13:16.69,italics,Maomao,0,0,0,,But it's the path
+Dialogue: 0,0:13:20.71,0:13:22.61,italics,Maomao,0,0,0,,she chose to travel herself.
+Dialogue: 0,0:13:27.61,0:13:29.29,italics,Maomao,0,0,0,,If she ends up regretting it,
+Dialogue: 0,0:13:30.79,0:13:35.14,italics,Maomao,0,0,0,,she should just sink in the mud.
+Dialogue: 0,0:13:41.60,0:13:42.92,Default,Basen,0,0,0,,Is something wrong?
+Dialogue: 0,0:13:43.46,0:13:45.55,Default,Jinshi,0,0,0,,We got word from the Mi clan.
+Dialogue: 0,0:13:46.10,0:13:47.68,Default,Basen,0,0,0,,From the spies?
+Dialogue: 0,0:13:47.96,0:13:49.68,Default,Jinshi,0,0,0,,Yes. Look.
+Dialogue: 0,0:13:56.31,0:13:59.15,Default,Basen,0,0,0,,Suspicious drugs are \Nshowing up on the streets?
+Dialogue: 0,0:13:59.15,0:14:01.15,Default,Basen,0,0,0,,Shouldn't we crack down immediately?
+Dialogue: 0,0:14:01.15,0:14:04.21,Default,Jinshi,0,0,0,,If we cause trouble without \Nevidence, we will get overtaken.
+Dialogue: 0,0:14:04.21,0:14:05.91,Default,Jinshi,0,0,0,,We need to catch them in the act.
+Dialogue: 0,0:14:06.47,0:14:08.97,Default,Basen,0,0,0,,It doesn't seem like \Nthey've found the source yet,
+Dialogue: 0,0:14:08.97,0:14:11.87,Default,Basen,0,0,0,,but they do note that \Na common thread exists.
+Dialogue: 0,0:14:12.72,0:14:13.87,Default,Jinshi,0,0,0,,The "White Lady".
+Dialogue: 0,0:14:13.87,0:14:16.62,sign_20473_197_White_Lady,Text,0,0,0,,{\fad(0,724)\frx354\fry342}White Lady
+Dialogue: 0,0:14:14.30,0:14:18.63,Default,Basen,0,0,0,,The White Lady? I hear that name \Non the streets, occasionally.
+Dialogue: 0,0:14:19.19,0:14:22.52,Default,Jinshi,0,0,0,,Dealing with the locust plague\N is urgent too, and yet...
+Dialogue: 0,0:14:24.23,0:14:26.47,Default,Jinshi,0,0,0,,The books finally arrived.
+Dialogue: 0,0:14:27.01,0:14:29.13,Default,Jinshi,0,0,0,,I must get them to Maomao right away.
+Dialogue: 0,0:14:29.13,0:14:31.34,Default,Basen,0,0,0,,Master Jinshi, will you go in person?
+Dialogue: 0,0:14:31.34,0:14:34.90,Default,Jinshi,0,0,0,,Yes. I wanted to get \Nher opinion on this, too.
+Dialogue: 0,0:14:35.21,0:14:38.02,Default,Basen,0,0,0,,About the court lady in the doctor role?
+Dialogue: 0,0:14:39.31,0:14:41.03,Default,Basen,0,0,0,,But...
+Dialogue: 0,0:14:51.44,0:14:53.25,Default,Basen,0,0,0,,Master Jinshi is busy.
+Dialogue: 0,0:14:54.33,0:14:55.04,Default,Maomao,0,0,0,,Huh.
+Dialogue: 0,0:14:55.41,0:14:57.28,italics,Maomao,0,0,0,,That was random.
+Dialogue: 0,0:14:57.28,0:15:00.55,italics,Maomao,0,0,0,,Also, he still uses his eunuch name?
+Dialogue: 0,0:15:00.98,0:15:04.05,italics,Maomao,0,0,0,,I guess his real name \Nisn't to be uttered lightly.
+Dialogue: 0,0:15:04.44,0:15:08.25,italics,Maomao,0,0,0,,Keeping the door open to show \Nthere's nothing suspicious going on
+Dialogue: 0,0:15:08.25,0:15:11.60,italics,Maomao,0,0,0,,is probably out of consideration \Nas Master Jinshi's attendant, but...
+Dialogue: 0,0:15:14.84,0:15:16.58,italics,Maomao,0,0,0,,So much rabble.
+Dialogue: 0,0:15:18.23,0:15:20.20,Default,Basen,0,0,0,,Here are the books from the stronghold.
+Dialogue: 0,0:15:21.54,0:15:22.97,Default,Maomao,0,0,0,,Excuse me.
+Dialogue: 0,0:15:24.99,0:15:29.78,italics,Maomao,0,0,0,,Birds. Fish. Plants.
+Dialogue: 0,0:15:29.78,0:15:32.53,italics,Maomao,0,0,0,,I read the {\i0}Plants{\i1} book \Nat the stronghold, but...
+Dialogue: 0,0:15:32.53,0:15:33.20,Default,Maomao,0,0,0,,Here it is.
+Dialogue: 0,0:15:36.19,0:15:37.67,Default,Maomao,0,0,0,,The {\i1}Insects{\i0} book.
+Dialogue: 0,0:15:35.83,0:15:38.33,sign_25092_237_Plants_Vol__Two,Text,0,0,0,,{\fs12\fax0.05\pos(283,106)\frz356}Insects: Vol. Two
+Dialogue: 0,0:15:38.33,0:15:41.34,Default,Basen,0,0,0,,So, that contains information \Non locusts, right?
+Dialogue: 0,0:15:41.34,0:15:42.64,Default,Maomao,0,0,0,,It should.
+Dialogue: 0,0:15:47.32,0:15:48.70,Default,Basen,0,0,0,,Does it not?
+Dialogue: 0,0:15:48.70,0:15:49.86,Default,Maomao,0,0,0,,No.
+Dialogue: 0,0:15:49.86,0:15:53.81,Default,Maomao,0,0,0,,Did anyone remove the books \Nwhile they were in storage?
+Dialogue: 0,0:15:53.81,0:15:56.14,Default,Basen,0,0,0,,Who would take interest in this?
+Dialogue: 0,0:15:56.53,0:15:58.45,Default,Maomao,0,0,0,,People like what they like.
+Dialogue: 0,0:15:59.09,0:16:00.93,italics,Maomao,0,0,0,,Did Sazen trick me?
+Dialogue: 0,0:16:00.93,0:16:03.70,italics,Maomao,0,0,0,,No, there's no benefit for him to do that.
+Dialogue: 0,0:16:08.49,0:16:11.99,Default,Pairin,0,0,0,,Oh, I'm sorry, there's some \Ndust on your back.
+Dialogue: 0,0:16:11.99,0:16:14.36,Default,Basen,0,0,0,,W-What was that?!
+Dialogue: 0,0:16:14.36,0:16:18.75,Default,Pairin,0,0,0,,It's still there. \NPlease sit still, I'll get it.
+Dialogue: 0,0:16:21.99,0:16:25.03,italics,Maomao,0,0,0,,Seems like Pairin \Nisn't getting enough action.
+Dialogue: 0,0:16:25.03,0:16:28.76,italics,Maomao,0,0,0,,She's too high-class \Nto get customers every day.
+Dialogue: 0,0:16:29.66,0:16:32.79,italics,Maomao,0,0,0,,This would be fun to watch \Nif Master Lihaku were here.
+Dialogue: 0,0:16:29.66,0:16:34.03,top,Pairin,0,0,0,,Don't worry, just let me \Ntake care of everything.
+Dialogue: 0,0:16:35.57,0:16:37.00,Default,Basen,0,0,0,,I'm leaving now!
+Dialogue: 0,0:16:37.00,0:16:39.14,Default,Basen,0,0,0,,I already gave you what I needed to!
+Dialogue: 0,0:16:39.14,0:16:43.40,Default,Pairin,0,0,0,,Oh, no. I missed out on a first-timer.
+Dialogue: 0,0:16:43.70,0:16:46.11,Default,Old Lady,0,0,0,,Bailed on his road to heaven.
+Dialogue: 0,0:16:46.40,0:16:48.07,italics,Maomao,0,0,0,,You mean hell.
+Dialogue: 0,0:16:48.55,0:16:51.17,Default,Maomao,0,0,0,,Anyway, what to do...
+Dialogue: 0,0:16:55.49,0:16:57.70,Default,Maomao,0,0,0,,Ukyou, have you seen Sazen?
+Dialogue: 0,0:16:58.06,0:16:59.98,Default,Ukyou,0,0,0,,He's cleaning the front now.
+Dialogue: 0,0:17:00.46,0:17:02.44,Default,Maomao,0,0,0,,That's a servant girl's job.
+Dialogue: 0,0:17:02.44,0:17:05.43,Default,Ukyou,0,0,0,,Yeah. If that's all he's willing to do,
+Dialogue: 0,0:17:05.43,0:17:08.47,Default,Ukyou,0,0,0,,we can't keep him hired as a manservant...
+Dialogue: 0,0:17:15.84,0:17:17.94,Default,Sazen,0,0,0,,W-Why are you looking at me like that?
+Dialogue: 0,0:17:17.94,0:17:21.64,Default,Maomao,0,0,0,,Never mind that. You lied to me.
+Dialogue: 0,0:17:21.64,0:17:24.34,Default,Maomao,0,0,0,,There's nothing written here \Nabout locusts.
+Dialogue: 0,0:17:24.34,0:17:26.41,Default,Sazen,0,0,0,,No, that's not—
+Dialogue: 0,0:17:26.41,0:17:28.28,Default,Sazen,0,0,0,,Hey, where's the other book?
+Dialogue: 0,0:17:28.28,0:17:29.28,Default,Maomao,0,0,0,,Huh?
+Dialogue: 0,0:17:29.58,0:17:32.52,Default,Sazen,0,0,0,,There are supposed to be \Nthree books on insects.
+Dialogue: 0,0:17:32.95,0:17:38.55,Default,Maomao,0,0,0,,So, you're saying the stronghold \Nnever had a book on locusts?
+Dialogue: 0,0:17:38.55,0:17:42.39,Default,Sazen,0,0,0,,I'm sure it was there when \Nthe old apothecary was there...
+Dialogue: 0,0:17:43.00,0:17:45.38,Default,Sazen,0,0,0,,Maybe they put it in his coffin?
+Dialogue: 0,0:17:45.78,0:17:48.61,Default,Sazen,0,0,0,,That's a thing we do in my hometown.
+Dialogue: 0,0:17:50.44,0:17:55.44,Default,Sazen,0,0,0,,It's too bad that he died because \Nof a failed experiment, though.
+Dialogue: 0,0:17:55.44,0:17:57.60,Default,Maomao,0,0,0,,Yeah. Experiments in immortality.
+Dialogue: 0,0:17:58.03,0:18:00.73,italics,Maomao,0,0,0,,There were experimental rats \Nat the fortress too,
+Dialogue: 0,0:18:01.00,0:18:03.78,italics,Maomao,0,0,0,,but the medicine is supposed \Nto be used on humans in the end.
+Dialogue: 0,0:18:03.78,0:18:07.59,italics,Maomao,0,0,0,,You'd have to try it on humans \Nto raise the chance of success...
+Dialogue: 0,0:18:07.59,0:18:08.41,Default,Sazen,0,0,0,,Hmm?
+Dialogue: 0,0:18:09.14,0:18:10.86,Default,Sazen,0,0,0,,Hey, what's wrong?
+Dialogue: 0,0:18:15.16,0:18:17.55,Default,Maomao,0,0,0,,Where did they process his remains?
+Dialogue: 0,0:18:17.55,0:18:22.08,Default,Sazen,0,0,0,,I-I don't know. {\i1}She{\i0} took care \Nof those things.
+Dialogue: 0,0:18:22.67,0:18:24.07,Default,Maomao,0,0,0,,She?
+Dialogue: 0,0:18:24.07,0:18:28.21,Default,Sazen,0,0,0,,You know, that emotionless woman. \NThe assistant.
+Dialogue: 0,0:18:29.81,0:18:30.42,Default,Maomao,0,0,0,,Ah!
+Dialogue: 0,0:18:30.42,0:18:31.26,Default,Sazen,0,0,0,,Ow!
+Dialogue: 0,0:18:31.55,0:18:34.93,italics,Maomao,0,0,0,,That's right, why didn't I think of that?!
+Dialogue: 0,0:18:34.93,0:18:37.76,italics,Maomao,0,0,0,,That woman must have seen it up close!
+Dialogue: 0,0:18:38.22,0:18:39.91,italics,Maomao,0,0,0,,I want to talk to her.
+Dialogue: 0,0:18:39.91,0:18:42.25,italics,Maomao,0,0,0,,If I ask Master Jinshi with a letter...
+Dialogue: 0,0:18:42.25,0:18:44.73,Default,Father,0,0,0,,Hey! Give me back my daughters!
+Dialogue: 0,0:18:44.73,0:18:47.47,Default,Father,0,0,0,,You! You're...
+Dialogue: 0,0:18:47.47,0:18:52.32,Default,Father,0,0,0,,What kind of apothecary are you?! \NYou sold them off!
+Dialogue: 0,0:18:52.32,0:18:56.02,Default,Maomao,0,0,0,,Huh? I didn't sell them off. \NI had nothing to do with them.
+Dialogue: 0,0:18:56.02,0:18:59.49,Default,Maomao,0,0,0,,Besides, I didn't even \Nget paid for the medicine.
+Dialogue: 0,0:19:00.46,0:19:05.76,Default,Maomao,0,0,0,,I even let you take a loan. \NI could ask for extra.
+Dialogue: 0,0:19:07.04,0:19:08.31,Default,Father,0,0,0,,Shut up!
+Dialogue: 0,0:19:07.50,0:19:08.75,top,Sazen,0,0,0,,W-Wait!
+Dialogue: 0,0:19:08.75,0:19:12.26,Default,Sazen,0,0,0,,By "daughters," you mean those \Ngirls who are being tried out?
+Dialogue: 0,0:19:12.26,0:19:13.02,Default,Maomao,0,0,0,,Yeah.
+Dialogue: 0,0:19:13.02,0:19:14.42,Default,Father,0,0,0,,Dammit, move!
+Dialogue: 0,0:19:14.74,0:19:15.81,Default,Sazen,0,0,0,,Ow!
+Dialogue: 0,0:19:15.81,0:19:17.26,Default,Ukyou,0,0,0,,You don't learn, do you?
+Dialogue: 0,0:19:17.26,0:19:18.78,Default,Father,0,0,0,,Ow!
+Dialogue: 0,0:19:18.78,0:19:22.15,Default,Ukyou,0,0,0,,I hear a commotion, and it's you again.
+Dialogue: 0,0:19:22.15,0:19:24.02,Default,Ukyou,0,0,0,,You're barking up the wrong tree!
+Dialogue: 0,0:19:24.42,0:19:29.31,Default,Father,0,0,0,,Shut up! They're my daughters! \NMine!
+Dialogue: 0,0:19:29.31,0:19:31.04,Default,Ukyou,0,0,0,,Cut it out.
+Dialogue: 0,0:19:40.20,0:19:42.74,Default,Father,0,0,0,,Oh, hey! It's Daddy!
+Dialogue: 0,0:19:42.74,0:19:47.52,Default,Father,0,0,0,,I've come to pick you up! \NCome on home, won't you?
+Dialogue: 0,0:19:50.64,0:19:51.88,Default,Father,0,0,0,,Wha...
+Dialogue: 0,0:19:54.98,0:19:58.30,Default,Father,0,0,0,,W-Wait... Please!
+Dialogue: 0,0:19:58.30,0:19:59.94,Default,Maomao,0,0,0,,There's no way they can go home.
+Dialogue: 0,0:20:00.55,0:20:04.18,Default,Maomao,0,0,0,,They're the ones that came here, \Nwanting to become courtesans.
+Dialogue: 0,0:20:11.06,0:20:14.69,Default,Maomao,0,0,0,,You're nobody to them.
+Dialogue: 0,0:20:20.49,0:20:24.45,Default,Father,0,0,0,,How am I supposed to live from now on?!
+Dialogue: 0,0:20:33.95,0:20:35.67,Default,Maomao,0,0,0,,Did you bring everything?
+Dialogue: 0,0:20:35.67,0:20:36.67,Default,Chou-u,0,0,0,,Yeah.
+Dialogue: 0,0:20:36.67,0:20:37.37,Default,Chou-u,0,0,0,,Hmm?
+Dialogue: 0,0:20:44.67,0:20:45.60,Default,Chou-u,0,0,0,,See ya!
+Dialogue: 0,0:20:55.48,0:20:57.99,Default,Chou-u,0,0,0,,You going somewhere? Take me with you!
+Dialogue: 0,0:21:00.31,0:21:02.78,Default,Maomao,0,0,0,,No. This is work.
+Dialogue: 0,0:21:02.78,0:21:03.49,Default,Chou-u,0,0,0,,Not fair!
+Dialogue: 0,0:21:04.37,0:21:05.69,Default,Chou-u,0,0,0,,Bleh!
+Dialogue: 0,0:21:07.02,0:21:10.28,italics,Maomao,0,0,0,,The surviving Shi clan children are there.
+Dialogue: 0,0:21:10.28,0:21:12.20,italics,Maomao,0,0,0,,I can't let him see them.
+Dialogue: 0,0:21:14.17,0:21:19.21,italics,Maomao,0,0,0,,Anyway, he was quick to agree \Nto let me meet her so soon.
+Dialogue: 0,0:21:20.23,0:21:21.47,Default,Ukyou,0,0,0,,Here we go!
+Dialogue: 0,0:21:24.44,0:21:26.10,italics,Maomao,0,0,0,,So simple.
+Dialogue: 0,0:21:26.89,0:21:31.10,italics,Maomao,0,0,0,,What would we do about Chou-u's future?
+Dialogue: 0,0:21:32.01,0:21:35.96,italics,Maomao,0,0,0,,If he weren't paralyzed, \Nhe could become a manservant here.
+Dialogue: 0,0:21:37.68,0:21:39.86,italics,Maomao,0,0,0,,Perhaps he can be an apothecary?
+Dialogue: 0,0:21:40.48,0:21:44.99,italics,Maomao,0,0,0,,Unfortunately, he doesn't \Nseem interested at all...
+Dialogue: 0,0:21:53.04,0:21:54.58,italics,Maomao,0,0,0,,It's so much fun, though.
+Dialogue: 0,0:22:05.76,0:22:08.40,Default,Ah-Duo,0,0,0,,The girl is coming to see you.
+Dialogue: 0,0:22:08.40,0:22:11.49,Default,Ah-Duo,0,0,0,,I wonder what she wants with you, Rei.
+Dialogue: 0,0:22:12.99,0:22:13.92,Default,Suirei,0,0,0,,Yes.
+Dialogue: 0,0:23:44.99,0:23:59.92,Next_Time,Text,0,0,0,,{\fscx105\fsp0.2\blur1}Next Time
+Dialogue: 0,0:23:53.08,0:23:59.92,Next_Ep_Title,Text,0,0,0,,{\fad(479,1)\fsp0.2\blur0.5}Episode 52: The Last Volume
+Dialogue: 0,0:23:53.00,0:23:56.21,italicstop,Narrator,0,0,0,,Next episode, "The Last Volume."
+

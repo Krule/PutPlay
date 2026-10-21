@@ -372,7 +372,7 @@ export function parseAssCues(text: string): AssCue[] {
 
 /** A cue as far as the renderer cares: both AssCue (parsed) and SubtitleCue
  *  (put.io SRT/VTT) fit this shape. */
-interface AnyCue {
+export interface AnyCue {
   start: number;
   end: number;
   text: string;
