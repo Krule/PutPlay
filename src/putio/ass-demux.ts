@@ -1,11 +1,13 @@
 // Raw ASS demux over HTTP Range (T3).
 //
 // Reassembles an embedded Matroska ASS subtitle track byte-exactly as
-// FFmpeg n9.0.2's `libavformat/assenc.c` muxer does, by walking Clusters
-// (the Cues index in this file is unreliable — see test/ass-demux.test.mjs)
-// and fetching only the bytes needed through a ranged reader.
+// FFmpeg n9.0.2's `libavformat/assenc.c` muxer does, by fetching only the
+// bytes needed through a ranged reader. Two paths:
+//   • demuxAssTrack — the full cluster walk (no Cues needed);
+//   • demuxAssRow1 — the Cues-driven batcher (validated Cues name every
+//     block; ~0.4 MB for the 218 MB reference file).
 //
-// Parity reference: /tmp/oracle_eng.ass, produced by
+// Parity reference: fixtures/kusuriya-eng-track.ass, produced by
 //   ffmpeg -i kusuriya2.mkv -map 0:s:0 -c copy -f ass eng_track.ass
 // (md5 10e8749b88071123387c8947a5059ebc).
 
@@ -15,9 +17,13 @@ import {
   findSegmentStart,
   readInt,
   readString,
+  vintLenAt,
+  vintMask,
+  vintValue,
   walkChildren,
   walkSegmentTop,
 } from "./probe";
+import type { CueEntry } from "./cues";
 
 const HEAD_WINDOW = 65536; // first fetch: 64 KB
 const HEAD_MAX_BYTES = 1024 * 1024; // head-region tripwire: 1 MB
@@ -321,4 +327,110 @@ export async function demuxAssTrack(
     MAX_CLUSTERS
   );
   return { ass: assembleAss(track.priv, events), cues: events.length };
+}
+
+// ---------------- row 1: the Cues-driven batcher ----------------
+// With validated Cues (row 1) no cluster walk is needed: the Cues name
+// every block (cluster offset + in-cluster offset + duration). Phase 1
+// reads each unique cluster's 12-byte header (to learn its size-vint
+// length); phase 2 reads one small range per cue (element header + 1 KB
+// payload window, plus one follow-up for the rare larger block). Times
+// come from CueTime/CueDuration — no cluster prefixes needed. The two-phase
+// shape keeps every range coalesceable: a production reader can batch them
+// into multi-range requests (≤ 200 ranges per request).
+
+export interface Row1Args {
+  /** ranged reader (inclusive end) */
+  read: (start: number, end: number) => Promise<Uint8Array>;
+  /** segment payload start (file offset of the segment's first byte) */
+  segStart: number;
+  scale: number;
+  /** Cues entries for the target track (validated row 1) */
+  cues: CueEntry[];
+  trackNum: number;
+  /** the track's CodecPrivate (the .ass header) */
+  codecPrivate: Uint8Array;
+}
+
+const ROW1_CLUSTER_HDR = 12; // ID (≤4 B) + size vint (≤4 B) + slack
+const ROW1_BLOCK_WINDOW = 1024 + 12; // element header + 1 KB payload window
+
+/** Parsed block element header: which track, where the data starts, how far it runs. */
+interface Row1Block {
+  track: number;
+  dataStart: number;
+  dataLen: number;
+  end: number; // dataStart + dataLen
+}
+
+/** Parse a 0xA0 BlockGroup / 0xA3 SimpleBlock element header from buf[0]. */
+function parseRow1Block(buf: Uint8Array): Row1Block | null {
+  const isGroup = buf[0] === MATROSKA.BLOCK_GROUP;
+  if (!isGroup && buf[0] !== MATROSKA.SIMPLE_BLOCK) return null;
+  const sizeLen = vintLenAt(buf, 1);
+  if (!sizeLen) return null;
+  let body: number;
+  let bodyLen: number;
+  if (isGroup) {
+    const inner = 1 + sizeLen;
+    if (buf.length < inner + 2 || buf[inner] !== MATROSKA.BLOCK) return null;
+    const blen = vintLenAt(buf, inner + 1);
+    if (!blen) return null;
+    body = inner + 1 + blen;
+    bodyLen = vintValue(buf, inner + 1, blen);
+  } else {
+    body = 1 + sizeLen;
+    bodyLen = vintValue(buf, 1, sizeLen);
+  }
+  // block body = [track vint][2 B relative ts][data]
+  const tvlen = vintLenAt(buf, body);
+  if (!tvlen || bodyLen < tvlen + 2) return null;
+  const dataStart = body + tvlen + 2;
+  const dataLen = bodyLen - tvlen - 2;
+  return { track: buf[body] & vintMask(tvlen), dataStart, dataLen, end: dataStart + dataLen };
+}
+
+function joinBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+}
+
+/**
+ * Row 1: fetch exactly the blocks the validated Cues name and reassemble
+ * the .ass. Cues with a null rel (unlanded) or a foreign track are skipped.
+ */
+export async function demuxAssRow1(a: Row1Args): Promise<DemuxResult> {
+  const targets: { cue: CueEntry; rel: number }[] = [];
+  for (const c of a.cues) {
+    if (c.track === a.trackNum && c.rel !== null) targets.push({ cue: c, rel: c.rel });
+  }
+  if (!targets.length) return { ass: assembleAss(a.codecPrivate, []), cues: 0 };
+
+  // Phase 1: each unique cluster's size-vint length (12 B reads).
+  const vln = new Map<number, number>();
+  for (const ccp of new Set(targets.map((x) => x.cue.ccp))) {
+    const off = ccp + a.segStart;
+    const hdr = await a.read(off, off + ROW1_CLUSTER_HDR - 1);
+    const glen = vintLenAt(hdr, 4);
+    if (!glen) throw new Error(`ass-demux: malformed cluster header @ ${off}`);
+    vln.set(ccp, glen);
+  }
+
+  // Phase 2: one range per cue → parse the block, keep the event.
+  const events: AssEvent[] = [];
+  for (const { cue, rel } of targets) {
+    const boff = cue.ccp + a.segStart + 4 + (vln.get(cue.ccp) ?? 0) + rel;
+    let buf = await a.read(boff, boff + ROW1_BLOCK_WINDOW - 1);
+    const blk = parseRow1Block(buf);
+    if (!blk || blk.track !== a.trackNum) continue;
+    if (blk.end > buf.length) {
+      const tail = await a.read(boff + buf.length, boff + blk.end - 1);
+      buf = joinBytes(buf, tail);
+    }
+    const data = buf.subarray(blk.dataStart, blk.dataStart + blk.dataLen);
+    events.push(parseAssBlock(data, tsToMs(cue.t, a.scale), tsToMs(cue.t + (cue.dur ?? 0), a.scale)));
+  }
+  return { ass: assembleAss(a.codecPrivate, events), cues: events.length };
 }

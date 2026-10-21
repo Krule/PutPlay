@@ -15,8 +15,9 @@ import { test, assert } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { demuxAssTrack, fmtAssTime, parseAssBlock, assembleAss, readAssHead, collectClusterEvents } from "../src/putio/ass-demux.ts";
+import { demuxAssTrack, fmtAssTime, parseAssBlock, assembleAss, readAssHead, collectClusterEvents, demuxAssRow1 } from "../src/putio/ass-demux.ts";
 import { BoundedReader, readElementHeader } from "../src/putio/probe.ts";
+import { parseCues, validateCues } from "../src/putio/cues.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MKV = "/tmp/kusuriya2.mkv";
@@ -278,6 +279,165 @@ t("ass demux: the English track reassembles byte-exact with ≤10 % transfer", a
     `transferred ${transferred} B > ${MAX_TRANSFER} B (10 % of file)`
   );
   console.log(`ass-demux: transferred ${transferred} B (${((100 * transferred) / FILE_SIZE).toFixed(2)} %) in ${calls} reads`);
+});
+
+// ---------------- unit: the row-1 batcher (Cues-driven) ----------------
+// demuxAssRow1 fetches only what the (validated) Cues name: a 12 B read per
+// unique cluster (its size-vint length) and one small range per cue. Times
+// come from CueTime/CueDuration — no cluster prefixes needed.
+
+const cuePoint = (tMs, track, ccp, rel, dur) =>
+  elem(0xbb,
+    elem(0xb3, be(tMs, 2)),
+    elem(0xb7,
+      elem(0xf7, Uint8Array.of(track)),
+      elem(0xf1, be(ccp, 2)),
+      elem(0xf0, be(rel, 1)),
+      elem(0xb2, be(dur, 2)),
+    ),
+  );
+const cuesEl = (...points) => elem(0x1c53bb6b, elem(0xbf, be(0x11223344, 4)), ...points);
+const cuesPayload = (el) => el.slice(el[4] & 0x80 ? 5 : 6);
+
+const r1ClusterA = elem(0x1f43b675,
+  elem(0xbf, be(0xdeadbeef, 4)),
+  elem(0xe7, be(1000, 2)),
+  elem(0xa0,
+    elem(0xa1, blockBody(1, 200, "\x000,0,Default,N1,0,0,0,,hello")),
+    elem(0x9b, be(900, 2)),
+  ),
+);
+const r1ClusterB = elem(0x1f43b675,
+  elem(0xbf, be(0, 4)),
+  elem(0xe7, be(2000, 2)),
+  elem(0xa0,
+    elem(0xa1, blockBody(1, 300, "\x001,1,Default,N2,0,0,0,,bye")),
+    elem(0x9b, be(900, 2)),
+  ),
+);
+const r1Cues = cuesEl(
+  cuePoint(1200, 1, 0, 10, 500),
+  cuePoint(2300, 1, r1ClusterA.length, 10, 700),
+);
+const R1 = concat([r1ClusterA, r1ClusterB, r1Cues]);
+
+const countingReader = (buf) => {
+  const st = { reads: 0, bytes: 0 };
+  const read = async (s, e) => {
+    st.reads += 1;
+    st.bytes += e - s + 1;
+    return buf.subarray(s, e + 1);
+  };
+  return { st, read };
+};
+
+test("demuxAssRow1: block fetches from Cues; times from CueTime/CueDuration; byte-exact", async () => {
+  const { st, read } = countingReader(R1);
+  const cues = parseCues(cuesPayload(r1Cues));
+  assert.equal(cues.length, 2);
+
+  const res = await demuxAssRow1({ read, segStart: 0, scale: 1_000_000, cues, trackNum: 1, codecPrivate: enc(SYNTH_CP) });
+  assert.equal(res.cues, 2);
+
+  const l1 = "Dialogue: 0,0:00:01.20,0:00:01.70,Default,N1,0,0,0,,hello";
+  const l2 = "Dialogue: 1,0:00:02.30,0:00:03.00,Default,N2,0,0,0,,bye";
+  const expected = Buffer.from(
+    SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + l1 + "\n" + l2 + "\n" + "\n"
+  );
+  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact .ass");
+  assert.equal(st.reads, 4, "2 cluster-header reads + 2 block reads");
+  assert.ok(st.bytes <= 2200, `bytes ${st.bytes}`);
+});
+
+test("demuxAssRow1: SimpleBlock (0xA3) targets parse like BlockGroups", async () => {
+  const cluster = elem(0x1f43b675,
+    elem(0xbf, be(0, 4)),
+    elem(0xe7, be(5000, 2)),
+    elem(0xa3, blockBody(1, 100, "\x000,0,Default,S,0,0,0,,simple")),
+  );
+  const cues = cuesEl(cuePoint(5100, 1, 0, 10, 400));
+  const { st, read } = countingReader(concat([cluster, cues]));
+
+  const res = await demuxAssRow1({ read, segStart: 0, scale: 1_000_000, cues: parseCues(cuesPayload(cues)), trackNum: 1, codecPrivate: enc(SYNTH_CP) });
+  assert.equal(res.cues, 1);
+
+  const l = "Dialogue: 0,0:00:05.10,0:00:05.50,Default,S,0,0,0,,simple";
+  const expected = Buffer.from(SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + l + "\n" + "\n");
+  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact .ass");
+  assert.equal(st.reads, 2, "1 cluster-header read + 1 block read");
+});
+
+test("demuxAssRow1: a block longer than the 1 KB window triggers one follow-up read", async () => {
+  const text = "x".repeat(1500);
+  const cluster = elem(0x1f43b675,
+    elem(0xbf, be(0, 4)),
+    elem(0xe7, be(1000, 2)),
+    elem(0xa0,
+      elem(0xa1, blockBody(1, 100, "\x000,0,Default,B,0,0,0,," + text)),
+      elem(0x9b, be(300, 2)),
+    ),
+  );
+  const cues = cuesEl(cuePoint(1100, 1, 0, 10, 300));
+  const { st, read } = countingReader(concat([cluster, cues]));
+
+  const res = await demuxAssRow1({ read, segStart: 0, scale: 1_000_000, cues: parseCues(cuesPayload(cues)), trackNum: 1, codecPrivate: enc(SYNTH_CP) });
+  assert.equal(res.cues, 1);
+
+  const l = "Dialogue: 0,0:00:01.10,0:00:01.40,Default,B,0,0,0,," + text;
+  const expected = Buffer.from(SYNTH_CP.replace(/\r\n/g, "\n").slice(0, -1) + l + "\n" + "\n");
+  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact .ass");
+  assert.equal(st.reads, 3, "header + first window + one follow-up");
+});
+
+// vint helpers for the real-file test (same shape as test/cues.test.mjs)
+function vintLenAt(buf, off) {
+  const b = buf[off];
+  return b & 0x80 ? 1 : b & 0x40 ? 2 : b & 0x20 ? 3 : b & 0x10 ? 4 : 0;
+}
+function vintValue(buf, off, len) {
+  let v = buf[off] & ((1 << (8 - len)) - 1);
+  for (let k = 1; k < len; k++) v = v * 256 + buf[off + k];
+  return len === 8 ? v & 0xffffffff : v;
+}
+function findCuesId(buf) {
+  const start = Math.max(0, buf.length - 1_048_576);
+  for (let i = start; i + 8 <= buf.length; i++) {
+    if (!(buf[i] === 0x1c && buf[i + 1] === 0x53 && buf[i + 2] === 0xbb && buf[i + 3] === 0x6b)) continue;
+    const sln = vintLenAt(buf, i + 4);
+    if (!sln || i + 4 + sln > buf.length) continue;
+    const size = vintValue(buf, i + 4, sln);
+    if (i + 4 + sln + size === buf.length) return i;
+  }
+  return -1;
+}
+async function readCuesPayload(read, off) {
+  const hdr = await read(off, off + 11);
+  const sln = vintLenAt(hdr, 4);
+  const size = sln < 8 ? vintValue(hdr, 4, sln) : vintValue(hdr, 4, sln) & 0xffffffff;
+  return read(off + 4 + sln, off + 4 + sln + size - 1);
+}
+
+t("demuxAssRow1: real file — byte-exact at oracle parity, ≤ 1 MB transferred", { timeout: 30_000 }, async () => {
+  const buf = new Uint8Array(readFileSync(MKV));
+  const { st, read } = countingReader(buf);
+
+  const head = await readAssHead(read);
+  const cuesOff = head.cuesFileOffset ?? findCuesId(buf);
+  assert.ok(cuesOff > 0, "the Cues element must be locatable");
+  const cues = (await parseCues(await readCuesPayload(read, cuesOff))).filter((c) => c.track === 3);
+  assert.equal(cues.length, 325);
+
+  const v = await validateCues({ read, segStart: head.segStart, scale: head.scale, cuesFileOffset: cuesOff, cues, trackNum: 3, fileSize: FILE_SIZE });
+  assert.equal(v.row, 1, `expected row 1, got ${v.row} (clusters ${v.clusterOk}/${v.clusterN}, landings ${v.landOk}/${v.landN})`);
+
+  const track = head.tracks.find((tr) => tr.num === 3);
+  const res = await demuxAssRow1({ read, segStart: head.segStart, scale: head.scale, cues, trackNum: 3, codecPrivate: track.priv });
+
+  const expected = readFileSync(join(here, "fixtures/kusuriya-eng-track.ass"));
+  assert.equal(res.cues, 325);
+  assert.ok(Buffer.compare(Buffer.from(res.ass), expected) === 0, "byte-exact vs the FFmpeg oracle");
+  assert.ok(st.bytes <= 1_000_000, `transferred ${st.bytes} B > 1 MB`);
+  console.log(`row1: ${res.cues} cues, ${st.bytes} B (${((100 * st.bytes) / FILE_SIZE).toFixed(2)} %) in ${st.reads} reads`);
 });
 
 t("ass demux: the reader is only ever asked for ranges inside the file", async () => {

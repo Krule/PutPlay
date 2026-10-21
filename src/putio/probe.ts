@@ -182,8 +182,20 @@ function vintLen(first: number, max: number): number {
 }
 
 /** value bits kept in the first byte of a vint of the given length */
-function vintMask(len: number): number {
+export function vintMask(len: number): number {
   return (1 << (8 - len)) - 1;
+}
+
+/** vint length (1–8) at buf[off]; 0 when the first byte is invalid. */
+export function vintLenAt(buf: Uint8Array, off: number): number {
+  return vintLen(buf[off] ?? 0x00, 8);
+}
+
+/** Unsigned vint value at buf[off] (marker bit stripped; 8-byte vint → low 32 bits). */
+export function vintValue(buf: Uint8Array, off: number, len: number): number {
+  let v = buf[off] & vintMask(len);
+  for (let i = 1; i < len; i++) v = v * 256 + (buf[off + i] ?? 0);
+  return len === 8 ? v & 0xffffffff : v;
 }
 
 export async function readElementHeader(r: BoundedReader, pos: number): Promise<Header | null> {

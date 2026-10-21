@@ -13,6 +13,8 @@
  *   row 3 — anything else → base layer only
  */
 
+import { vintLenAt, vintValue } from "./probe";
+
 // ------------------------------------------------------------------- types
 
 export interface CueEntry {
@@ -88,26 +90,6 @@ function readId(buf: Uint8Array, off: number): { id: number; len: number } | nul
   return null;
 }
 
-/** Size vint length at `off` (marker bit; 0 = invalid). */
-function vintLen(buf: Uint8Array, off: number): number {
-  if (off >= buf.length) return 0;
-  const b = buf[off];
-  if (b & 0x80) return 1;
-  if (b & 0x40) return 2;
-  if (b & 0x20) return 3;
-  if (b & 0x10) return 4;
-  return 0;
-}
-
-/** Size vint value: <8 bytes exact; 8 bytes → low 32 bits (the Lavf63 quirk). */
-function sizeValue(buf: Uint8Array, off: number, len: number): number {
-  let v = 0;
-  const firstMask = len < 8 ? (1 << (8 - len)) - 1 : 0;
-  v = (buf[off] & firstMask) >>> 0;
-  for (let i = 1; i < len; i++) v = v * 256 + buf[off + i];
-  return len === 8 ? v & 0xffffffff : v;
-}
-
 /** Big-endian unsigned int (value fields; floats are exact to 2^53). */
 function intOf(buf: Uint8Array, off: number, len: number): number {
   let v = 0;
@@ -178,9 +160,9 @@ function children(
     const id = readId(bytes, i);
     if (!id) return out;
     i += id.len;
-    const sln = vintLen(bytes, i);
+    const sln = vintLenAt(bytes, i);
     if (!sln || i + sln > end) return out;
-    const s = sizeValue(bytes, i, sln);
+    const s = vintValue(bytes, i, sln);
     const pos = i + sln;
     if (pos + s > end) return out;
     out.push({ id: id.id, pos, size: s });
@@ -307,7 +289,7 @@ async function clusterHeaderVln(a: ValidateArgs, ccp: number): Promise<number | 
   const h = await a.read(off, Math.min(off + CLUSTER_HDR_BYTES - 1, a.fileSize - 1));
   if (h.length < 5) return null;
   if (h[0] !== 0x1f || h[1] !== 0x43 || h[2] !== 0xb6 || h[3] !== 0x75) return null;
-  const vln = vintLen(h, 4);
+  const vln = vintLenAt(h, 4);
   if (!vln) return null;
   return off + 4 + vln <= a.fileSize ? vln : null;
 }
@@ -331,14 +313,14 @@ async function clusterCts(a: ValidateArgs, ccp: number, vln: number): Promise<nu
   const pre = await a.read(pstart, Math.min(pstart + CTS_PREFIX_BYTES - 1, a.fileSize - 1));
   let i = 0;
   if (pre.length > 0 && pre[0] === 0xbf) {
-    const sln = vintLen(pre, 1);
+    const sln = vintLenAt(pre, 1);
     if (!sln) return null;
-    i = 1 + sln + sizeValue(pre, 1, sln);
+    i = 1 + sln + vintValue(pre, 1, sln);
   }
   if (i + 2 > pre.length || pre[i] !== 0xe7) return null;
-  const sln = vintLen(pre, i + 1);
+  const sln = vintLenAt(pre, i + 1);
   if (!sln || i + 1 + sln > pre.length) return null;
-  const vlen = sizeValue(pre, i + 1, sln);
+  const vlen = vintValue(pre, i + 1, sln);
   if (i + 1 + sln + vlen > pre.length) return null;
   return intOf(pre, i + 1 + sln, vlen);
 }
@@ -347,13 +329,13 @@ async function clusterCts(a: ValidateArgs, ccp: number, vln: number): Promise<nu
 function parseBlockHead(h: Uint8Array): { track: number; relTs: number } | null {
   let tp: number; // offset of the track vint
   if (h[0] === 0xa0) {
-    const gl = vintLen(h, 1);
+    const gl = vintLenAt(h, 1);
     if (!gl || h[1 + gl] !== 0xa1) return null;
-    const bl = vintLen(h, 2 + gl);
+    const bl = vintLenAt(h, 2 + gl);
     if (!bl) return null;
     tp = 1 + gl + 1 + bl;
   } else if (h[0] === 0xa3) {
-    const gl = vintLen(h, 1);
+    const gl = vintLenAt(h, 1);
     if (!gl) return null;
     tp = 1 + gl;
   } else {
