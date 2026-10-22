@@ -6,6 +6,8 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-10-22
+
 ### Added
 - Embedded (MKV) subtitles now render the per-cue styling and exact text the
   file itself specifies — each cue's own style, per-word colours and

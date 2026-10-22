@@ -1,6 +1,8 @@
 # Raw-ASS subtitle upgrade — design (lazy, row-routed)
 
-Status: design converged 2026-10-21. Awaiting evidence gates E1/E2 (§7). Build plan §8.
+Status: shipped in v1.2.3 (2026-10-22). Gates cleared: E2 (6-file Cues audit, §7) on 2026-10-21; E1's
+in-page ranged fetch verified on the TV during the on-device check. Build plan §8 executed (I1–I3 +
+wiring); the measured CDN transport quirks now live in `src/putio/multirange.ts`.
 Supersedes the v1.2.2-staged "background demux-everything" strategy; reuses all of its machinery.
 
 ## 1. Problem & base layer
