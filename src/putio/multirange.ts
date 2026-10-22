@@ -213,12 +213,9 @@ export function multiRangeReader(
   const fetchChunk = async (chunk: Array<[number, number]>): Promise<Uint8Array[]> => {
     const requestedTotal = chunk.reduce((n, [s, e]) => n + (e - s + 1), 0);
     const byStart = new Map<number, Uint8Array>();
-    let status = 0;
     let ctype = "";
-    const t0 = Date.now();
     try {
       const res = await fetch(url, { headers: { Range: buildRangeHeader(chunk) } });
-      status = res.status;
       ctype = res.headers.get("content-type") ?? "";
       const cl = res.headers.get("content-length");
       if (
@@ -246,21 +243,10 @@ export function multiRangeReader(
       // network failure on the multipart attempt → sequential fallback below
     }
     if (!chunk.every(([s]) => byStart.has(s))) {
-      // TEMP-DIAG (remove after the on-device check)
-      console.log(
-        "[rawass] multi-range FALLBACK:",
-        chunk.length,
-        "ranges; status=",
-        status,
-        "ctype=",
-        ctype || "(none)",
-        "got=",
-        byStart.size,
-      );
+      // the server did not honour multi-range for this chunk (or a part is
+      // missing): retry the whole chunk sequentially
       return fallback(chunk);
     }
-    // TEMP-DIAG (remove after the on-device check)
-    console.log("[rawass] multi-range OK:", chunk.length, "ranges in", Date.now() - t0, "ms");
     return chunk.map(([s]) => byStart.get(s)!);
   };
 

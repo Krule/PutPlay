@@ -36,6 +36,12 @@ export default defineConfig(({ command }) => {
       // build-time only — see the header.
       ...(isBuild ? { __BUILD__: JSON.stringify(buildStamp()) } : {}),
     },
+    // Console logging is a development instrument: the TV's ipk must not ship
+    // it (our diagnostics or the libraries' — hls.js alone carries 21
+    // console.* calls in its dist). Drop it only under the SAME condition as
+    // the NODE_ENV "production" define, so `pnpm dev` and `build --watch`
+    // keep their logs. Gate: test/console-strip.test.mjs (artifact scan).
+    esbuild: isBuild && !isWatch ? { drop: ["console", "debugger"] } : {},
     build: {
       target: browserTarget,
       outDir: "js",

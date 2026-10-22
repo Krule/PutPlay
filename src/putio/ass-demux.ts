@@ -420,12 +420,6 @@ export async function demuxAssRow1(a: Row1Args): Promise<DemuxResult> {
     if (c.track === a.trackNum && c.rel !== null) targets.push({ cue: c, rel: c.rel });
   }
   if (!targets.length) return { ass: assembleAss(a.codecPrivate, []), cues: 0 };
-  // TEMP-DIAG (remove after the on-device check)
-  const r0 = Date.now();
-  const clusterCount = new Set(targets.map((x) => x.cue.ccp)).size;
-  console.log(
-    "[rawass] row1", a.trackNum, "start:", clusterCount, "clusters +", targets.length, "blocks",
-  );
 
   const readRanges = a.readRanges;
 
@@ -438,8 +432,6 @@ export async function demuxAssRow1(a: Row1Args): Promise<DemuxResult> {
   } else {
     for (const c of ccps) vln.set(c, clusterHeaderGlen(await a.read(c + a.segStart, c + a.segStart + ROW1_CLUSTER_HDR - 1), c + a.segStart));
   }
-  // TEMP-DIAG (remove after the on-device check)
-  console.log("[rawass] row1", a.trackNum, "clusters done in", Date.now() - r0, "ms");
 
   // Phase 2: one range per cue → parse the block, keep the event.
   const offsets = targets.map(({ cue, rel }) => cue.ccp + a.segStart + 4 + (vln.get(cue.ccp) ?? 0) + rel);
@@ -460,12 +452,8 @@ export async function demuxAssRow1(a: Row1Args): Promise<DemuxResult> {
       const parts = await readRanges(tails.map((t) => [t.start, t.end]));
       tails.forEach((t, j) => { bufs[t.i] = joinBytes(bufs[t.i]!, parts[j]); });
     }
-    // TEMP-DIAG (remove after the on-device check)
-    console.log("[rawass] row1", a.trackNum, "blocks fetched:", wins.length, "windows +", tails.length, "tails");
   } else {
     for (let i = 0; i < targets.length; i++) {
-      // TEMP-DIAG (remove after the on-device check)
-      if (i % 64 === 0) console.log("[rawass] row1", a.trackNum, "blocks", i + "/" + targets.length);
       const o = offsets[i];
       let buf = await a.read(o, o + ROW1_BLOCK_WINDOW - 1);
       const blk = parseRow1Block(buf);
@@ -485,7 +473,5 @@ export async function demuxAssRow1(a: Row1Args): Promise<DemuxResult> {
     const data = buf.subarray(blk.dataStart, blk.dataStart + blk.dataLen);
     events.push(parseAssBlock(data, tsToMs(cue.t, a.scale), tsToMs(cue.t + (cue.dur ?? 0), a.scale)));
   }
-  // TEMP-DIAG (remove after the on-device check)
-  console.log("[rawass] row1", a.trackNum, "done in", Date.now() - r0, "ms —", events.length, "events");
   return { ass: assembleAss(a.codecPrivate, events), cues: events.length };
 }

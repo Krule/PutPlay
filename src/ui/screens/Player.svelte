@@ -826,8 +826,6 @@
    *  lands. OpenSubtitles/folder tracks never take this path. */
   function scheduleRawAssUpgrade() {
     if (source === "hls" || !engine) {
-      // TEMP-DIAG (remove after the on-device check)
-      console.log("[rawass] schedule skipped: source=", source, "engine=", !!engine);
       return; // HLS overlay uses the renditions
     }
     // Both inputs are async: the put.io subtitles and the head probe's track
@@ -844,14 +842,6 @@
     if (armedSubs.has(activeSub)) return; // armed at most once per file+subtitle
     armedSubs.add(activeSub); // a null match never recovers (track list is static) — no retry loop
     const num = matchAssTrack(sub, subAssTracks);
-    // TEMP-DIAG (remove after the on-device check)
-    console.log(
-      "[rawass] arming sub",
-      activeSub,
-      sub.languageCode,
-      "→",
-      num === null ? "NO MATCH (kept put.io file)" : "track " + num,
-    );
     if (num === null) return; // ambiguous mapping: keep the put.io file
     const eng = engine; // stable handle for the async upgrade below
     void upgradeSub(activeSub, num, eng, file.id);
@@ -885,8 +875,6 @@
    *  they land; row 3 = nothing (put.io's converted file is final). */
   async function upgradeSub(i: number, num: number, eng: MediaEngine, fileKey: number) {
     const route = await eng.probeRawAss(num);
-    // TEMP-DIAG (remove after the on-device check)
-    console.log("[rawass] upgrade", i, "route:", route ? `row ${route.row}` : "null");
     // the file (or the subtitle list) may have changed while the probe ran
     if (!route || file.id !== fileKey || !subtitles[i]) return;
     if (route.row === 3) return; // no upgrade: the base layer stands
@@ -894,12 +882,6 @@
       if (!route.ass) return;
       const cues = parseAssCues(route.ass);
       const ok = shouldUpgradeCues(subtitles[i].cues?.length || 0, cues.length);
-      // TEMP-DIAG (remove after the on-device check)
-      console.log(
-        "[rawass] upgrade", i, "row1: base cues=",
-        subtitles[i].cues?.length ?? 0,
-        "fresh cues=", cues.length, "→", ok ? "SWAP" : "KEPT BASE",
-      );
       if (!ok) return;
       const table = parseAssStyles(route.ass);
       if (table) styleTable = table; // the track's own table, not the first probed
@@ -908,12 +890,8 @@
     }
     // row 2: arm the lazy scheduler; driveSubUpgrades feeds it the playhead
     if (!route.plan || !route.codecPrivate || !route.scale) {
-      // TEMP-DIAG (remove after the on-device check)
-      console.log("[rawass] upgrade", i, "row2: missing plan/codecPrivate/scale");
       return;
     }
-    // TEMP-DIAG (remove after the on-device check)
-    console.log("[rawass] upgrade", i, "row2 ARMED, plan=", route.plan.length, "clusters");
     armRow2Upgrade(i, num, eng, fileKey, route);
   }
 

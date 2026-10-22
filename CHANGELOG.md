@@ -24,6 +24,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 - Only the subtitle you're actually watching gets upgraded. Switching to
   another language upgrades that track when you switch, so unwatched tracks
   cost nothing.
+- Console logging is development-only: the temporary subtitle-upgrade
+  diagnostics were removed, and packaged builds now ship without any console
+  output at all (including the logging bundled libraries would otherwise
+  emit) — the TV's developer console stays quiet.
 
 ### Fixed
 - The raw-ASS subtitle upgrade could silently never start when the file's

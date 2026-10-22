@@ -61,9 +61,6 @@ export interface RouteArgs {
  * row 3 is the no-op.
  */
 export async function routeRawAss(a: RouteArgs): Promise<RawAssRoute> {
-  const t0 = Date.now();
-  // TEMP-DIAG (remove after the on-device check)
-  console.log("[rawass] route", a.trackNum, "start: validating Cues…");
   const v = await validateCues({
     read: a.read,
     segStart: a.segStart,
@@ -73,13 +70,6 @@ export async function routeRawAss(a: RouteArgs): Promise<RawAssRoute> {
     trackNum: a.trackNum,
     fileSize: a.fileSize,
   });
-  // TEMP-DIAG (remove after the on-device check)
-  console.log(
-    "[rawass] route",
-    a.trackNum,
-    "validated in", Date.now() - t0, "ms → row", v.row,
-    "(cluster", v.clusterOk + "/" + v.clusterN, "land", v.landOk + "/" + v.landN + ")",
-  );
 
   if (v.row === 1) {
     const r = await demuxAssRow1({
