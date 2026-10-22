@@ -33,6 +33,56 @@ function stepLines(lines, idx) {
   return out;
 }
 
+test("every pnpm global-install step puts pnpm's global bin dir on PATH", () => {
+  // pnpm 12 hard-errors (ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH) when a
+  // `pnpm add -g` runs with the global bin dir off PATH — pnpm 10 only
+  // warned, so this died the moment CI ran on the pnpm 12 line (2026-10-22,
+  // the "Install ares" step, both workflows). The bin dir is
+  // $PNPM_HOME/bin (pnpm/action-setup sets PNPM_HOME), and the export must
+  // also land on GITHUB_PATH so LATER steps (Package ipk runs ares-package)
+  // find the binary — a plain export dies with the step.
+  const files = readdirSync(join(root, ".github", "workflows")).filter((f) =>
+    f.endsWith(".yml") || f.endsWith(".yaml"),
+  );
+  const offenders = [];
+  for (const f of files) {
+    const text = read(join(".github", "workflows", f));
+    const lines = text.split("\n");
+    // A step block runs from a 6-space `- name:`/`- uses:` to the next one.
+    const starts = lines
+      .map((l, i) => (/^ {6}- (name|uses):/.test(l) ? i : -1))
+      .filter((i) => i >= 0);
+    starts.forEach((s, k) => {
+      const e = k + 1 < starts.length ? starts[k + 1] : lines.length;
+      const block = lines.slice(s, e);
+      const addIdx = block.findIndex((l) => l.includes("pnpm add -g"));
+      if (addIdx === -1) return;
+      const exportIdx = block.findIndex(
+        (l) => l.includes("export PATH=") && l.includes("$PNPM_HOME/bin"),
+      );
+      const githubPathIdx = block.findIndex(
+        (l) =>
+          l.includes("$GITHUB_PATH") && l.includes("$PNPM_HOME/bin"),
+      );
+      if (exportIdx === -1 || exportIdx >= addIdx) {
+        offenders.push(
+          `${f}:${s + 1} — export PATH=\"$PNPM_HOME/bin:$PATH" is missing or comes after the pnpm add -g line`,
+        );
+      }
+      if (githubPathIdx === -1) {
+        offenders.push(
+          `${f}:${s + 1} — the global bin dir must be appended to $GITHUB_PATH so later steps find the installed binary`,
+        );
+      }
+    });
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "pnpm 12 refuses a global install while its bin dir is off PATH (pnpm 10 only warned):\n" + offenders.join("\n"),
+  );
+});
+
 test("every workflow pins a pnpm version on its action-setup step", () => {
   const files = readdirSync(join(root, ".github", "workflows")).filter((f) =>
     f.endsWith(".yml") || f.endsWith(".yaml"),

@@ -35,7 +35,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install ares (webOS packaging gate)
-        run: pnpm add -g @webos-tools/cli
+        # pnpm 12 hard-errors if its global bin dir is off PATH (pnpm 10 only
+        # warned); action-setup sets PNPM_HOME, the bin dir is $PNPM_HOME/bin.
+        # GITHUB_PATH carries it to the packaging-gate steps that run ares.
+        run: |
+          export PATH="$PNPM_HOME/bin:$PATH"
+          echo "$PNPM_HOME/bin" >> "$GITHUB_PATH"
+          pnpm add -g @webos-tools/cli
 
       - name: Build
         run: pnpm run build
