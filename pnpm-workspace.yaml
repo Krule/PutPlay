@@ -1,6 +1,8 @@
-# pnpm 11+ reads its configuration from this file (the package.json#pnpm
-# block is ignored). Build-script approvals live here: esbuild's postinstall
-# places the platform binary and must run on a clean install — without this
-# line `pnpm install` exits ERR_PNPM_IGNORED_BUILDS (see test/pnpm-builds).
-onlyBuiltDependencies:
-  - esbuild
+# pnpm 12 reads its configuration from this file (the package.json#pnpm
+# block is ignored). Build-script approvals live here — written by
+# `pnpm approve-builds`, do not delete: esbuild's postinstall places the
+# platform binary and must run on a clean install, without which
+# `pnpm install` exits ERR_PNPM_IGNORED_BUILDS (see test/pnpm-builds).
+allowBuilds:
+  esbuild: true
+  svelte-preprocess: true
