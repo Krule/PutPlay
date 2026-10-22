@@ -499,7 +499,9 @@ export class MediaEngine {
    *  Falls back to single-range reads when the CDN ignores the multi-range
    *  request, so it is always safe to hand to the demuxer. */
   private rangeReaderMulti(): (ranges: Array<[number, number]>) => Promise<Uint8Array[]> {
-    return multiRangeReader(streamURL(this.auth, this.file.id), this.rangeReader());
+    // fileSize lets the multi-range layer refuse whole-file responses before
+    // downloading them (the put.io CDN sometimes ignores the Range header)
+    return multiRangeReader(streamURL(this.auth, this.file.id), this.rangeReader(), this.file.size ?? 0);
   }
 
   /** Best-effort bounded probe of the ORIGINAL stream's MKV header:

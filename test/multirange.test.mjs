@@ -12,7 +12,14 @@
 // against synthetic bodies, as is the fetch + fallback glue (multiRangeReader).
 
 import { test, assert, vi } from "vitest";
-import { buildRangeHeader, parseByteRanges, multiRangeReader, MAX_RANGES_PER_REQUEST } from "../src/putio/multirange.ts";
+import {
+  buildRangeHeader,
+  parseByteRanges,
+  multiRangeReader,
+  multiRangeUsable,
+  chunkRanges,
+  MAX_HEADER_BYTES,
+} from "../src/putio/multirange.ts";
 
 const enc = (s) => new TextEncoder().encode(s);
 
@@ -182,7 +189,7 @@ test("multiRangeReader: one multipart response serves every range in one fetch",
   }
 });
 
-test("multiRangeReader: > MAX ranges are chunked, results stay in order", async () => {
+test("multiRangeReader: large sets are chunked by HEADER SIZE, results stay in order", async () => {
   const ranges = Array.from({ length: 300 }, (_, i) => [i * 100, i * 100 + 99]);
   const { calls, fn } = mockFetch((_n, init) => {
     const req = init.headers.Range.slice("bytes=".length).split(",").map((r) => {
@@ -199,8 +206,9 @@ test("multiRangeReader: > MAX ranges are chunked, results stay in order", async 
       return marker(s, e);
     });
     const parts = await rr(ranges);
-    assert.equal(calls.length, 3, `300 ranges at ${MAX_RANGES_PER_REQUEST}/request → 3 fetches`);
-    assert.deepEqual(calls.map((c) => c.range.split(",").length), [128, 128, 44]);
+    // 300 ranges × 14 header chars + 6 = 4,206 B → ONE fetch under the 7 KB cap
+    assert.equal(calls.length, 1, `300 ranges fit ${MAX_HEADER_BYTES} B of header → 1 fetch`);
+    assert.equal(calls[0].range.split(",").length, 300);
     assert.equal(singleCalls, 0);
     assert.equal(parts.length, 300);
     for (let i = 0; i < 300; i++) {
@@ -284,6 +292,166 @@ test("multiRangeReader: throws when the fallback reader fails", async () => {
     }
     assert.ok(threw, "must reject when the fallback reader fails");
     assert.match(String(threw && threw.message), /nope/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+// ---------------- the Put.io-CDN quirks (measured 2026-10-21/22) ----------------
+//
+// (a) multipart bodies labelled with the FILE's own content-type — the
+//     boundary must be recovered from the body, not the header;
+// (b) some edges ignore a multi-valued Range and stream the WHOLE file —
+//     detectable before the body is read (status / Content-Length), and
+//     must never be consumed (218 MB per batch attempt);
+// (c) the Range header is limited to ~8 KB — chunk by header bytes, not count.
+
+const dec = new TextDecoder();
+
+/** Multipart body whose Content-Type header does NOT carry the boundary. */
+function mislabeledMultipart(parts) {
+  return {
+    body: multipart("83c9cc6eeea5beff2f68ffe95b18c2c5473cd73e", parts),
+    contentType: "video/x-matroska",
+  };
+}
+
+function response2(body, contentType, { ok = true, status = 200, contentLength = null } = {}) {
+  const hdrs = {};
+  if (contentType !== null) hdrs["content-type"] = contentType;
+  if (contentLength !== null) hdrs["content-length"] = String(contentLength);
+  return {
+    ok,
+    status,
+    headers: { get: (k) => hdrs[k.toLowerCase()] ?? null },
+    arrayBuffer: async () => body.slice().buffer,
+    body: { cancel: async () => {} },
+  };
+}
+
+test("parseByteRanges: boundary is sniffed from the body when the header mislabels it", () => {
+  const { body, contentType } = mislabeledMultipart([
+    { start: 0, end: 3, total: 100, data: bytesOf([1, 2, 3, 4]) },
+    { start: 10, end: 13, total: 100, data: bytesOf([10, 11, 12, 13]) },
+  ]);
+  const parts = parseByteRanges(body, contentType);
+  assert.equal(parts.length, 2);
+  assert.equal(parts[0].start, 0);
+  assert.deepEqual([...parts[0].bytes], [1, 2, 3, 4]);
+  assert.equal(parts[1].start, 10);
+  assert.deepEqual([...parts[1].bytes], [10, 11, 12, 13]);
+});
+
+test("parseByteRanges: body that merely starts with '--' but has no Content-Range line → empty", () => {
+  // The sniff must verify the line AFTER the boundary marker, not just the prefix.
+  const body = bytesOf("--NOTABND\r\r\nwhatever");
+  assert.deepEqual(parseByteRanges(body, "video/x-matroska"), []);
+});
+
+// ---------------- multiRangeUsable (the whole-file guard) ----------------
+
+test("multiRangeUsable: spec-compliant multipart 206 → usable", () => {
+  assert.equal(multiRangeUsable(206, "multipart/byteranges; boundary=B", 5000, 2048, 2, 1_000_000), true);
+});
+
+test("multiRangeUsable: whole-file response (CL >= fileSize) → never consume", () => {
+  assert.equal(multiRangeUsable(206, "video/x-matroska", 218_005_732, 132_608, 128, 218_005_732), false);
+  assert.equal(multiRangeUsable(206, "video/x-matroska", null, 132_608, 128, 0), true, "fileSize 0 = unknown → guard off, sniffing decides");
+});
+
+test("multiRangeUsable: first-range-only 206 (small CL) → usable (sniffing will find 0 parts → fallback)", () => {
+  assert.equal(multiRangeUsable(206, "video/x-matroska", 1036, 132_608, 128, 218_005_732), true);
+});
+
+test("multiRangeUsable: oversized but plausible multipart (CL within overhead budget) → usable", () => {
+  // 128 parts × (1036 payload + ~138 measured overhead) ≈ 150 KB
+  assert.equal(multiRangeUsable(206, "video/x-matroska", 150_000, 132_608, 128, 218_005_732), true);
+  assert.equal(multiRangeUsable(206, "video/x-matroska", 999_999, 132_608, 128, 218_005_732), false, "well above overhead budget → suspicious");
+});
+
+test("multiRangeUsable: non-206 → never usable", () => {
+  assert.equal(multiRangeUsable(200, "video/x-matroska", 218_005_732, 132_608, 128, 218_005_732), false);
+  assert.equal(multiRangeUsable(500, "text/plain", null, 20, 1, 1000), false);
+});
+
+// ---------------- chunkRanges (header-size chunking) ----------------
+
+test("chunkRanges: sizes chunks so the Range header stays under the cap", () => {
+  const ranges = Array.from({ length: 700 }, (_, i) => [1_000_000 + i, 1_000_000 + i + 9]);
+  const chunks = chunkRanges(ranges);
+  const sizes = chunks.map((c) => c.length);
+  const cap = Math.floor((MAX_HEADER_BYTES - 6) / 16); // "1000000-1000009,"
+  assert.equal(sizes[0], cap, "first chunk fills the header to the cap");
+  assert.equal(chunks.reduce((n, c) => n + c.length, 0), 700);
+  assert.ok(buildRangeHeader(chunks[0]).length <= MAX_HEADER_BYTES);
+  for (const c of chunks) assert.ok(buildRangeHeader(c).length <= MAX_HEADER_BYTES);
+  // order-preserving flattening
+  assert.deepEqual(chunks.flat(), ranges);
+});
+
+test("chunkRanges: empty → empty; a single 11-digit-offset range always fits in one chunk", () => {
+  assert.deepEqual(chunkRanges([]), []);
+  assert.deepEqual(chunkRanges([[100_000_000_000, 100_000_000_127]]), [[[100_000_000_000, 100_000_000_127]]]);
+});
+
+test("multiRangeReader: a mislabelled multipart body (boundary only in the body) is parsed, not fallen back", async () => {
+  const { body, contentType } = mislabeledMultipart([
+    { start: 0, end: 1023, total: 999999, data: marker(0, 1023) },
+    { start: 5000, end: 6023, total: 999999, data: marker(5000, 6023) },
+  ]);
+  const { calls, fn } = mockFetch(() =>
+    response2(body, contentType, { status: 206, contentLength: body.length }),
+  );
+  vi.stubGlobal("fetch", fn);
+  try {
+    let singleCalls = 0;
+    const rr = multiRangeReader("https://cdn/stream", async (s, e) => {
+      singleCalls += 1;
+      return marker(s, e);
+    });
+    const parts = await rr([[0, 1023], [5000, 6023]]);
+    assert.equal(calls.length, 1);
+    assert.equal(singleCalls, 0, "body-boundary sniffing must accept the mislabelled multipart");
+    assert.equal(parts[0].length, 1024);
+    assert.equal(parts[0][0], 0);
+    assert.equal(parts[1][0], 5000 % 251);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("multiRangeReader: a whole-file response is NOT consumed (body.cancel) and falls back", async () => {
+  let cancelled = false;
+  const fullFile = new Uint8Array(1_000_000);
+  const res = {
+    ok: true,
+    status: 206,
+    headers: {
+      get: (k) =>
+        k.toLowerCase() === "content-type"
+          ? "video/x-matroska"
+          : k.toLowerCase() === "content-length"
+            ? String(fullFile.length)
+            : null,
+    },
+    arrayBuffer: async () => {
+      throw new Error("must not download the whole file");
+    },
+    body: { cancel: async () => { cancelled = true; } },
+  };
+  const { calls, fn } = mockFetch(() => res);
+  vi.stubGlobal("fetch", fn);
+  try {
+    const singleCalls = [];
+    const rr = multiRangeReader("https://cdn/stream", async (s, e) => {
+      singleCalls.push([s, e]);
+      return marker(s, e);
+    }, 1_000_000);
+    const parts = await rr([[0, 1023], [5000, 6023]]);
+    assert.equal(calls.length, 1);
+    assert.equal(cancelled, true, "the whole-file body must be cancelled, not read");
+    assert.deepEqual(singleCalls, [[0, 1023], [5000, 6023]]);
+    assert.equal(parts[1][0], 5000 % 251);
   } finally {
     vi.unstubAllGlobals();
   }
