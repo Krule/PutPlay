@@ -388,3 +388,118 @@ test("the engine runs the header probe on the original stream", () => {
   const media = read("../src/putio/media.ts");
   assert.ok(/probeHeader/.test(media), "MediaEngine must call probeHeader");
 });
+
+/* ---------------- top-row anchor: libass puts the text at MarginV ---------------- */
+// The Kusuriya title card's \clip window (y 14-44 PlayRes) only makes sense
+// if the top of the text sits where libass puts it: MarginV PlayRes px from
+// the top of the frame. The 10%-of-height heuristic (SRT path) sits ~25 box
+// px lower and the clip band shaves off every glyph but a sliver of cap-top.
+
+test("a top-anchored ASS cue carries its libass-exact top anchor (box px)", () => {
+  const doc = `[Script Info]
+PlayResX: 640
+PlayResY: 360
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
+Style: Title,Times New Roman,22,&H00FFFFFF,&H000000FF,&H001F38B6,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,8,18,18,18,0
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:06.40,0:00:13.53,Title,Text,0,0,0,,Hello
+`;
+  const table = parseAssStyles(doc);
+  const cues = parseAssCues(doc);
+  const lines = renderSubtitleLines(cues, 8, table, { w: 1280, h: 720 }, 1);
+  // libass VALIGN_TOP: baseline = MarginV (screen) + line ascent. The CSS
+  // line box carries (1.4-1)/2 = 0.2 em of half-leading above the ascender
+  // line, so the anchor compensates: 18×2 (boxScale) - 0.2×44 (fontSizePx)
+  // = 27.2 box px — where the 10% heuristic (72px) shaves every glyph to a
+  // cap-top sliver under the title card's \clip band.
+  assert.equal(lines[0].anchorTopPx, 27.2);
+});
+
+test("a cue without a style table (SRT path) keeps the 10% heuristic anchor", () => {
+  const cues = [{ start: 1, end: 5, text: "hi", align: 8 }];
+  const lines = renderSubtitleLines(cues, 2, null, { w: 1280, h: 720 }, 1);
+  assert.equal(lines[0].anchorTopPx, undefined);
+});
+
+/* ---------------- per-segment outline (the hollow "Diaries") ---------------- */
+// libass strokes each glyph with the outline state at its point in the text.
+// The title card's ghost line resets \bord1\3c&HFFFFFF&\3a&H56& on its last
+// word: "Diaries" must carry a WHITE 2-box-px outline, not inherit the
+// line's dark-red 4-px one (the style's OutlineColour, &H001F38B6& = BGR
+// (182,56,31)).
+
+const GHOST_DOC = `[Script Info]
+PlayResX: 640
+PlayResY: 360
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
+Style: Title,Times New Roman,22,&H00FFFFFF,&H000000FF,&H001F38B6,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,8,18,18,18,0
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 1,0:00:06.40,0:00:13.53,Title,Text,0,0,0,,{\\fad(0,436)\\blur3\\1a&HFF&\\clip(210,15,211,44)\\t(400,4902,\\clip(210,15,430,44))}The Apothecary {\\bord1\\blur2\\c&H000000&\\1a&H00&\\3c&HFFFFFF&\\3a&H56&}Diaries
+`;
+
+test("a segment whose outline differs from the line's carries its own outline", () => {
+  const table = parseAssStyles(GHOST_DOC);
+  const cues = parseAssCues(GHOST_DOC);
+  const lines = renderSubtitleLines(cues, 12.5, table, { w: 1280, h: 720 }, 1);
+  const ghost = lines[0];
+  // line-level outline (from the style, via the first segment): 2 × 2 boxScale
+  assert.equal(ghost.outlinePx, 4);
+  assert.equal(ghost.outlineColor, "rgb(182, 56, 31)");
+  // "The Apothecary " — state never diverges from the line's: no own outline
+  assert.equal(ghost.segments[0].outlinePx, undefined);
+  // "Diaries" — \bord1\3c&HFFFFFF&\3a&H56&: white, alpha 0x56 (86/255
+  // transparent → 0.663 opaque), 1 × 2 px
+  assert.equal(ghost.segments[1].outlinePx, 2);
+  assert.equal(ghost.segments[1].outlineColor, "rgba(255, 255, 255, 0.663)");
+});
+
+test("a uniform ASS line (no diverging segment) carries no per-segment outline", () => {
+  const doc = GHOST_DOC.replace(
+    /Dialogue: 1.*\n/,
+    "Dialogue: 0,0:00:06.40,0:00:13.53,Title,Text,0,0,0,,{\\bord0}The Apothecary Diaries\n"
+  );
+  const table = parseAssStyles(doc);
+  const cues = parseAssCues(doc);
+  const lines = renderSubtitleLines(cues, 12.5, table, { w: 1280, h: 720 }, 1);
+  assert.equal(lines[0].segments[0].outlinePx, undefined);
+});
+
+test("anchor uses the probed half-leading when metrics are supplied", () => {
+  const lines = renderSubtitleLines(
+    parseAssCues(GHOST_DOC),
+    12.5,
+    parseAssStyles(GHOST_DOC),
+    { w: 1280, h: 720 },
+    1,
+    { halfLeadingPx: () => 5.3 }
+  );
+  // marginV 18 × 2 (boxScale) − probed half-leading 5.3 — libass places the
+  // baseline at MarginV + ascent, which puts the line box at MarginV·S −
+  // halfLeading (the ascent cancels)
+  assert.equal(lines[0].anchorTopPx, 30.7);
+});
+
+// Segment-less ASS cue with an outlined STYLE: hasStroke is true (the style's
+// outline), segments is empty, and the line carries the style's bold/italic —
+// the ring path needs those to match the fill layer's font exactly.
+test("plain cue with an outlined style: hasStroke, no segments, style bold/italic on the line", () => {
+  const doc = GHOST_DOC.replace(
+    /Dialogue: 1.*\n/,
+    "Dialogue: 0,0:00:01.00,0:00:03.00,Title,Text,0,0,0,,plain styled cue\n"
+  );
+  const cues = parseAssCues(doc);
+  const table = parseAssStyles(doc);
+  const [line] = renderSubtitleLines(cues, 2, table, { w: 1280, h: 720 }, 1);
+  assert.equal(line.hasStroke, true, "the style's outline makes the line stroked");
+  assert.equal(line.segments.length, 0);
+  assert.equal(line.bold, true, "Title style is bold — the line carries it");
+  assert.equal(line.italic, false);
+});

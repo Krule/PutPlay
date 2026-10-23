@@ -237,3 +237,45 @@ test("cuesAt: the same text repeated in the active set is not shown twice", () =
   const b = { start: 1, end: 5, text: "once" };
   assert.deepEqual(cuesAt([a, b], 2), [a]);
 });
+
+test("cuesAt: identical ASS text on different layers (solid + ghost) both come back", () => {
+  // the Kusuriya title card is exactly this: two events, same display text,
+  // different tags — layer 0 solid white, layer 1 a transparent ghost whose
+  // \1a&HFF& hides "The Apothecary " and a segment reset makes "Diaries"
+  // hollow. libass renders both; text-only deduping drops the ghost and the
+  // scene collapses to one event.
+  const solid = {
+    start: 6.4,
+    end: 13.53,
+    text: "The Apothecary Diaries",
+    layer: 0,
+    styleName: "Title",
+    segments: [{ text: "The Apothecary Diaries", opacity: 1, color: "rgb(255, 255, 255)" }],
+  };
+  const ghost = {
+    start: 6.4,
+    end: 13.53,
+    text: "The Apothecary Diaries",
+    layer: 1,
+    styleName: "Title",
+    segments: [
+      { text: "The Apothecary ", opacity: 0, color: "rgba(255, 255, 255, 0)" },
+      { text: "Diaries", opacity: 1, color: "rgb(0, 0, 0)" },
+    ],
+  };
+  assert.deepEqual(cuesAt([solid, ghost], 8), [solid, ghost]);
+});
+
+test("cuesAt: a truly duplicated ASS event (same text, style, layer, segments) is shown once", () => {
+  const mk = () => ({
+    start: 1,
+    end: 5,
+    text: "once",
+    layer: 0,
+    styleName: "Title",
+    segments: [{ text: "once", opacity: 1 }],
+  });
+  const a = mk();
+  const b = mk();
+  assert.deepEqual(cuesAt([a, b], 2), [a]);
+});

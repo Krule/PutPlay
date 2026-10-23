@@ -6,6 +6,14 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
 
 ## [Unreleased]
 
+### Added
+- Embedded subtitles that animate — the title cards and on-screen graphics
+  that fade, wipe, slide or blur in the file — now play their motion on the
+  TV too: fades, clip reveals, animated positions and per-frame transitions
+  are evaluated frame by frame while the cue is on screen, and the outline
+  and blur each word carries are drawn with it, matching how the file's
+  own player (MPV/libass) renders the same scene.
+
 ## [1.2.3] - 2026-10-22
 
 ### Added

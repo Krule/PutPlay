@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from "svelte";
+  import { afterUpdate, onMount, onDestroy, tick } from "svelte";
   import { get } from "svelte/store";
   import { getRemote } from "../../webos/remote";
   import { platform } from "../../webos/platform";
@@ -39,6 +39,8 @@
     type RenderedLine,
     type RenderedSegment,
   } from "../../putio/substyle";
+  import { anyMotionActive } from "../../putio/motion";
+  import { drawRing, ringFont, ringMargin, ringSegments, ringSize, type RingSegment } from "../../ui/subring";
   import type { AssTrackInfo } from "../../putio/probe";
   import { segAction, type Seg } from "../../putio/segments";
   import { lookupSegments } from "../../putio/seglookup";
@@ -1008,46 +1010,200 @@
       // CSS box is the coordinate space the PlayRes-scaled values land in
       const box = { w: el?.clientWidth || 1920, h: el?.clientHeight || 1080 };
       subLines = act.length
-        ? renderSubtitleLines(act, currentTime, styleTable, box, subScale)
+        ? renderSubtitleLines(act, currentTime, styleTable, box, subScale, subMetrics)
         : [];
     }
   }
 
-  /** libass-style solid outline: 8 hard text-shadows, zero blur. Entry
-   *  order matters: the first text-shadow sits closest to the text, so the
-   *  outline entries come first and the offset shadow last (shadow behind
-   *  outline, as libass draws it). */
-  function outlineShadow(px: number, color: string): string {
-    const o = Math.max(1, Math.round(px));
-    const c = (dx: number, dy: number) => `${dx * o}px ${dy * o}px ${color}`;
-    return [
-      c(1, 0),
-      c(-1, 0),
-      c(0, 1),
-      c(0, -1),
-      c(1, 1),
-      c(-1, 1),
-      c(1, -1),
-      c(-1, -1),
-    ].join(", ");
+  // rAF motion driver — while a motion-tagged cue (\fad/\clip/\move/\t) is on
+  // screen the lines are re-rendered every frame: at timeupdate's ~4 Hz the
+  // title-card clip reveal would crawl. The loop arms up to 0.5 s BEFORE the
+  // first motion cue (so the fade-in onset is caught at frame rate) and dies
+  // with it. Subtitle motion is authored content, not UI chrome, so it is
+  // deliberately NOT gated on prefers-reduced-motion.
+  let motionRaf = 0;
+  function startMotionLoop() {
+    if (motionRaf) return;
+    if ((videoEl as HTMLVideoElement | null)?.paused) return;
+    motionRaf = requestAnimationFrame(motionTick);
+  }
+  function stopMotionLoop() {
+    if (!motionRaf) return;
+    cancelAnimationFrame(motionRaf);
+    motionRaf = 0;
+  }
+  function motionTick() {
+    motionRaf = 0;
+    const el = videoEl as HTMLVideoElement | null;
+    if (!el || (activeSub === -1 && hlsSub === -1)) return;
+    const t = el.currentTime;
+    // exact video time decides life/death; the 0.5 s pre-roll re-renders the
+    // (unchanged) static lines and is harmless
+    const near = subCues.some((c) => !!c.motion && c.start <= t + 0.5 && t < c.end);
+    if (!near) return;
+    const act = cuesAt(subCues, t);
+    const box = { w: el.clientWidth || 1920, h: el.clientHeight || 1080 };
+    subLines = act.length ? renderSubtitleLines(act, t, styleTable, box, subScale, subMetrics) : [];
+    motionRaf = requestAnimationFrame(motionTick);
+  }
+  $: {
+    const motionNear = subCues.some((c) => !!c.motion && c.start <= currentTime + 0.5 && currentTime < c.end);
+    if (motionNear) startMotionLoop();
+    else stopMotionLoop();
   }
 
-  /** The per-line inline style: colour/size/stroke are the descriptor's
-   *  (parsed ASS, PlayRes-scaled); vertical position is owned here (the
-   *  anchor cell + the collision offset), horizontal by the sub-al-N
-   *  classes. \pos lines get their exact spot instead. */
-  function lineStyle(l: RenderedLine): string {
-    const p: string[] = [`color:${l.color}`];
-    if (l.opacity < 1) p.push(`opacity:${l.opacity}`);
-    p.push(`font-family:"${l.fontFamily}", "Segoe UI", "Noto Sans", Roboto, Arial, sans-serif`);
+  // Outline ring (canvas) — libass's outline bitmap is a RING (blur(dilate)
+  // minus blur(glyph); the core is empty). No CSS primitive draws that, so
+  // each outlined line gets a cached canvas appended to its .subs-stroke
+  // layer — see src/ui/subring.ts for the dead ends. The {#each} reuses the
+  // stroke div in place (keyed by index), so the appended child survives
+  // frame updates; a changed line re-paints and swaps the canvas.
+  const ringCache = new Map<string, HTMLCanvasElement>();
+  const baselineCache = new Map<string, number>();
+
+  // Canvas text does not wrap: multi-line cues keep the centred-stroke spans
+  // (v1 gap, documented in subring.ts).
+  function isMultiLine(l: RenderedLine): boolean {
+    return l.text.includes("\n") || l.segments.some((s) => s.text.includes("\n"));
+  }
+
+  // The baseline within the line box, measured by a DOM probe in the line's
+  // own font: a zero-height inline-block vertical-aligned to the baseline
+  // reports its offset from the content top (half-leading + ascent). Blink's
+  // own layout — matches the fill layer's text exactly, no font-metric API
+  // needed (Chrome 79-safe).
+  function ringBaselinePx(font: string, lineBoxPx: number): number {
+    const key = `${font}|${lineBoxPx}`;
+    const hit = baselineCache.get(key);
+    if (hit !== undefined) return hit;
+    const probe = document.createElement("div");
+    probe.style.position = "absolute";
+    probe.style.top = "0";
+    probe.style.left = "0";
+    probe.style.visibility = "hidden";
+    probe.style.whiteSpace = "nowrap";
+    probe.style.lineHeight = `${lineBoxPx}px`;
+    probe.style.font = font;
+    probe.innerHTML =
+      'X<span style="display:inline-block;width:0;height:0;vertical-align:baseline;position:relative"></span>';
+    document.body.appendChild(probe);
+    const marker = probe.lastChild as HTMLElement;
+    const b = marker.offsetTop;
+    probe.remove();
+    baselineCache.set(key, b);
+    return b;
+  }
+
+  function paintRings() {
+    if (!subLines.some((l) => l.hasStroke)) return;
+    // stroke layers in DOM order ↔ the hasStroke lines in subLines order
+    const strokeIdx: number[] = [];
+    subLines.forEach((l, i) => {
+      if (l.hasStroke) strokeIdx.push(i);
+    });
+    const strokes = document.querySelectorAll<HTMLElement>(".subs-cues .subs-stroke");
+    strokeIdx.forEach((li, k) => {
+      const line = subLines[li];
+      const div = strokes[k];
+      if (!div || isMultiLine(line)) return;
+      const sizer = div.querySelector<HTMLElement>(".stroke-sizer");
+      if (!sizer) return;
+      const dpr = window.devicePixelRatio || 1;
+      const F = line.fontSizePx;
+      const L = F * 1.4; // .subs-line's line-height
+      const segs: RingSegment[] = ringSegments(line);
+      const font = ringFont(segs[0], subFontChain(line.fontFamily), F);
+      const baseline = ringBaselinePx(font, L);
+      const m = ringMargin(segs);
+      const width = sizer.offsetWidth;
+      const key = JSON.stringify([
+        segs.map((s) => [s.text, s.outlinePx, s.color, s.blurPx, s.bold, s.italic]),
+        subFontChain(line.fontFamily),
+        F,
+        Math.round(baseline * 100),
+        Math.round(width * 100) / 100,
+        dpr,
+      ]);
+      let ring = ringCache.get(key);
+      if (!ring) {
+        ring = document.createElement("canvas");
+        ring.className = "subs-ring";
+        drawRing(ring, ring.getContext("2d") as CanvasRenderingContext2D, {
+          segments: segs,
+          family: line.fontFamily,
+          fontSizePx: F,
+          lineBoxPx: L,
+          baselinePx: baseline,
+          textWidthPx: width,
+          dpr,
+          makeCanvas: (w, h) => {
+            const c = document.createElement("canvas");
+            c.width = w;
+            c.height = h;
+            return c;
+          },
+        });
+        ringCache.set(key, ring);
+      }
+      const old = div.querySelector("canvas.subs-ring");
+      if (old && old !== ring) old.remove();
+      if (ring.parentNode !== div) div.appendChild(ring);
+      const sz = ringSize({ segments: segs, lineBoxPx: L, textWidthPx: width });
+      ring.style.left = `${-m}px`;
+      ring.style.top = `${-m}px`;
+      ring.style.width = `${sz.w}px`;
+      ring.style.height = `${sz.h}px`;
+    });
+  }
+  afterUpdate(() => paintRings());
+
+  /** The subtitle font chain — the .ass style's family plus the webview
+   *  fallbacks. The DOM layers AND the ring canvas must use the identical
+   *  string or the glyphs can disagree (canvas text and DOM text resolve
+   *  fallbacks independently). */
+  function subFontChain(family: string): string {
+    return `"${family}", "Segoe UI", "Noto Sans", Roboto, Arial, sans-serif`;
+  }
+
+  /** Measured half-leading per (chain, size): a hidden node with line-height
+   *  normal yields the font's natural (ascent + descent) line height, so the
+   *  half-leading = (1.4·size − natural)/2. The libass anchor puts the line
+   *  box at MarginV·S − halfLeading (baseline = MarginV + ascent). Probed
+   *  through the SAME chain the DOM line renders with — a different chain
+   *  resolves a different font. Before the DOM exists, the renderer's
+   *  0.2·size estimate stands in. */
+  const halfLeadCache = new Map<string, number>();
+  function probeHalfLeading(family: string, sizePx: number): number {
+    const key = `${subFontChain(family)}|${sizePx}`;
+    const hit = halfLeadCache.get(key);
+    if (hit !== undefined) return hit;
+    if (typeof document === "undefined" || !document.body) return 0.2 * sizePx;
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;top:0;left:0;visibility:hidden;white-space:nowrap;";
+    probe.style.fontFamily = subFontChain(family);
+    probe.style.fontSize = `${sizePx}px`;
+    probe.textContent = "X";
+    document.body.appendChild(probe);
+    const natural = probe.offsetHeight;
+    probe.remove();
+    const hl = (sizePx * 1.4 - natural) / 2;
+    halfLeadCache.set(key, hl);
+    return hl;
+  }
+  const subMetrics = { halfLeadingPx: probeHalfLeading };
+
+  /** Shared per-LAYER inline style: typography (the fill layer and the
+   *  stroke layer must lay out identically) and the anchor. The \clip window
+   *  and the per-frame \fad opacity live one level up (clipStyle) so stroke
+   *  and fill move/fade together. `withBlur` = apply the line's uniform
+   *  \blur as a CSS filter — the FILL layer wants it; the STROKE layer gets
+   *  its softness from the dilate spans' per-span blur instead (a second
+   *  blur would double the sigma). */
+  function layerStyle(l: RenderedLine, withBlur = true): string {
+    const p: string[] = [];
+    p.push(`font-family:${subFontChain(l.fontFamily)}`);
     p.push(`font-size:${l.fontSizePx}px`);
-    if (l.outlinePx > 0.5 || l.shadowPx > 0.5) {
-      const shadows: string[] = [];
-      if (l.outlinePx > 0.5) shadows.push(outlineShadow(l.outlinePx, l.outlineColor));
-      if (l.shadowPx > 0.5)
-        shadows.push(`0 ${Math.max(1, Math.round(l.shadowPx))}px ${l.shadowColor}`);
-      p.push(`text-shadow:${shadows.join(", ")}`);
-    }
+    if (withBlur && l.blurPx > 0) p.push(`filter:blur(${Math.round(l.blurPx * 10) / 10}px)`);
     if (l.pos) {
       p.push(`left:${l.pos.xPx}px`, `top:${l.pos.yPx}px`, "transform:translate(-50%, -50%)");
       return p.join("; ");
@@ -1057,20 +1213,69 @@
     // top/middle, up for bottom — the renderer signs it).
     const col = l.align % 3; // 1 = left, 2 = centre, 0 = right
     const row = Math.floor((l.align - 1) / 3); // 0 = bottom, 1 = middle, 2 = top
-    if (row === 2) p.push(`top:calc(10% + ${l.yOffsetPx}px)`);
+    if (row === 2)
+      // ASS cues: the libass-exact anchor (MarginV, half-leading
+      // compensated — coupled to .subs-line's line-height: 1.4); SRT cues:
+      // the 10% heuristic
+      p.push(
+        l.anchorTopPx != null
+          ? `top:calc(${l.anchorTopPx}px + ${l.yOffsetPx}px)`
+          : `top:calc(10% + ${l.yOffsetPx}px)`
+      );
     else if (row === 1) p.push(`top:calc(50% + ${l.yOffsetPx}px)`);
     else p.push(`bottom:calc(190px + ${l.yOffsetPx}px)`);
     if (row === 1) p.push(`transform:${col === 2 ? "translateX(-50%) " : ""}translateY(-50%)`);
     return p.join("; ");
   }
 
-  /** A segment's inline style: only what differs from the line (a colour
-   *  override or a fade-in alpha); empty = inherit everything. */
-  function segStyle(s: RenderedSegment): string {
+  /** Fill layer = layer style + base colour + the offset shadow (the style's
+   *  Shadow field — libass draws the shadow bitmap under the fill). */
+  function fillStyle(l: RenderedLine): string {
+    const p: string[] = [layerStyle(l), `color:${l.color}`];
+    if (l.shadowPx > 0.5)
+      p.push(`text-shadow:0 ${Math.max(1, Math.round(l.shadowPx))}px ${l.shadowColor}`);
+    return p.join("; ");
+  }
+
+  /** The \clip window as a CSS inset() on the full-box clip host, plus the
+   *  cue's per-frame \fad opacity (host level: stroke and fill fade
+   *  together); empty when the line has no live clip and no fade. */
+  function clipStyle(l: RenderedLine): string {
+    const p: string[] = [];
+    const c = l.motionFrame?.clip;
+    if (c) {
+      const r = (v: number) => Math.round(v * 10) / 10;
+      p.push(`clip-path:inset(${r(c.top)}px ${r(c.right)}px ${r(c.bottom)}px ${r(c.left)}px)`);
+    }
+    const op = l.opacity * (l.motionFrame?.opacityMul ?? 1);
+    if (op < 1) p.push(`opacity:${Math.round(op * 1000) / 1000}`);
+    return p.join("; ");
+  }
+
+  /** Fill span: colour (the rgba carries the alpha) + the segment's own
+   *  \blur. No separate opacity — it would multiply the colour's alpha (α²). */
+  function fillSegStyle(s: RenderedSegment): string {
     const p: string[] = [];
     if (s.color) p.push(`color:${s.color}`);
-    if (s.opacity < 1) p.push(`opacity:${s.opacity}`);
+    if (s.blurPx) p.push(`filter:blur(${Math.round(s.blurPx * 10) / 10}px)`);
     return p.join("; ");
+  }
+
+   /** Stroke span — the centred-stroke fallback for MULTI-LINE cues only.
+   *  Single-line rings are canvas (paintRings + src/ui/subring.ts): a
+   *  centred -webkit-text-stroke leaks its inner half over the core, which
+   *  only matters when the line is long enough to wrap. The spans draw the
+   *  dilated glyph (transparent fill + centred 2×w stroke) blurred by the
+   *  segment's \blur sigma. */
+  function strokeSegStyle(s: RenderedSegment | null, l: RenderedLine): string {
+    const w = s?.outlinePx ?? l.outlinePx;
+    const c = s?.outlineColor ?? l.outlineColor;
+    const sigma = Math.round((s?.blurPx ?? l.blurPx) * 10) / 10;
+    return [
+      "color:transparent",
+      `-webkit-text-stroke:${w * 2}px ${c}`,
+      `filter:blur(${sigma}px)`,
+    ].join("; ");
   }
 
   /** Close every pick panel. A made selection dismisses its dialogue
@@ -1298,6 +1503,7 @@
     // and the background screen already re-asserted its handlers from its
     // subscription to the session store — clearing now would wipe them.
     if (hideTimer) clearTimeout(hideTimer);
+    if (motionRaf) cancelAnimationFrame(motionRaf);
     abortMeta(); // in-flight lookups die with the player
     engine?.destroy();
     engine = null;
@@ -1563,14 +1769,39 @@
   {#if mode === "full" && subLines.length}
     <div class="subs-cues">
       {#each subLines as line, li (li)}
-        <div class="subs-line sub-al-{line.align}" style={lineStyle(line)}>
-          {#if line.segments.length}
-            {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
-              <span class:it={seg.italic} class:bd={seg.bold} style={segStyle(seg)}>{seg.text}</span>
-            {/each}
-          {:else}
-            {line.text}
+        <div class="subs-clip" style={clipStyle(line)}>
+          {#if line.hasStroke}
+            <div class="subs-line subs-stroke sub-al-{line.align}" style={layerStyle(line, false)}>
+              <span class="stroke-sizer" aria-hidden="true">
+                {#if line.segments.length}
+                  {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
+                    <span class:it={seg.italic} class:bd={seg.bold}>{seg.text}</span>
+                  {/each}
+                {:else}
+                  {line.text}
+                {/if}
+              </span>
+              {#if isMultiLine(line)}
+                <!-- multi-line: the canvas ring cannot wrap (v1 gap) -->
+                {#if line.segments.length}
+                  {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
+                    <span class:it={seg.italic} class:bd={seg.bold} style={strokeSegStyle(seg, line)}>{seg.text}</span>
+                  {/each}
+                {:else}
+                  <span style={strokeSegStyle(null, line)}>{line.text}</span>
+                {/if}
+              {/if}
+            </div>
           {/if}
+          <div class="subs-line sub-al-{line.align}" style={fillStyle(line)}>
+            {#if line.segments.length}
+              {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
+                <span class:it={seg.italic} class:bd={seg.bold} style={fillSegStyle(seg)}>{seg.text}</span>
+              {/each}
+            {:else}
+              {line.text}
+            {/if}
+          </div>
         </div>
       {/each}
     </div>
@@ -1979,6 +2210,17 @@
     z-index: 15;
     pointer-events: none;
   }
+  /* Per-line clip host: a full-video-box frame the cue's \clip window
+     (clip-path: inset()) cuts into. Without a clip it is an inert
+     passthrough — same coordinate space as .subs-cues. Longhand again:
+     no `inset` shorthand (Chrome 79). */
+  .subs-clip {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
   /* One line per active cue. The alignment classes own left/top/transform
      (the ASS numpad: 1-3 bottom, 4-6 middle, 7-9 top; column 1 left, 5
      center, 9 right — the 190px bottom offset keeps the old chrome-safe
@@ -1990,6 +2232,24 @@
     line-height: 1.4;
     text-align: center;
     white-space: pre-wrap;
+  }
+  /* .subs-stroke: the outline layer under the fill layer — DOM order is
+     the z-order (both are .subs-line, so typography/anchor match exactly).
+     The RING (libass outline = blur(dilate(w)) − blur(glyph), verified: the
+     libass outline alpha is 0.00 inside the glyph) is a canvas the Player
+     appends here after every DOM commit — paintRings + src/ui/subring.ts
+     document why CSS can't draw it (centred strokes leak into the core,
+     shadows fill the interior, this Chrome family has no alpha blend modes,
+     and text inside an SVG luminance mask never renders here). The
+     .stroke-sizer span holds the text in flow (visibility: hidden) so the
+     line box — and the baseline — is measured. Multi-line cues keep the
+     centred-stroke spans (canvas text does not wrap). */
+  .stroke-sizer {
+    visibility: hidden; /* layout only — the canvas ring aligns to it */
+  }
+  .subs-ring {
+    position: absolute; /* offset (-margin) set by paintRings */
+    pointer-events: none;
   }
   .subs-line .it {
     font-style: italic;
@@ -2014,7 +2274,7 @@
     right: 8%;
   }
   /* Vertical placement (top/middle/bottom + collision offsets) is inline —
-     see lineStyle; these classes own the horizontal cell only. */
+     see layerStyle/fillStyle; these classes own the horizontal cell only. */
   /* One bottom-anchored surface, three rows (the mockup is the reference).
      All text ≥24px (TV scale); icons are SVG — no glyph spans. */
   .controls {

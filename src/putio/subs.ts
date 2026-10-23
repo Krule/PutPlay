@@ -92,19 +92,44 @@ export function cueAt(cues: SubtitleCue[], t: number): SubtitleCue | null {
 }
 
 /**
+ * A cue's identity for duplicate-suppression. Text alone is NOT an identity
+ * for ASS events: the Kusuriya title card ships the same display text twice
+ * (a solid layer-0 event + a layer-1 ghost whose \1a&HFF& hides most of the
+ * line) and libass renders both — a text-only key collapses the scene to one
+ * event. A genuine duplicate (the double-cued SRT case the dedup was written
+ * for) shares style, layer, alignment and segment styling too, so key on all
+ * of it; SRT cues carry none of that and dedup on text+align exactly as
+ * before.
+ */
+function cueKey(c: AnyCue): string {
+  return (
+    c.text +
+    "\u0000" +
+    (c.styleName ?? "") +
+    "\u0000" +
+    (c.layer ?? 0) +
+    "\u0000" +
+    (c.align ?? "") +
+    "\u0000" +
+    (c.segments ? JSON.stringify(c.segments) : "")
+  );
+}
+
+/**
  * Every cue ACTIVE at time t — not just one. A bilingual subtitle ships each
  * line as an overlapping pair with identical timestamps (romaji +
  * translation), so a single-cue lookup would leave one language of every
  * pair invisible. Cues are already sorted by start, so this preserves file
- * order; identical text is shown once.
+ * order; duplicates are shown once.
  */
 export function cuesAt(cues: AnyCue[], t: number): AnyCue[] {
   const out: AnyCue[] = [];
   const seen = new Set<string>();
   for (const c of cues) {
     if (t < c.start || t > c.end) continue;
-    if (seen.has(c.text)) continue;
-    seen.add(c.text);
+    const key = cueKey(c);
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(c);
   }
   return out;
