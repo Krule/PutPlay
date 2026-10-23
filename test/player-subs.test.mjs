@@ -78,6 +78,21 @@ test("sub outline ring: canvas dilate−punch (libass outline bitmap = a ring)",
   assert.ok(/-webkit-text-stroke:\$\{/.test(player), "the centred-stroke fallback keeps -webkit-text-stroke");
 });
 
+// The in-flow sizer must NOT precede the multi-line centred-stroke spans:
+// visibility:hidden keeps the sizer in the inline flow, so a sizer followed
+// by visible stroke spans wraps those spans BELOW the sizer's text — the
+// outlined copy renders as a displaced dark ghost (reproduced in a headless
+// render of the disclaimer cue). Multi-line cues get no canvas ring, so the
+// sizer is only needed for single-line cues; the stroke spans define the
+// line box themselves.
+test("sub outline ring: the sizer is rendered only for single-line cues", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.ok(
+    /\{#if !isMultiLine\(line\)\}\s*<span class="stroke-sizer"/.test(player),
+    "the stroke-sizer span must be guarded by {#if !isMultiLine(line)} — an in-flow hidden sizer pushes the multi-line stroke spans into a displaced ghost line"
+  );
+});
+
 test("chrome auto-hide: pointer movement wakes, playback start schedules the hide", () => {  const player = read("src/ui/screens/Player.svelte");
   assert.ok(
     /<div[^>]*class="player"[^>]*on:mousemove=\{wake\}/.test(player),

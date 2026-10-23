@@ -15,6 +15,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   own player (MPV/libass) renders the same scene.
 
 ### Fixed
+- Subtitles no longer render doubled: outlined cues — dialogue, episode
+  titles and the animated title cards — used to draw a second, displaced
+  copy of the text alongside the real one; the outline now sits tight
+  around each letter.
 - The player honors the system's reduce-motion setting: the controls,
   tooltips, progress bar and legend still update, they just stop fading
   in and out.

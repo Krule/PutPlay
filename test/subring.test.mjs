@@ -114,7 +114,7 @@ test("drawRing: stroke → punch, in libass order, per segment strip", () => {
   const [s0, st, sx, sy, sfilter, slw, scol, sgco] = strokes[0];
   assert.equal(st, "The Apothecary ");
   assert.equal(sx, m); // the segment starts at the strip's left margin
-  assert.equal(sy, 30); // the measured baseline (strip top = line-box top)
+  assert.equal(sy, m + 30); // canvas top is m px ABOVE the line-box top, so the baseline (measured from the line-box top) lands at m + baselinePx
   assert.equal(sfilter, "blur(5.1px)");
   assert.equal(slw, 8); // centred 2×w
   assert.equal(scol, "rgb(182, 56, 31)");

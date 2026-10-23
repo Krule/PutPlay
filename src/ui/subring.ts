@@ -125,14 +125,16 @@ export function drawRing(
     sctx.textBaseline = "alphabetic";
     sctx.font = font;
     // The libass order: blur(dilate) first, then the blurred glyph punches
-    // the core out — both at the segment's own sigma.
+    // the core out — both at the segment's own sigma. The canvas carries m
+    // px of margin ABOVE the line box (it is placed at top:-m), so the
+    // baseline — measured from the line-box top — lands at m + baselinePx.
     sctx.filter = `blur(${seg.blurPx}px)`;
     sctx.lineWidth = seg.outlinePx * 2;
     sctx.strokeStyle = seg.color;
-    sctx.strokeText(seg.text, m, opts.baselinePx);
+    sctx.strokeText(seg.text, m, m + opts.baselinePx);
     sctx.globalCompositeOperation = "destination-out";
     sctx.fillStyle = "#000";
-    sctx.fillText(seg.text, m, opts.baselinePx);
+    sctx.fillText(seg.text, m, m + opts.baselinePx);
     sctx.globalCompositeOperation = "source-over";
 
     ctx.drawImage(strip, cum, 0, stripCssW, cssH);

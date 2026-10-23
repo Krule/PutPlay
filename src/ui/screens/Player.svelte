@@ -1772,15 +1772,22 @@
         <div class="subs-clip" style={clipStyle(line)}>
           {#if line.hasStroke}
             <div class="subs-line subs-stroke sub-al-{line.align}" style={layerStyle(line, false)}>
-              <span class="stroke-sizer" aria-hidden="true">
-                {#if line.segments.length}
-                  {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
-                    <span class:it={seg.italic} class:bd={seg.bold}>{seg.text}</span>
-                  {/each}
-                {:else}
-                  {line.text}
-                {/if}
-              </span>
+              <!-- Single-line only: the sizer is in-flow (it defines the line
+                   box the canvas ring aligns to). For multi-line cues it would
+                   stay in the inline flow BEFORE the visible centred-stroke
+                   spans and wrap them into a displaced ghost line — and the
+                   ring is skipped there anyway (canvas text does not wrap). -->
+              {#if !isMultiLine(line)}
+                <span class="stroke-sizer" aria-hidden="true">
+                  {#if line.segments.length}
+                    {#each line.segments as seg (seg.text + String(seg.italic) + String(seg.bold))}
+                      <span class:it={seg.italic} class:bd={seg.bold}>{seg.text}</span>
+                    {/each}
+                  {:else}
+                    {line.text}
+                  {/if}
+                </span>
+              {/if}
               {#if isMultiLine(line)}
                 <!-- multi-line: the canvas ring cannot wrap (v1 gap) -->
                 {#if line.segments.length}
@@ -2244,6 +2251,12 @@
      .stroke-sizer span holds the text in flow (visibility: hidden) so the
      line box — and the baseline — is measured. Multi-line cues keep the
      centred-stroke spans (canvas text does not wrap). */
+  /* Single-line cues only (the template guards it): it holds the text in
+     flow (visibility: hidden) so the line box — and the baseline — is
+     measured for the canvas ring. Multi-line cues get no sizer: an in-flow
+     hidden sizer would precede the centred-stroke spans in the inline flow
+     and wrap them into a displaced ghost line (and their ring is skipped —
+     canvas text does not wrap). */
   .stroke-sizer {
     visibility: hidden; /* layout only — the canvas ring aligns to it */
   }
