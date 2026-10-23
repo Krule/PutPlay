@@ -2963,4 +2963,16 @@
   .legend-player.visible {
     opacity: 1;
   }
+  /* Motion that answers an action (controls fade, tooltip, progress width,
+     legend) ships a reduced-motion fallback: the state change still happens,
+     the tween just doesn't. */
+  @media (prefers-reduced-motion: reduce) {
+    .controls,
+    .icbtn .tip,
+    .bar-buffer,
+    .bar-fill,
+    .legend-player {
+      transition: none;
+    }
+  }
 </style>

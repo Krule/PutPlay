@@ -14,6 +14,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   and blur each word carries are drawn with it, matching how the file's
   own player (MPV/libass) renders the same scene.
 
+### Fixed
+- The player honors the system's reduce-motion setting: the controls,
+  tooltips, progress bar and legend still update, they just stop fading
+  in and out.
+
 ## [1.2.3] - 2026-10-22
 
 ### Added

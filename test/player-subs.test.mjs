@@ -146,3 +146,17 @@ test("sub ring: paintRings builds its segments with ringSegments (no inline map 
     "no inline line.segments.map glue left in paintRings (the crash site)"
   );
 });
+
+// The Player stylesheet animates five things (controls fade, tooltip fade,
+// buffer/fill width, legend fade). ux_audit's States gate blocks handoff
+// when a transition ships without a prefers-reduced-motion fallback: under
+// reduce the state change still happens, the tween just doesn't.
+test("sub styles: player transitions ship a prefers-reduced-motion fallback", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  const m = player.match(/<style[^>]*>([\s\S]*?)<\/style>/);
+  assert.ok(m, "Player has a <style> block");
+  const css = m[1];
+  const rm = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(rm, "a prefers-reduced-motion block exists in the stylesheet");
+  assert.ok(/transition:\s*none/.test(rm[1]), "the block disables the transitions");
+});
