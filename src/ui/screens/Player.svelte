@@ -1111,6 +1111,24 @@
       const dpr = window.devicePixelRatio || 1;
       const F = line.fontSizePx;
       const L = F * 1.4; // .subs-line's line-height
+      if (sizer.offsetHeight > L + 1) {
+        // The device's fallback font wrapped this cue inside the region.
+        // A canvas ring cannot wrap: degrade to centred-stroke spans (the
+        // same fallback multi-line cues use) so the outline still hugs text.
+        if (!div.dataset.wrapped) {
+          div.dataset.wrapped = "1";
+          sizer.remove();
+          for (const seg of ringSegments(line)) {
+            const sp = document.createElement("span");
+            sp.textContent = seg.text;
+            if (seg.bold) sp.classList.add("bd");
+            if (seg.italic) sp.classList.add("it");
+            sp.style.cssText = strokeSegStyle(seg, line);
+            div.appendChild(sp);
+          }
+        }
+        return;
+      }
       const segs: RingSegment[] = ringSegments(line);
       const font = ringFont(segs[0], subFontChain(line.fontFamily), F);
       const baseline = ringBaselinePx(font, L);
@@ -1149,8 +1167,10 @@
       if (old && old !== ring) old.remove();
       if (ring.parentNode !== div) div.appendChild(ring);
       const sz = ringSize({ segments: segs, lineBoxPx: L, textWidthPx: width });
-      ring.style.left = `${-m}px`;
-      ring.style.top = `${-m}px`;
+      // Anchor to where the text actually starts in the region (text-align
+      // moves it), not to the div corner.
+      ring.style.left = `${sizer.offsetLeft - m}px`;
+      ring.style.top = `${sizer.offsetTop - m}px`;
       ring.style.width = `${sz.w}px`;
       ring.style.height = `${sz.h}px`;
     });
@@ -1208,10 +1228,15 @@
       p.push(`left:${l.pos.xPx}px`, `top:${l.pos.yPx}px`, "transform:translate(-50%, -50%)");
       return p.join("; ");
     }
+    // The libass wrap region (MarginL/MarginR scaled to the box), pinned
+    // explicitly: an absolute div with only left:50% shrink-to-fits to half
+    // the box, cues wrap, and the non-wrapping ring canvas misregisters
+    // (the doubled-subtitle bug). The alignment classes set text-align
+    // inside this box.
+    p.push(`left:${l.regionLeftPx}px`, `width:${l.regionWidthPx}px`);
     // Anchor cells (numpad): 7/8/9 top, 4/5/6 middle, 1/2/3 bottom. The
     // offset pushes a colliding cue away from the anchor (down for
     // top/middle, up for bottom — the renderer signs it).
-    const col = l.align % 3; // 1 = left, 2 = centre, 0 = right
     const row = Math.floor((l.align - 1) / 3); // 0 = bottom, 1 = middle, 2 = top
     if (row === 2)
       // ASS cues: the libass-exact anchor (MarginV, half-leading
@@ -1224,7 +1249,7 @@
       );
     else if (row === 1) p.push(`top:calc(50% + ${l.yOffsetPx}px)`);
     else p.push(`bottom:calc(190px + ${l.yOffsetPx}px)`);
-    if (row === 1) p.push(`transform:${col === 2 ? "translateX(-50%) " : ""}translateY(-50%)`);
+    if (row === 1) p.push("transform:translateY(-50%)");
     return p.join("; ");
   }
 
@@ -2235,9 +2260,7 @@
      stroke, \pos). */
   .subs-line {
     position: absolute;
-    max-width: 80%;
     line-height: 1.4;
-    text-align: center;
     white-space: pre-wrap;
   }
   /* .subs-stroke: the outline layer under the fill layer — DOM order is
@@ -2270,24 +2293,24 @@
   .subs-line .bd {
     font-weight: bold;
   }
+  /* Horizontal: layerStyle pins the box to the libass region (left + width
+     from MarginL/MarginR); these classes only say where inside the box the
+     text sits. */
   .sub-al-1,
   .sub-al-4,
   .sub-al-7 {
-    left: 8%;
+    text-align: left;
   }
   .sub-al-2,
   .sub-al-5,
   .sub-al-8 {
-    left: 50%;
-    transform: translateX(-50%);
+    text-align: center;
   }
   .sub-al-3,
   .sub-al-6,
   .sub-al-9 {
-    right: 8%;
+    text-align: right;
   }
-  /* Vertical placement (top/middle/bottom + collision offsets) is inline —
-     see layerStyle/fillStyle; these classes own the horizontal cell only. */
   /* One bottom-anchored surface, three rows (the mockup is the reference).
      All text ≥24px (TV scale); icons are SVG — no glyph spans. */
   .controls {

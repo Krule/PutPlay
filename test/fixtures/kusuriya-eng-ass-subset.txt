@@ -25,3 +25,4 @@ Dialogue: 0,0:14:14.30,0:14:18.63,Default,Basen,0,0,0,,The White Lady? I hear th
 Dialogue: 0,0:15:29.78,0:15:32.53,italics,Maomao,0,0,0,,I read the {\i0}Plants{\i1} book \Nat the stronghold, but...
 Dialogue: 0,0:15:35.83,0:15:38.33,sign_25092_237_Plants_Vol__Two,Text,0,0,0,,{\fs12\fax0.05\pos(283,106)\frz356}Insects: Vol. Two
 Dialogue: 0,0:18:17.55,0:18:22.08,Default,Sazen,0,0,0,,I-I don't know. {\i1}She{\i0} took care \Nof those things.
+Dialogue: 0,0:01:30.40,0:01:33.41,Fiction_Disclaimer,Text,0,0,0,,{\fad(277,260)\blur0.5}This story is a work of fiction. The names of all of the characters, organizations, and so on\N are imaginary. It also bears no connection to any specific real-life events.

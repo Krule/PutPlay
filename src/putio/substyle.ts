@@ -639,6 +639,15 @@ export interface RenderedLine {
   /** \pos scaled to video-box pixels */
   pos?: { xPx: number; yPx: number };
   /**
+   * libass's wrap region for this line, in box px: the strip between the
+   * style's MarginL and MarginR (scaled PlayResX → box.w). The player gives
+   * the line div an explicit left+width from these, otherwise an absolute
+   * div with only left:50% shrink-to-fits to half the box and long cues wrap
+   * — which misregisters the ring canvas (the doubled-subtitle bug).
+   */
+  regionLeftPx: number;
+  regionWidthPx: number;
+  /**
    * Vertical nudge (px) so two cues that are live at the same instant in the
    * same anchor cell don't overwrite each other (libass / native-cue
    * behaviour — the MPV frame shows gold over white, never gold inside
@@ -795,6 +804,9 @@ function buildLine(cue: AnyCue, style: AssStyle | null, ctx: RenderCtx): Rendere
     xPx: Math.round((x / playResX) * box.w),
     yPx: Math.round((y / playResY) * box.h),
   });
+  const scaleX = box.w / playResX;
+  const marginL = (style?.marginL ?? 0) * scaleX;
+  const marginR = (style?.marginR ?? 0) * scaleX;
   const line: RenderedLine = {
     text: cue.text,
     align: cue.align ?? style?.alignment ?? 2,
@@ -817,6 +829,8 @@ function buildLine(cue: AnyCue, style: AssStyle | null, ctx: RenderCtx): Rendere
             ) / 10,
         }
       : {}),
+    regionLeftPx: Math.round(marginL * 10) / 10,
+    regionWidthPx: Math.round((box.w - marginL - marginR) * 10) / 10,
     outlinePx: (first?.outlineW ?? style?.outlineW ?? 0) * boxScale,
     outlineColor: outlineCss,
     shadowPx: (style?.shadow ?? 0) * boxScale,

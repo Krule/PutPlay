@@ -250,6 +250,34 @@ test("the MPV scene (raw-ASS path): both top lines render from their PARSED styl
   }
 });
 
+// libass wraps text at PlayResX − MarginL − MarginR. The player's line box
+// must carry that region explicitly: shrink-to-fit from left:50% alone gives
+// a 960px layout width on a 1920 box, so a 1076px dialogue cue wraps and the
+// (non-wrapping) ring canvas misregisters — the doubled-subtitle bug.
+test("wrap region: every line carries libass's region from the style margins (Default ML10/MR10 on PlayRes 640 → 30px insets, 1860px wide on a 1920 box)", () => {
+  const table = parseAssStyles(ASS_HEAD);
+  const lines = renderSubtitleLines(assAt(103.8), 103.8, table, BOX, 1);
+  for (const l of lines) {
+    assert.equal(l.regionLeftPx, 30, "MarginL 10 × (1920/640)");
+    assert.equal(l.regionWidthPx, 1860, "box − MarginL − MarginR");
+  }
+});
+
+test("wrap region: the disclaimer's own margins (ML143 MR18) place its region at 429px, 1437px wide — the MPV left edge", () => {
+  const table = parseAssStyles(ASS_HEAD);
+  const lines = renderSubtitleLines(assAt(92.0), 92.0, table, BOX, 1);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].regionLeftPx, 429);
+  assert.equal(lines[0].regionWidthPx, 1437);
+});
+
+test("wrap region: cues with no resolved style (SRT with no table) fall back to the full box", () => {
+  const cues = [{ start: 1, end: 2, text: "plain srt line" }];
+  const [line] = renderSubtitleLines(cues, 1.5, null, BOX, 1);
+  assert.equal(line.regionLeftPx, 0);
+  assert.equal(line.regionWidthPx, 1920);
+});
+
 test("the SRT path (T2): put.io lost the Style: field — an \\an8 cue maps to the FIRST align-8 style (documented loss)", () => {
   const table = parseAssStyles(ASS_HEAD);
   const srtCues = subtitlesToCues(SCENE_SRT, "srt").filter(

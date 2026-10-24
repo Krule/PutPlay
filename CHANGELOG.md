@@ -19,6 +19,11 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   titles and the animated title cards — used to draw a second, displaced
   copy of the text alongside the real one; the outline now sits tight
   around each letter.
+- Long cues no longer wrap mid-sentence on the TV. Each subtitle line now
+  gets the file's own margins as its text region (the same wrap width the
+  file's player uses), instead of squeezing into half the screen; cues that
+  still wrap on a device without the file's font get their outline drawn
+  directly on the text rather than as a misaligned band.
 - The player honors the system's reduce-motion setting: the controls,
   tooltips, progress bar and legend still update, they just stop fading
   in and out.

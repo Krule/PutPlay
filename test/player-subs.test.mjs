@@ -175,3 +175,40 @@ test("sub styles: player transitions ship a prefers-reduced-motion fallback", ()
   assert.ok(rm, "a prefers-reduced-motion block exists in the stylesheet");
   assert.ok(/transition:\s*none/.test(rm[1]), "the block disables the transitions");
 });
+
+// libass wraps a cue at PlayResX − MarginL − MarginR. If the line box is an
+// absolute div with only left:50% (no width), it shrink-to-fits to HALF the
+// video box: a dialogue cue wraps, the ring canvas (which cannot wrap) draws
+// the whole unwrapped sentence over the first line — the doubled-subtitle bug.
+// The engine therefore emits the region, and the player pins it explicitly.
+test("sub layout: layerStyle pins each line to the engine's wrap region (left + width)", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.match(player, /left:\$\{l\.regionLeftPx\}px/, "layerStyle must pin the region left");
+  assert.match(player, /width:\$\{l\.regionWidthPx\}px/, "layerStyle must pin the region width");
+  assert.ok(
+    !/\.subs-line \{[^}]*max-width/.test(player),
+    "max-width on .subs-line would clip the 1860px region to 1536 and re-wrap cues"
+  );
+});
+
+test("sub layout: alignment classes set text-align inside the region, not box insets", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.match(player, /\.sub-al-1,\n  \.sub-al-4,\n  \.sub-al-7 \{\n    text-align: left;\n  \}/);
+  assert.match(player, /\.sub-al-3,\n  \.sub-al-6,\n  \.sub-al-9 \{\n    text-align: right;\n  \}/);
+  assert.ok(
+    !/\.sub-al-2,\n  \.sub-al-5,\n  \.sub-al-8 \{\n    left: 50%;/.test(player),
+    "the translateX(-50%) inset is gone: width is explicit, so the box IS the region"
+  );
+});
+
+test("sub ring: the canvas anchors to the sizer's position, not the div's corner", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.match(player, /sizer\.offsetLeft - m/, "canvas left must follow where the text starts");
+  assert.match(player, /sizer\.offsetTop - m/, "canvas top must follow the first wrapped line");
+});
+
+test("sub ring: a line the device font wraps degrades to centred-stroke spans, not a canvas", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  assert.match(player, /sizer\.offsetHeight > L/, "wrap guard exists in paintRings");
+  assert.match(player, /strokeSegStyle/, "the fallback reuses the centred-stroke spans");
+});
