@@ -1146,6 +1146,12 @@
       if (!ring) {
         ring = document.createElement("canvas");
         ring.className = "subs-ring";
+        // The canvas is built outside the template, so Svelte's scoped CSS
+        // (.subs-ring.svelte-*) never matches it — position must be set
+        // inline or the ring flows in the line after the sizer (the TV's
+        // doubled-subtitle ghost). See docs/webos-simulator.md forensics.
+        ring.style.position = "absolute";
+        ring.style.pointerEvents = "none";
         drawRing(ring, ring.getContext("2d") as CanvasRenderingContext2D, {
           segments: segs,
           family: line.fontFamily,

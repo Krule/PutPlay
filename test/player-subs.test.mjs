@@ -212,3 +212,12 @@ test("sub ring: a line the device font wraps degrades to centred-stroke spans, n
   assert.match(player, /sizer\.offsetHeight > L/, "wrap guard exists in paintRings");
   assert.match(player, /strokeSegStyle/, "the fallback reuses the centred-stroke spans");
 });
+
+test("sub ring: the appended canvas is positioned inline (Svelte scoping cannot reach it)", () => {
+  const player = read("src/ui/screens/Player.svelte");
+  // The canvas is created with plain DOM (outside the template), so it never
+  // gets Svelte's scoped .svelte-* attribute — a .subs-ring-only CSS rule
+  // would not match it on the TV. paintRings must set position itself.
+  assert.match(player, /ring\.style\.position = "absolute"/, "paintRings sets position:absolute inline");
+  assert.match(player, /ring\.style\.pointerEvents = "none"/, "the ring must not swallow player clicks");
+});

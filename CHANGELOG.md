@@ -15,6 +15,10 @@ Maintenance rules live in [AGENTS.md](AGENTS.md) → "Changelog Maintenance".
   own player (MPV/libass) renders the same scene.
 
 ### Fixed
+- The outline band could still sit beside the words on the TV — the ring canvas is
+  built outside the page template, so the stylesheet's scoped rule never reached it
+  and it flowed into the line instead of over it. Its position is now set directly on
+  the element, so the outline hugs the text on every screen.
 - Subtitles no longer render doubled: outlined cues — dialogue, episode
   titles and the animated title cards — used to draw a second, displaced
   copy of the text alongside the real one; the outline now sits tight

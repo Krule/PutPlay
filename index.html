@@ -8,6 +8,33 @@
 </head>
 <body>
   <div id="app"></div>
+  <div id="ring-debug" style="position:fixed;top:6px;left:6px;z-index:9999;font-size:14px;color:#ff3b30;background:rgba(0,0,0,.75);padding:6px 10px;max-width:520px;pointer-events:none;display:none"></div>
+  <script>
+    (function () {
+      var el = document.getElementById("ring-debug");
+      document.body.addEventListener("DOMChanged", function () {});
+      var dump = function () {
+        var strokes = document.querySelectorAll(".subs-cues .subs-stroke");
+        if (!strokes.length) return;
+        var lines = [];
+        for (var i = 0; i < strokes.length; i++) {
+          var d = strokes[i];
+          var db = d.getBoundingClientRect();
+          var sz = d.querySelector(".stroke-sizer");
+          var rg = d.querySelector(".subs-ring");
+          var rb = rg ? rg.getBoundingClientRect() : null;
+          lines.push("L" + i + " div:" + Math.round(db.left) + "/" + Math.round(db.width) +
+            " sizer:" + (sz ? (Math.round(sz.getBoundingClientRect().left) + " off:" + sz.offsetLeft + "," + sz.offsetTop) : "none") +
+            " canvas:" + (rb ? Math.round(rb.left) + "/" + Math.round(rb.width) : "none"));
+        }
+        el.textContent = "dpr=" + window.devicePixelRatio + " vp=" + window.innerWidth + "x" + window.innerHeight + " | " + lines.join(" | ");
+      };
+      var obs = new MutationObserver(dump);
+      obs.observe(document.body, { subtree: true, childList: true, attributes: true });
+      setInterval(dump, 1000);
+    })();
+  </script>
+
   <script src="js/bundle.js"></script>
 </body>
 </html>
